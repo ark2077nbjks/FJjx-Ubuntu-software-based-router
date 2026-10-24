@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private TrayIcon? _tray;
     private bool _reallyExit;
     private bool? _lastMiniOnline;
+    private DateTime? _offlineSince;   // 远端从什么时刻开始不可达（用于算离线时长）
     private bool _nicPolling;
     private bool _busy;
 
@@ -146,24 +147,40 @@ public partial class MainWindow : Window
         AppPaths.Log("[托盘] 窗口已最小化到托盘，后台继续采样");
     }
 
-    /// <summary>远端软路由连上 / 断掉时弹气泡（跟上次状态比）</summary>
+    /// <summary>远端软路由连上 / 断掉：无条件写日志（带离线时长），气泡看开关</summary>
     private void NotifyLinkChange(bool online)
     {
-        if (!_cfg.NotifyOnOffline) { _lastMiniOnline = online; return; }
-        if (_lastMiniOnline is null) { _lastMiniOnline = online; return; }
-        if (_lastMiniOnline == online) return;
+        if (_lastMiniOnline is null || _lastMiniOnline == online)
+        {
+            _lastMiniOnline = online;
+            return;
+        }
 
         if (online)
         {
-            _tray?.Balloon("软路由已连上", "远端重新可达，正常的网络状态。");
-            AppPaths.Log("[提醒] 远端恢复在线");
+            var span = _offlineSince is { } t ? DateTime.Now - t : TimeSpan.Zero;
+            var lasted = _offlineSince == null ? "" : $"（离线 {FormatSpan(span)}）";
+            AppPaths.Log($"[提醒] 远端恢复在线{lasted}");
+            _offlineSince = null;
+            if (_cfg.NotifyOnOffline)
+                _tray?.Balloon("软路由已连上", "远端重新可达，正常的网络状态。");
         }
         else
         {
-            _tray?.Balloon("软路由连不上", "远端地址不可达 —— 可能换了网络（不再连 Gray-Router）、机器关机，或校园网掉认证。点「一键诊断」看断在哪一层。", warn: true);
+            _offlineSince = DateTime.Now;
             AppPaths.Log("[提醒] 远端掉线");
+            if (_cfg.NotifyOnOffline)
+                _tray?.Balloon("软路由连不上", "远端地址不可达 —— 可能换了网络（不再连 Gray-Router）、机器关机，或校园网掉认证。点「一键诊断」看断在哪一层。", warn: true);
         }
         _lastMiniOnline = online;
+    }
+
+    /// <summary>把时长写成「2 小时 13 分」这种，短的就「3 分 12 秒」</summary>
+    private static string FormatSpan(TimeSpan s)
+    {
+        if (s.TotalHours >= 1) return $"{(int)s.TotalHours} 小时 {s.Minutes} 分";
+        if (s.TotalMinutes >= 1) return $"{s.Minutes} 分 {s.Seconds} 秒";
+        return $"{Math.Max(1, s.Seconds)} 秒";
     }
 
     // ---------------- 流量 ----------------
@@ -505,6 +522,80 @@ public partial class MainWindow : Window
         AppPaths.Log("[连接] " + line);
     }
 
+    /// <summary>连接页右上「刷新状态」：刷完在这页给个反馈，不用切到状态页看</summary>
+    private async void OnConnRefresh(object sender, RoutedEventArgs e)
+    {
+        BtnConnRefresh.IsEnabled = false;
+        ConnLog("正在刷新状态 …");
+        try
+        {
+            await RefreshAsync(manual: true);
+            ConnLog("√ 刷新完成：远端 " + (_lastMiniOnline == true ? "在线" : "不可达"));
+        }
+        catch (Exception ex) { ConnLog("× 刷新失败：" + ex.Message); }
+        finally { BtnConnRefresh.IsEnabled = true; }
+    }
+
+    /// <summary>切到「连接」页时静默探一次地址（不阻塞、只探一次）</summary>
+    private async void OnNavChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.Source is not TabControl) return;
+        if (NavTabs.SelectedIndex != 8 || _detectTried) return;   // 8 = 连接
+        _detectTried = true;
+        await DetectRemoteAsync(silent: true);
+    }
+
+    private CancellationTokenSource? _detectCts;
+    private bool _detectTried;      // 首次切到连接页时静默探一次，只探一次
+
+    /// <summary>自动探测远端地址（不阻塞界面，可随时再点取消）</summary>
+    private async Task DetectRemoteAsync(bool silent)
+    {
+        // 取消上一次探测：先把引用摘掉再取消，避免碰到已 Dispose 的 CTS
+        var prev = _detectCts;
+        _detectCts = null;
+        try { prev?.Cancel(); prev?.Dispose(); } catch { }
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+        _detectCts = cts;
+
+        BtnAutoDetect.IsEnabled = false;
+        var old = TxtRemoteHost.Text;
+        try
+        {
+            var cfg = RemoteConfig.Load();
+            if (string.IsNullOrWhiteSpace(cfg.User))
+            {
+                if (silent) return;
+                ConnLog("× 先把用户名填上（自动探测要知道用哪个用户名登录）");
+                return;
+            }
+
+            if (!silent) ConnLog("开始自动探测远端地址 …");
+            var hit = await RemoteDiscovery.DiscoverAsync(cfg, cfg.Port, silent ? null : ConnLog, cts.Token);
+            if (hit == null)
+            {
+                if (!silent) ConnLog("× 没探到；可以手动填地址");
+                return;
+            }
+
+            TxtRemoteHost.Text = hit.Host;
+            BtnAutoDetect.ToolTip = hit.Detail;
+            ConnLog($"√ 自动填入 {hit.Host} —— {hit.Detail}");
+            if (!silent) TxtFoot.Text = "已自动填入：" + cfg.User + "@" + hit.Host;
+        }
+        catch (OperationCanceledException) { if (!silent) ConnLog("· 探测已取消"); }
+        catch (Exception ex) { ConnLog("× 探测出错：" + ex.Message); }
+        finally
+        {
+            BtnAutoDetect.IsEnabled = true;
+            if (ReferenceEquals(_detectCts, cts)) _detectCts = null;
+            cts.Dispose();
+        }
+    }
+
+    private async void OnAutoDetect(object sender, RoutedEventArgs e) => await DetectRemoteAsync(silent: false);
+
     private async void OnTestRemote(object sender, RoutedEventArgs e)
     {
         var cfg = CollectRemote();
@@ -565,7 +656,7 @@ public partial class MainWindow : Window
                 return null;
             }
 
-            var tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "grayrouter-pkg");
+            var tmp = System.IO.Path.Combine(AppPaths.TmpDir, "grayrouter-pkg");
             try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
             ZipFile.ExtractToDirectory(path, tmp);
             if (File.Exists(System.IO.Path.Combine(tmp, "install.sh"))) return tmp;
@@ -617,21 +708,36 @@ public partial class MainWindow : Window
         finally { BtnUpload.IsEnabled = true; }
     }
 
+    private bool _deployBusy;
+
     private async void OnDeploy(object sender, RoutedEventArgs e)
     {
-        var cfg = CollectRemote();
-        if (!cfg.IsConfigured) { ConnLog("× 先把地址和用户名填上"); return; }
+        if (_deployBusy) { ConnLog("× 已经在部署了，别连点（会开两个安装窗口）"); return; }
+        _deployBusy = true;
+        BtnDeploy.IsEnabled = false;
+        try
+        {
+            var cfg = CollectRemote();
+            if (!cfg.IsConfigured) { ConnLog("× 先把地址和用户名填上"); return; }
 
-        ConnLog("① 上传部署包 …");
-        if (!await UploadPackageAsync()) { ConnLog("× 上传失败，部署中止"); return; }
+            ConnLog("① 上传部署包 …");
+            if (!await UploadPackageAsync()) { ConnLog("× 上传失败，部署中止"); return; }
 
-        ConnLog("② 打开终端窗口执行安装（sudo 密码在那个窗口里输）");
-        var cmd = "cd /tmp/grayrouter-upload && D=$(ls -d */ 2>/dev/null | head -1); " +
-                  "cd \"${D:-.}\" && ls install.sh >/dev/null 2>&1 && sudo bash install.sh";
+            ConnLog("② 打开终端窗口执行安装（sudo 密码在那个窗口里输）");
+            var cmd = "cd /tmp/grayrouter-upload && D=$(ls -d */ 2>/dev/null | head -1); " +
+                      "cd \"${D:-.}\" && ls install.sh >/dev/null 2>&1 && sudo bash install.sh";
 
-        Remote.RunInConsoleWindow(cfg, cmd, "GrayRouter 部署 - " + cfg.Host);
-        ConnLog("③ 终端窗口已打开；装完后回来点右上「刷新」");
-        TxtFoot.Text = "部署已启动，在终端窗口里完成";
+            Remote.RunInConsoleWindow(cfg, cmd, "GrayRouter 部署 - " + cfg.Host);
+            ConnLog("③ 终端窗口已打开；装完后回「状态」页点「刷新」");
+            TxtFoot.Text = "部署已启动，在终端窗口里完成";
+        }
+        finally
+        {
+            // 窗口刚起时先锁 5 秒，防止手快点第二下
+            await Task.Delay(5000);
+            BtnDeploy.IsEnabled = true;
+            _deployBusy = false;
+        }
     }
 
     // ---------------- 日志页 ----------------

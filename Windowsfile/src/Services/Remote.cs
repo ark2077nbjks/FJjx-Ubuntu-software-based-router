@@ -105,8 +105,10 @@ public static class Remote
     public static void OpenTerminal(RemoteConfig cfg, string title) =>
         StartConsole($"""
 @echo off
+chcp 65001 >nul
 title {title}
 ssh.exe -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -p {cfg.Port} {cfg.Target}
+chcp 936 >nul
 echo.
 echo ==== 会话结束，按任意键关闭 ====
 pause >nul
@@ -120,7 +122,7 @@ pause >nul
     {
         Directory.CreateDirectory(AppPaths.TmpDir);
         var bat = Path.Combine(AppPaths.TmpDir, $"netpanel-{Guid.NewGuid():N}.bat");
-        // bat 必须 CRLF：LF 换行会让 cmd.exe 把整行拆碎（'192.168.50.1' 不是内部或外部命令）
+        // bat 必须 CRLF：LF 换行会让 cmd.exe 把整行拆碎（'192.168.1.1' 不是内部或外部命令）
         var crlf = script.Replace("\r\n", "\n").Replace("\n", "\r\n");
         File.WriteAllText(bat, crlf, Encoding.GetEncoding(936));
         try
@@ -152,7 +154,7 @@ pause >nul
             return (true, "密钥登录可用");
 
         if (cfg.Auth == "password")
-            return (true, "已设为密码登录：连接时会弹终端让你输密码");
+            return (false, "密码登录模式无法自动验证（后台没法输密码）—— 点「打开终端」试一下就知道通不通");
 
         var msg = (err + " " + outp).Trim();
         if (msg.Contains("Permission denied") || msg.Contains("no such identity"))
@@ -170,6 +172,13 @@ pause >nul
         if (!Directory.Exists(localDir)) return (false, "本地目录不存在：" + localDir);
 
         var remoteDir = "/tmp/grayrouter-upload";
+
+        // 密码模式：后台没有终端可输密码，ssh/scp 只会失败 —— 直接说清怎么办，别让它干等
+        if (cfg.Auth == "password")
+            return (false,
+                $"密码登录模式无法自动上传（ssh 在后台没法输密码）。\n" +
+                $"请点「打开终端」，在里面执行：\n" +
+                $"  scp -r \"{localDir}\" {cfg.Target}:{remoteDir}/");
         var (rc1, _, err1) = await RunAsync("ssh.exe",
             $"{BaseArgs(cfg, cfg.Auth != "password")}{cfg.Target} \"rm -rf {remoteDir} && mkdir -p {remoteDir}\"");
         if (rc1 != 0) return (false, "远端建目录失败：" + err1.Trim());
@@ -188,8 +197,10 @@ pause >nul
     public static void RunInConsoleWindow(RemoteConfig cfg, string remoteCommand, string title) =>
         StartConsole($"""
 @echo off
+chcp 65001 >nul
 title {title}
 ssh.exe -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -p {cfg.Port} {cfg.Target} "{remoteCommand}"
+chcp 936 >nul
 echo.
 echo ==== 已完成，按任意键关闭 ====
 pause >nul
