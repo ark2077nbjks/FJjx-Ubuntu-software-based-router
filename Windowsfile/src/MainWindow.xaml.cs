@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         InitGameTab();
         InitSites();
         InitConnTab();
+        InitDeviceTab();
         Closing += (_, _) => SaveWindowState();
         Closed += (_, _) => AppPaths.Log("窗口关闭");
     }
@@ -99,6 +100,98 @@ public partial class MainWindow : Window
             File.WriteAllText(System.IO.Path.Combine(AppPaths.DataDir, "window.json"), json);
         }
         catch { }
+    }
+
+    // ---------------- 设备扫描 ----------------
+
+    private CancellationTokenSource? _scanCts;
+    private List<LanDevice> _devices = new();
+
+    private async void InitDeviceTab()
+    {
+        var cidr = await LanScan.GuessLocalCidrAsync();
+        TxtScanCidr.Text = string.IsNullOrWhiteSpace(cidr) ? "192.168.1.0/24" : cidr;
+    }
+
+    private async void OnScanDevices(object sender, RoutedEventArgs e)
+    {
+        var cidr = TxtScanCidr.Text.Trim();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(cidr, @"^\d+\.\d+\.\d+\.\d+/\d+$"))
+        {
+            TxtScanInfo.Text = "× 网段格式不对，应该是 192.168.1.0/24 这样";
+            return;
+        }
+        if (!cidr.EndsWith("/24"))
+        {
+            TxtScanInfo.Text = "× 只支持 /24（一个 C 段，254 个地址）";
+            return;
+        }
+
+        BtnScan.IsEnabled = false;
+        BtnScanStop.IsEnabled = true;
+        _scanCts = new CancellationTokenSource();
+        var cfg = RemoteConfig.Load();
+
+        try
+        {
+            var list = await LanScan.ScanAsync(cidr, cfg, msg =>
+            {
+                Dispatcher.Invoke(() => TxtScanInfo.Text = msg);
+            }, _scanCts.Token);
+
+            _devices = list;
+            DgDevices.ItemsSource = list;
+
+            var online = list.Count(x => x.State == "在线");
+            TxtScanInfo.Text = $"√ 共 {list.Count} 台，{online} 台在线" +
+                               (cfg.IsConfigured ? "（含软路由邻居表）" : "（只读本机 ARP）");
+            TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
+            AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
+        }
+        catch (OperationCanceledException)
+        {
+            TxtScanInfo.Text = "已停止";
+        }
+        catch (Exception ex)
+        {
+            TxtScanInfo.Text = "× 扫描出错：" + ex.Message;
+            AppPaths.Log("[设备] 扫描出错：" + ex);
+        }
+        finally
+        {
+            BtnScan.IsEnabled = true;
+            BtnScanStop.IsEnabled = false;
+            _scanCts?.Dispose();
+            _scanCts = null;
+        }
+    }
+
+    private void OnStopScan(object sender, RoutedEventArgs e)
+    {
+        _scanCts?.Cancel();
+        TxtScanInfo.Text = "正在停止 …";
+    }
+
+    private void OnExportDevices(object sender, RoutedEventArgs e)
+    {
+        if (_devices.Count == 0) { TxtScanInfo.Text = "× 先扫描一次再导出"; return; }
+
+        try
+        {
+            var path = System.IO.Path.Combine(AppPaths.DataDir, $"devices-{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("IP地址,MAC,厂商,名称,来源,状态,延迟");
+            foreach (var d in _devices)
+                sb.AppendLine($"{d.Ip},{d.Mac},{d.Vendor},{d.Name},{d.Source},{d.State},{d.Rtt}");
+            System.IO.File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(true));
+
+            TxtScanInfo.Text = $"√ 已导出 {_devices.Count} 条：{System.IO.Path.GetFileName(path)}";
+            AppPaths.Log("[设备] 导出 " + path);
+        }
+        catch (Exception ex)
+        {
+            TxtScanInfo.Text = "× 导出失败：" + ex.Message;
+        }
     }
 
     // ---------------- 连接 / 部署 ----------------

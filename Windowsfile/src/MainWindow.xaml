@@ -112,7 +112,7 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="网络面板" FontSize="22" FontWeight="SemiBold"/>
                 <Border Background="#E8F0FE" CornerRadius="4" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtBadge" Text="v1.5 · 连接与部署" FontSize="11.5" Foreground="#2F6FED"/>
+                    <TextBlock x:Name="TxtBadge" Text="v1.6 · 局域网设备" FontSize="11.5" Foreground="#2F6FED"/>
                 </Border>
             </StackPanel>
             <TextBlock Grid.Column="1" x:Name="TxtHint" Text="数据目录已就绪"
@@ -255,6 +255,62 @@
                     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="PanelNics"/>
                     </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <TabItem AutomationProperties.Name="设备">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/device.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="设备" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="局域网设备" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <TextBlock Text="网段" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox x:Name="TxtScanCidr" Width="150" Height="32" VerticalContentAlignment="Center"
+                                     ToolTip="点「扫描」时自动填成本机所在网段"/>
+                            <Button x:Name="BtnScan" AutomationProperties.Name="扫描设备" Height="32" Margin="10,0,0,0" Padding="14,0"
+                                    Click="OnScanDevices" Background="#2F6FED" Foreground="White" BorderThickness="0" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="/icons/refresh_w.png" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="扫描" VerticalAlignment="Center" Foreground="White"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnScanStop" AutomationProperties.Name="停止扫描" Height="32" Margin="8,0,0,0" Padding="12,0"
+                                    Click="OnStopScan" IsEnabled="False" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
+                                <TextBlock Text="停止"/>
+                            </Button>
+                            <Button x:Name="BtnExportDev" AutomationProperties.Name="导出设备" Height="32" Margin="8,0,0,0" Padding="12,0"
+                                    Click="OnExportDevices" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
+                                <TextBlock Text="导出 CSV"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Grid.Row="1" x:Name="TxtScanInfo" Margin="0,0,0,8" FontSize="12" Foreground="#7C8798"
+                               TextWrapping="Wrap" Text="点「扫描」看当前网段有哪些设备（约 10 秒）"/>
+
+                    <Border Grid.Row="2" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4">
+                        <DataGrid x:Name="DgDevices" AutoGenerateColumns="False" IsReadOnly="True"
+                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                  RowHeight="30" BorderThickness="0" Background="Transparent"
+                                  HorizontalGridLinesBrush="#EDF0F5" FontSize="12"
+                                  CanUserResizeRows="False" SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="IP 地址" Binding="{Binding Ip}" Width="130"/>
+                                <DataGridTextColumn Header="MAC" Binding="{Binding Mac}" Width="160"/>
+                                <DataGridTextColumn Header="厂商" Binding="{Binding Vendor}" Width="120"/>
+                                <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="110"/>
+                                <DataGridTextColumn Header="状态" Binding="{Binding State}" Width="80"/>
+                                <DataGridTextColumn Header="延迟" Binding="{Binding Rtt}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
                 </Grid>
             </TabItem>
 
