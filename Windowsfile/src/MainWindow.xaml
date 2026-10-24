@@ -112,7 +112,7 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="网络面板" FontSize="22" FontWeight="SemiBold"/>
                 <Border Background="#E8F0FE" CornerRadius="4" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtBadge" Text="v1.14 · 图标补全" FontSize="11.5" Foreground="#2F6FED"/>
+                    <TextBlock x:Name="TxtBadge" Text="v1.15 · 自动探测" FontSize="11.5" Foreground="#2F6FED"/>
                 </Border>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
@@ -122,7 +122,7 @@
         </Grid>
 
         <!-- 主体 -->
-        <TabControl Grid.Row="1" Margin="0,14,0,0" Style="{StaticResource NavTabControl}"
+        <TabControl x:Name="NavTabs" Grid.Row="1" Margin="0,14,0,0" Style="{StaticResource NavTabControl}" SelectionChanged="OnNavChanged"
                     TabStripPlacement="Left" ItemContainerStyle="{StaticResource NavTab}">
 
             <TabItem AutomationProperties.Name="状态">
@@ -554,14 +554,33 @@
 
                     <Grid Grid.Row="0" Margin="0,0,0,10">
                         <TextBlock Style="{StaticResource PageTitle}" Text="连接与部署"/>
-                        <Button x:Name="BtnRemoteTest" AutomationProperties.Name="测试连接" HorizontalAlignment="Right"
-                                Height="32" Padding="14,0" Click="OnTestRemote" Background="#2F6FED" Foreground="White"
-                                BorderThickness="0" Cursor="Hand">
-                            <StackPanel Orientation="Horizontal">
-                                <Image Source="/icons/net_on_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="测试连接" VerticalAlignment="Center" Foreground="White"/>
-                            </StackPanel>
-                        </Button>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="BtnConnRefresh" AutomationProperties.Name="刷新状态" Height="32" Padding="12,0"
+                                    Margin="0,0,8,0" Click="OnConnRefresh" Background="#EEF2F8" BorderThickness="1"
+                                    BorderBrush="#D5DBE5" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="/icons/refresh.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="刷新状态" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnAutoDetect" AutomationProperties.Name="自动探测" Height="32" Padding="12,0"
+                                    Margin="0,0,8,0" Click="OnAutoDetect" Background="#EEF2F8" BorderThickness="1"
+                                    BorderBrush="#D5DBE5" Cursor="Hand"
+                                    ToolTip="自动找这台 Ubuntu：上次地址 → 默认网关 → ARP 邻居表 → 同网段 .1，最多探 12 个，约 1~2 秒">
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="/icons/scan.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="自动探测" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnRemoteTest" AutomationProperties.Name="测试连接"
+                                    Height="32" Padding="14,0" Click="OnTestRemote" Background="#2F6FED" Foreground="White"
+                                    BorderThickness="0" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="/icons/net_on_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="测试连接" VerticalAlignment="Center" Foreground="White"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                     </Grid>
 
                     <Border Grid.Row="1" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4" Padding="16,12">
