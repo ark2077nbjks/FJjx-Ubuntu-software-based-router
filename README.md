@@ -7,6 +7,11 @@
 
 ---
 
+## 依赖说明
+
+- **Windows 面板**：发布的是**自包含版**，不用另装 .NET，拷过去双击就能开。
+- **Ubuntu 安装包**：第一步自动自检 NetworkManager / iproute2 / nftables / iw，缺什么直接给 apt 命令。
+
 ## 它能干什么
 
 | 能力 | 说明 |
@@ -50,7 +55,7 @@
 
 ## 快速开始（Ubuntu）
 
-1. 把 `Ubuntuflie/GrayRouter-1.0.0.zip` 拷到 Ubuntu 上，右键「解压到此处」。
+1. 把 `Ubuntuflie/GrayRouter-1.0.1.zip` 拷到 Ubuntu 上，右键「解压到此处」。
 2. 双击 **`GrayRouter-安装.desktop`**（第一次可能要点「标记为可信」或右键「允许启动」）。
 3. 向导里选拓扑、填热点名和密码 → 确认 → 输一次 sudo 密码。
 4. 装完手机/电脑连 `Gray-Router` 就能上网。
@@ -102,7 +107,7 @@ Ubuntuflie/
   lib/                               探测与日志库
   bin/                               7 个运行时脚本（up/down/status/harden/info/mode）
   docs/说明.txt
-  GrayRouter-1.0.0.zip               打包好的双击安装包
+  GrayRouter-1.0.1.zip               打包好的双击安装包
 Windowsfile/
   NetPanel.exe                       Windows 面板
   说明.txt
