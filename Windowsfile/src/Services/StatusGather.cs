@@ -14,10 +14,26 @@ public sealed class Snapshot
     public string Mini = "";
     public string Raw = "";
     public bool MiniOnline;
+    public bool CampusOk;      // 204 探测通过 = 已认证能上网
 }
 
 public static class StatusGather
 {
+    /// <summary>JSON 里可能是字符串、数字，甚至空对象（PowerShell 枚举），统一安全取值</summary>
+    private static string SafeStr(System.Text.Json.JsonElement el, string prop)
+    {
+        if (!el.TryGetProperty(prop, out var v)) return "";
+        return v.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => v.GetString() ?? "",
+            System.Text.Json.JsonValueKind.Number => v.ToString(),
+            System.Text.Json.JsonValueKind.True => "Up",
+            System.Text.Json.JsonValueKind.False => "Disabled",
+            System.Text.Json.JsonValueKind.Null => "",
+            _ => v.ToString() is "{}" ? "" : v.ToString(),
+        };
+    }
+
 
     public static async Task<Snapshot> CollectAsync()
     {
@@ -107,6 +123,7 @@ public static class StatusGather
         catch { }
 
         campus.AppendLine($"  generate_204 : {code}   {(code == "204" ? "√ 能上网" : "× 不通")}");
+            snap.CampusOk = code == "204";
         campus.AppendLine($"  公网出口 IP  : {egress}");
         campus.AppendLine();
         campus.AppendLine("【判定】");
@@ -195,9 +212,14 @@ public static class StatusGather
     {
         var list = new List<AdapterInfo>();
         var (rc, outText) = await Proc.CmdAsync(
-            "powershell -NoProfile -NonInteractive -Command \"Get-NetAdapter -Physical | Select-Object Name,InterfaceDescription,Status,LinkSpeed,MacAddress | ConvertTo-Json -Compress\"",
+            "powershell -NoProfile -NonInteractive -Command \"Get-NetAdapter -Physical | Select-Object Name,InterfaceDescription,@{n='Status';e={[string]$_.Status}},LinkSpeed,MacAddress | ConvertTo-Json -Compress\"",
             30);
-        if (rc != 0 || string.IsNullOrWhiteSpace(outText)) return list;
+        if (rc != 0 || string.IsNullOrWhiteSpace(outText))
+        {
+            var first = (outText ?? "").Split('\n').FirstOrDefault(x => x.Trim() != "") ?? "";
+            AppPaths.Log($"[网卡] 取物理网卡失败 rc={rc} 输出长度={(outText ?? "").Length} 首行={first.Trim()}");
+            return list;
+        }
 
         var json = outText.Trim();
         if (json.StartsWith("{")) json = "[" + json + "]";
@@ -212,15 +234,17 @@ public static class StatusGather
             {
                 list.Add(new AdapterInfo
                 {
-                    Name = el.TryGetProperty("Name", out var n) ? (n.GetString() ?? "") : "",
-                    Description = el.TryGetProperty("InterfaceDescription", out var d) ? (d.GetString() ?? "") : "",
-                    Status = el.TryGetProperty("Status", out var st) ? (st.GetString() ?? "") : "",
-                    LinkSpeed = el.TryGetProperty("LinkSpeed", out var ls) ? (ls.GetString() ?? "") : "",
-                    Mac = el.TryGetProperty("MacAddress", out var mc) ? (mc.GetString() ?? "") : "",
+                    Name = SafeStr(el, "Name"),
+                    Description = SafeStr(el, "InterfaceDescription"),
+                    Status = SafeStr(el, "Status"),
+                    LinkSpeed = SafeStr(el, "LinkSpeed"),
+                    Mac = SafeStr(el, "MacAddress"),
                 });
             }
         }
         catch (Exception ex) { AppPaths.Log("解析网卡 JSON 失败: " + ex.Message + " | 原文: " + json); }
+
+        AppPaths.Log($"[网卡] 读到 {list.Count} 张：" + string.Join("、", list.Select(x => $"{x.Name}[{x.Status}]")));
 
         // 回填 IP / 网关（NetworkInterface 按名称对应）
         var nets = NetworkInterface.GetAllNetworkInterfaces()
@@ -250,7 +274,12 @@ public static class StatusGather
         var (rc, outText) = await Proc.CmdAsync(
             "powershell -NoProfile -NonInteractive -Command \"Get-NetConnectionProfile | Select-Object Name,InterfaceAlias | ConvertTo-Json -Compress\"",
             30);
-        if (rc != 0 || string.IsNullOrWhiteSpace(outText)) return list;
+        if (rc != 0 || string.IsNullOrWhiteSpace(outText))
+        {
+            var first = (outText ?? "").Split('\n').FirstOrDefault(x => x.Trim() != "") ?? "";
+            AppPaths.Log($"[网卡] 取物理网卡失败 rc={rc} 输出长度={(outText ?? "").Length} 首行={first.Trim()}");
+            return list;
+        }
 
         var json = outText.Trim();
         if (json.StartsWith("{")) json = "[" + json + "]";

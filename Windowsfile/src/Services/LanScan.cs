@@ -11,7 +11,8 @@ public sealed class LanDevice
     public string Mac { get; set; } = "";
     public string Vendor { get; set; } = "";
     public string Name { get; set; } = "";
-    public string Source { get; set; } = "";   // 本机 / 软路由
+    public string Source { get; set; } = "";   // 本机 / 软路由（内部逻辑用，不再显示）
+    public string Conn { get; set; } = "";     // 显示用：本机 / 无线 2.4G -49dBm / 有线 / 同网段
     public string State { get; set; } = "";    // 在线 / 不在线
     public string Rtt { get; set; } = "";      // 12 ms / —
 }
@@ -104,78 +105,118 @@ public static class LanScan
         return "—";
     }
 
-    /// <summary>猜本机所在网段，返回 192.168.50.0/24 这种</summary>
-    public static async Task<string> GuessLocalCidrAsync()
+    /// <summary>猜本机所在网段，返回 192.168.1.0/24 这种（纯 .NET，不起 PowerShell，快）</summary>
+    public static Task<string> GuessLocalCidrAsync()
     {
-        var (code, output) = await Proc.RunAsync("powershell.exe",
-            "-NoProfile -Command \"Get-NetIPAddress -AddressFamily IPv4 | " +
-            "Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -ne '127.0.0.1' } | " +
-            "Select-Object -First 1 -ExpandProperty IPAddress\"", 12);
-
-        var ip = output.Split('\n').Select(x => x.Trim())
-                       .FirstOrDefault(x => Regex.IsMatch(x, @"^\d+\.\d+\.\d+\.\d+$"));
-        if (ip == null) return "";
-
-        var parts = ip.Split('.');
-        return $"{parts[0]}.{parts[1]}.{parts[2]}.0/24";
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up) continue;
+            if (ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+            var p = ni.GetIPProperties();
+            var hasGw = p.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                                                    && !g.Address.Equals(IPAddress.Any));
+            var u = p.UnicastAddresses.FirstOrDefault(a =>
+                a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                !IPAddress.IsLoopback(a.Address) &&
+                !a.Address.ToString().StartsWith("169.254."));
+            if (u == null) continue;
+            var mask = u.IPv4Mask;
+            if (mask == null) continue;
+            var ipb = u.Address.GetAddressBytes();
+            var mb = mask.GetAddressBytes();
+            var net = new byte[4];
+            int ones = 0;
+            for (int i = 0; i < 4; i++) { net[i] = (byte)(ipb[i] & mb[i]); ones += System.Numerics.BitOperations.PopCount(mb[i]); }
+            // 优先带默认网关的那张（就是真正上网用的）
+            var cidr = $"{net[0]}.{net[1]}.{net[2]}.{net[3]}/{ones}";
+            if (hasGw) return Task.FromResult(cidr);
+        }
+        // 兜底：找一张 up 的
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up) continue;
+            var u = ni.GetIPProperties().UnicastAddresses.FirstOrDefault(a =>
+                a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                !IPAddress.IsLoopback(a.Address) && !a.Address.ToString().StartsWith("169.254."));
+            if (u == null) continue;
+            var b = u.Address.GetAddressBytes();
+            return Task.FromResult($"{b[0]}.{b[1]}.{b[2]}.0/24");
+        }
+        return Task.FromResult("");
     }
 
     /// <summary>扫网段。progress 用来往界面上报进度。</summary>
     public static async Task<List<LanDevice>> ScanAsync(
-        string cidr, RemoteConfig? rc, Action<string> progress, CancellationToken ct)
+        string cidr, RemoteConfig? rc, bool deep, Action<string> progress, CancellationToken ct)
     {
         var devices = new Dictionary<string, LanDevice>(StringComparer.Ordinal);
 
-        // ---------- ① 本机 ping 扫一遍（ARP 表才有东西） ----------
+        // ---------- ① 只有「深度扫描」才发包；默认一个包都不发 ----------
         var baseIp = cidr.Split('/')[0];
         var head = baseIp[..(baseIp.LastIndexOf('.') + 1)];      // "192.168.50."
-        progress($"正在扫 {head}1 ~ {head}254 …");
 
         var selfIps = new HashSet<string>(StringComparer.Ordinal);
-        var (_, ipOut) = await Proc.RunAsync("powershell.exe",
-            "-NoProfile -Command \"Get-NetIPAddress -AddressFamily IPv4 | Select-Object -ExpandProperty IPAddress\"", 12);
-        foreach (var t in ipOut.Split('\n'))
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
-            var v = t.Trim();
-            if (Regex.IsMatch(v, @"^\d+\.\d+\.\d+\.\d+$")) selfIps.Add(v);
+            if (ni.OperationalStatus != OperationalStatus.Up) continue;
+            foreach (var a in ni.GetIPProperties().UnicastAddresses)
+                if (a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    selfIps.Add(a.Address.ToString());
         }
 
         var alive = new System.Collections.Concurrent.ConcurrentDictionary<string, long>();
-        using var gate = new SemaphoreSlim(48);
-        var tasks = new List<Task>();
-        for (int i = 1; i <= 254; i++)
+
+        if (deep)
         {
-            if (ct.IsCancellationRequested) break;
-            var ip = head + i;
-            await gate.WaitAsync(ct);
-            tasks.Add(Task.Run(async () =>
+            // 限速：16 路并发、每个包错开 30ms、单包超时 1 秒 —— 别再把 2.4G 空口打满
+            progress($"深度扫描 {head}1 ~ {head}254（16 并发，限速中）…");
+            using var gate = new SemaphoreSlim(16);
+            var tasks = new List<Task>();
+            for (int i = 1; i <= 254; i++)
             {
-                try
+                if (ct.IsCancellationRequested) break;
+                var ip = head + i;
+                await gate.WaitAsync(ct);
+                tasks.Add(Task.Run(async () =>
                 {
-                    using var ping = new Ping();
-                    var sw = System.Diagnostics.Stopwatch.StartNew();
-                    var reply = await ping.SendPingAsync(ip, 600);
-                    if (reply.Status == IPStatus.Success)
-                        alive[ip] = sw.ElapsedMilliseconds;
-                }
-                catch { }
-                finally { gate.Release(); }
-            }, ct));
+                    try
+                    {
+                        using var ping = new Ping();
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        var reply = await ping.SendPingAsync(ip, 1000);
+                        if (reply.Status == IPStatus.Success) alive[ip] = sw.ElapsedMilliseconds;
+                    }
+                    catch { }
+                    finally { gate.Release(); }
+                }, ct));
+                try { await Task.Delay(30, ct); } catch (OperationCanceledException) { break; }
+            }
+            try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
+            progress($"ping 通 {alive.Count} 台，正在读 ARP 表 …");
         }
-        try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
-
-        progress($"ping 通 {alive.Count} 台，正在读本机 ARP 表 …");
-
-        // ---------- ② 读本机 ARP 表 ----------
-        var (_, arp) = await Proc.RunAsync("arp.exe", "-a", 15);
-        foreach (Match m in Regex.Matches(arp, @"(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F]{2}(?:-[0-9a-fA-F]{2}){5})"))
+        else
         {
+            progress("快速模式：先读邻居表，再补轻量查询 …");
+        }
+
+        // ---------- ② 读本机 ARP 表（不发包，秒出）----------
+        var (_, arp) = await Proc.RunAsync("powershell.exe",
+            "-NoProfile -Command \"Get-NetNeighbor -AddressFamily IPv4 -ErrorAction SilentlyContinue | " +
+            "Where-Object {$_.State -ne 'Unreachable'} | ForEach-Object { $_.IPAddress + ' ' + $_.LinkLayerAddress + ' ' + $_.State }\"", 15);
+        foreach (var line in arp.Split('\n'))
+        {
+            var m = Regex.Match(line.Trim(), @"^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5})\s+(\w+)$");
+            if (!m.Success) continue;
             var ip = m.Groups[1].Value;
             if (!ip.StartsWith(head)) continue;
+            if (ip.EndsWith(".255") || ip.EndsWith(".0")) continue;      // 广播 / 网络地址不是设备
             var mac = m.Groups[2].Value.Replace('-', ':').ToUpperInvariant();
+            var st = m.Groups[3].Value;
             devices[ip] = new LanDevice
             {
                 Ip = ip, Mac = mac, Vendor = Vendor(mac), Source = "本机",
+                // 邻居表状态：Reachable/Permanent = 在线；Stale = 见过但可能走了
+                State = st is "Reachable" or "Permanent" ? "在线" : "可能在线",
             };
         }
 
@@ -183,10 +224,16 @@ public static class LanScan
         if (rc is { IsConfigured: true })
         {
             progress("正在问软路由要设备表 …");
-            var cmd = "ip -4 neigh show 2>/dev/null; echo '---LEASES---'; " +
+            // 一条 ssh 拿全：邻居表 + 无线接口 + 每个接口的站点信息 + 租约
+            // 每条 iw 都套 timeout 3：驱动卡住时最多等 3 秒就放弃，不会把整个扫描拖死
+            var cmd = "ip -4 neigh show 2>/dev/null; " +
+                      "echo '---IW---'; timeout 3 iw dev 2>/dev/null; " +
+                      "echo '---STATION---'; for d in $(timeout 3 iw dev 2>/dev/null | awk '/Interface/{print $2}'); " +
+                      "do timeout 3 iw dev $d station dump 2>/dev/null; done; " +
+                      "echo '---ROUTE---'; ip route get 1.1.1.1 2>/dev/null | head -1; " +
+                      "echo '---LEASES---'; " +
                       "cat /var/lib/misc/dnsmasq.leases 2>/dev/null; " +
-                      "cat /var/lib/NetworkManager/*.leases 2>/dev/null; " +
-                      "cat /tmp/dhcp.leases 2>/dev/null; true";
+                      "cat /var/lib/NetworkManager/*.leases 2>/dev/null; true";
             var (rc2, rem, err2) = await Remote.RunAsync("ssh.exe",
                 $"-o ConnectTimeout=4 -o BatchMode=yes -o StrictHostKeyChecking=accept-new " +
                 $"-o NumberOfPasswordPrompts=0 -p {rc.Port} {rc.Target} \"{cmd}\"", 20);
@@ -197,59 +244,153 @@ public static class LanScan
             if (rem.Length > 0 && (rc2 == 0 || rem.Contains("lladdr")))
             {
                 var names = new Dictionary<string, string>(StringComparer.Ordinal);
+                var ifaceOf = new Dictionary<string, string>(StringComparer.Ordinal);       // ip → 接口名
+                var signalOf = new Dictionary<string, string>(StringComparer.Ordinal);     // MAC → "-49dBm"
+                var stationOn = new Dictionary<string, string>(StringComparer.Ordinal);    // MAC → 接口名
+                var ifaceType = new Dictionary<string, string>(StringComparer.Ordinal);    // 接口 → AP/station/...
+                var ifaceBand = new Dictionary<string, string>(StringComparer.Ordinal);    // 接口 → 2.4G/5G
 
-                foreach (var line in rem.Split('\n'))
+                var seg = "NEIGH";
+                string? lastIface = null;
+                string? lastStation = null;
+                var wanIface = "";
+                foreach (var raw in rem.Split('\n'))
                 {
-                    var t = line.Trim();
+                    var t = raw.Trim();
+                    if (t == "---IW---") { seg = "IW"; lastIface = null; continue; }
+                    if (t == "---STATION---") { seg = "STATION"; lastIface = null; lastStation = null; continue; }
+                    if (t == "---ROUTE---") { seg = "ROUTE"; continue; }
+                    if (t == "---LEASES---") { seg = "LEASES"; continue; }
+                    if (t == "") continue;
 
-                    // ip neigh: 192.168.1.10 dev wlan0 lladdr 3c:cd:5d:xx:xx:xx REACHABLE
-                    var mn = Regex.Match(t, @"^(\d+\.\d+\.\d+\.\d+)\s+dev\s+\S+\s+lladdr\s+([0-9a-fA-F:]{17})");
-                    if (mn.Success)
+                    if (seg == "IW")
                     {
-                        var ip = mn.Groups[1].Value;
-                        if (!ip.StartsWith(head)) continue;          // 只认扫描网段，跳过 docker0 / 上游网关
-                        var mac = mn.Groups[2].Value.ToUpperInvariant();
-                        if (!devices.ContainsKey(ip))
-                            devices[ip] = new LanDevice { Ip = ip, Mac = mac, Vendor = Vendor(mac), Source = "软路由" };
-                        else
+                        // Interface wlp2s0 / type AP / channel 6 (2437 MHz), width: 20 MHz
+                        var mi = Regex.Match(t, @"^Interface\s+(\S+)$");
+                        if (mi.Success) { lastIface = mi.Groups[1].Value; continue; }
+                        if (lastIface == null) continue;
+                        var mt = Regex.Match(t, @"^type\s+(\S+)$");
+                        if (mt.Success) { ifaceType[lastIface] = mt.Groups[1].Value; continue; }
+                        var mc = Regex.Match(t, @"^channel\s+(\d+)");
+                        if (mc.Success && int.TryParse(mc.Groups[1].Value, out var ch))
+                            ifaceBand[lastIface] = ch <= 14 ? "2.4G" : "5G";
+                        continue;
+                    }
+
+                    if (seg == "STATION")
+                    {
+                        var ms = Regex.Match(t, @"^Station\s+([0-9a-fA-F:]{17})\s+\(on\s+(\S+)\)");
+                        if (ms.Success)
                         {
-                            devices[ip].Source = "本机+软路由";
-                            if (string.IsNullOrEmpty(devices[ip].Mac)) devices[ip].Mac = mac;
-                            if (devices[ip].Vendor == "—") devices[ip].Vendor = Vendor(mac);
+                            var mac2 = ms.Groups[1].Value.ToUpperInvariant();
+                            stationOn[mac2] = ms.Groups[2].Value;
+                            lastIface = ms.Groups[2].Value;
+                            lastStation = mac2;
+                            continue;
+                        }
+                        var mg = Regex.Match(t, @"^signal:\s+(-?\d+)\s");
+                        if (mg.Success && lastStation != null)
+                            signalOf[lastStation] = mg.Groups[1].Value + "dBm";
+                        continue;
+                    }
+
+                    if (seg == "ROUTE")
+                    {
+                        var mr = Regex.Match(t, @"\bdev\s+(\S+)");
+                        if (mr.Success) wanIface = mr.Groups[1].Value;
+                        continue;
+                    }
+
+                    if (seg == "NEIGH")
+                    {
+                        // ip neigh: 192.168.1.23 dev wlan0 lladdr 3c:cd:5d:xx:xx:xx REACHABLE
+                        var mn = Regex.Match(t, @"^(\d+\.\d+\.\d+\.\d+)\s+dev\s+(\S+)\s+lladdr\s+([0-9a-fA-F:]{17})");
+                        if (mn.Success)
+                        {
+                            var ip = mn.Groups[1].Value;
+                            if (!ip.StartsWith(head)) continue;          // 只认扫描网段，跳过 docker0 / 上游网关
+                            var iface = mn.Groups[2].Value;
+                            var mac = mn.Groups[3].Value.ToUpperInvariant();
+                            ifaceOf[ip] = iface;
+                            if (!devices.ContainsKey(ip))
+                                devices[ip] = new LanDevice { Ip = ip, Mac = mac, Vendor = Vendor(mac), Source = "软路由" };
+                            else
+                            {
+                                devices[ip].Source = "本机+软路由";
+                                if (string.IsNullOrEmpty(devices[ip].Mac)) devices[ip].Mac = mac;
+                                if (devices[ip].Vendor == "—") devices[ip].Vendor = Vendor(mac);
+                            }
                         }
                         continue;
                     }
 
-                    // dnsmasq leases: 1730000000 3c:cd:5d:xx:xx:xx 192.168.1.20 my-phone *
+                    // LEASES 段：dnsmasq / NetworkManager 写法都在这里
                     var ml = Regex.Match(t, @"^\d{9,}\s+([0-9a-fA-F:]{17})\s+(\d+\.\d+\.\d+\.\d+)\s+(\S+)");
                     if (ml.Success)
                     {
-                        var mac = ml.Groups[1].Value.ToUpperInvariant();
-                        var ip = ml.Groups[2].Value;
                         var host = ml.Groups[3].Value.TrimEnd('*').Trim();
-                        if (host != "" && host != "*") names[ip] = host;
-                        continue;
-                    }
-
-                    // NetworkManager 租约（写法略有不同：expiry mac ip hostname clientid）
-                    var mnm = Regex.Match(t, @"^\d{9,}\s+([0-9a-fA-F:]{17})\s+(\d+\.\d+\.\d+\.\d+)\s+(\S+)");
-                    if (mnm.Success)
-                    {
-                        var host = mnm.Groups[3].Value.TrimEnd('*').Trim();
-                        if (host != "" && host != "*") names[mnm.Groups[2].Value] = host;
+                        if (host != "" && host != "*") names[ml.Groups[2].Value] = host;
                     }
                 }
+
+                // ---- 把"连在哪"算出来（不额外发包，全部来自上面这一条 ssh）----
+                foreach (var d in devices.Values)
+                {
+                    if (selfIps.Contains(d.Ip)) { d.Conn = "本机"; continue; }
+                    var macKey = d.Mac.ToUpperInvariant();
+                    if (stationOn.TryGetValue(macKey, out var apIface))
+                    {
+                        var band = ifaceBand.TryGetValue(apIface, out var bd) ? bd : "";
+                        var sig = signalOf.TryGetValue(macKey, out var sg) ? sg : "";
+                        d.Conn = ("无线 " + band + " " + sig).Trim();
+                        continue;
+                    }
+                    if (ifaceOf.TryGetValue(d.Ip, out var ifc))
+                    {
+                        if (!string.IsNullOrEmpty(wanIface) && ifc == wanIface) d.Conn = "有线（外网侧）";
+                        else if (ifaceType.TryGetValue(ifc, out var ty) && ty == "AP") d.Conn = "无线 " + (ifaceBand.TryGetValue(ifc, out var b2) ? b2 : "");
+                        else d.Conn = ifc;
+                        continue;
+                    }
+                    // 留着空，交给后面统一兜底（网关 / 同网段 / 本机）
+                }
+
+                AppPaths.Log($"[设备] 解析：接口={ifaceOf.Count} 站点={stationOn.Count} 信号={signalOf.Count} 类型={ifaceType.Count} 频段={ifaceBand.Count} wan={wanIface} 名字={names.Count}");
 
                 foreach (var kv in names)
                     if (devices.TryGetValue(kv.Key, out var d)) d.Name = kv.Value;
             }
         }
 
+        // 没走远端查询的设备（只在本机 ARP 里看到）补个默认值
+        var localGw = DefaultGateway();
+        foreach (var d in devices.Values)
+            if (string.IsNullOrEmpty(d.Conn))
+                d.Conn = selfIps.Contains(d.Ip) ? "本机"
+                        : (!string.IsNullOrEmpty(localGw) && d.Ip == localGw ? "网关（本机直连）" : "同网段");
+
+        // 自己这台也列出来（ARP 表里没有自己的条目）
+        foreach (var sip in selfIps)
+        {
+            if (!sip.StartsWith(head)) continue;
+            if (!devices.ContainsKey(sip))
+                devices[sip] = new LanDevice { Ip = sip, Mac = "", Vendor = "", Source = "本机", Name = "这台电脑" };
+        }
+
+        // ---------- ③.5 名称：问软路由的 dnsmasq 要反向 DNS ----------
+        // 只对"已经找到的设备"查，绝不扫网段；查不到就留空。
+        await FillNamesAsync(devices, head, selfIps, progress, ct);
+
+        // ---------- ③.8 延迟：快速模式给已知设备补 1 个轻 ping ----------
+        // 深度模式下面的 alive 已经是 3 包真实值，这里只补快速模式。
+        if (!deep) await LightPingAsync(devices, alive, selfIps, progress, ct);
+
         // ---------- ④ 组装 ----------
         foreach (var kv in devices)
         {
             var d = kv.Value;
-            if (selfIps.Contains(d.Ip)) d.Name = d.Name == "" ? "这台电脑" : d.Name + "（这台电脑）";
+            if (selfIps.Contains(d.Ip) && !d.Name.Contains("这台电脑"))
+                d.Name = d.Name == "" ? "这台电脑" : d.Name + "（这台电脑）";
 
             if (alive.TryGetValue(d.Ip, out var ms))
             {
@@ -266,10 +407,14 @@ public static class LanScan
                 d.State = "在线";
                 d.Rtt = "—";
             }
-            else
+            else if (d.State == "" || d.State == null)
             {
                 d.State = "不在线";
                 d.Rtt = "—";
+            }
+            else
+            {
+                d.Rtt = "—";                                  // 邻居表给的状态（在线/可能在线），保留
             }
         }
 
@@ -280,5 +425,226 @@ public static class LanScan
 
         progress($"扫完：{list.Count} 台设备，{list.Count(x => x.State == "在线")} 台在线");
         return list;
+    }
+
+    // ================= 名称：反向 DNS（PTR） =================
+
+    /// <summary>
+    /// 向软路由的 dnsmasq 查每台设备的 PTR 记录。
+    /// 名字只有 DHCP 服务器知道，所以这一步必须在"知道路由器地址"时才做。
+    /// 上限 40 台；每台 2 秒超时；任何异常都只是"这个名字查不到"，不影响扫描结果。
+    /// </summary>
+    private static async Task FillNamesAsync(
+        Dictionary<string, LanDevice> devices, string head, HashSet<string> selfIps,
+        Action<string> progress, CancellationToken ct)
+    {
+        var gwForFilter = DefaultGateway();
+        var need = devices.Values
+            .Where(d => string.IsNullOrWhiteSpace(d.Name) && d.Ip.StartsWith(head)
+                        && !selfIps.Contains(d.Ip) && d.Ip != gwForFilter)   // 路由器自己不用查，白等 1 秒
+            .Select(d => d.Ip).Take(41).ToList();
+        if (need.Count == 0) return;
+
+        if (need.Count > 40)
+        {
+            progress("设备太多（>40 台），跳过名字查询");
+            return;
+        }
+
+        // DNS 服务器 = 默认网关（shared 模式下 dnsmasq 就挂在网关地址上）
+        var gw = gwForFilter;
+        if (string.IsNullOrEmpty(gw))
+        {
+            progress("没有默认网关，跳过名字查询");
+            return;
+        }
+
+        progress($"正在问 {gw} 要设备名（{need.Count} 个）…");
+        var got = 0;
+        // 并发 8、单次 1200ms 超时：既快又不会把路由器问懵
+        using var gate = new SemaphoreSlim(8);
+        var tasks = need.Select(async ip =>
+        {
+            await gate.WaitAsync(ct);
+            try
+            {
+                var name = await PtrLookupAsync(gw, ip, 1200, ct);
+                if (IsUsableName(name, ip) && devices.TryGetValue(ip, out var d) && string.IsNullOrWhiteSpace(d.Name))
+                {
+                    d.Name = name;
+                    Interlocked.Increment(ref got);
+                }
+            }
+            catch { }
+            finally { gate.Release(); }
+        }).ToList();
+        try { await Task.WhenAll(tasks); } catch { }
+        progress(got > 0 ? $"名字查到 {got} 个" : "没查到名字（路由器没有这些设备的反向记录）");
+    }
+
+    /// <summary>dnsmasq 对查不到的地址会回 bogon / localhost 这类占位名，不能当设备名用</summary>
+    private static bool IsUsableName(string name, string ip)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        var n = name.Trim();
+        if (n.Length < 2 || n.Length > 64) return false;
+        if (n == ip) return false;
+        foreach (var bad in new[] { "bogon", "localhost", "local", "unknown", "none" })
+            if (n.Equals(bad, StringComparison.OrdinalIgnoreCase) || n.StartsWith(bad + ".", StringComparison.OrdinalIgnoreCase))
+                return false;
+        return true;
+    }
+
+    private static string DefaultGateway()
+    {
+        try
+        {
+            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+                var g = ni.GetIPProperties().GatewayAddresses
+                    .FirstOrDefault(x => x.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                                         !x.Address.Equals(IPAddress.Any));
+                if (g != null) return g.Address.ToString();
+            }
+        }
+        catch { }
+        return "";
+    }
+
+    /// <summary>手搓一个 PTR 查询，不依赖系统 DNS 设置（系统 DNS 是校园网的，不知道局域网名字）</summary>
+    private static async Task<string> PtrLookupAsync(string server, string ip, int timeoutMs, CancellationToken ct)
+    {
+        try
+        {
+            var id = (ushort)Random.Shared.Next(1, 65535);
+            var q = new List<byte>
+            {
+                (byte)(id >> 8), (byte)(id & 0xFF),   // ID
+                0x01, 0x00,                           // 标准查询，期望递归
+                0x00, 0x01,                           // QDCOUNT = 1
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   // AN/NS/AR = 0
+            };
+            var octets = ip.Split('.').Reverse();
+            foreach (var o in octets) { q.Add((byte)o.Length); foreach (var c in o) q.Add((byte)c); }
+            foreach (var lbl in new[] { "in-addr", "arpa" })
+            {
+                q.Add((byte)lbl.Length);
+                foreach (var c in lbl) q.Add((byte)c);
+            }
+            q.Add(0x00);                      // 名称结束
+            q.Add(0x00); q.Add(0x0C);         // QTYPE = PTR
+            q.Add(0x00); q.Add(0x01);         // QCLASS = IN
+
+            using var udp = new System.Net.Sockets.UdpClient();
+            var payload = q.ToArray();
+            await udp.SendAsync(payload, payload.Length, server, 53);
+
+            var recv = udp.ReceiveAsync(ct).AsTask();
+            var done = await Task.WhenAny(recv, Task.Delay(timeoutMs, ct));
+            if (done != recv) return "";
+            var resp = await recv;
+            return ParseFirstPtr(resp.Buffer);
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>从 DNS 应答里取第一条 PTR 的名字</summary>
+    private static string ParseFirstPtr(byte[] b)
+    {
+        if (b.Length < 12) return "";
+        int qd = (b[4] << 8) | b[5];
+        int an = (b[6] << 8) | b[7];
+        if (an == 0) return "";
+        int p = 12;
+        for (int i = 0; i < qd; i++)                 // 跳过问题区
+        {
+            p = SkipName(b, p);
+            p += 4;
+            if (p >= b.Length) return "";
+        }
+        for (int i = 0; i < an && p + 10 < b.Length; i++)
+        {
+            p = SkipName(b, p);                       // 记录名（可能是压缩指针）
+            if (p + 10 > b.Length) return "";
+            int type = (b[p] << 8) | b[p + 1];
+            int rdlen = (b[p + 8] << 8) | b[p + 9];
+            int rd = p + 10;
+            if (type == 12 && rdlen > 0) return ReadName(b, rd).TrimEnd('.').Trim();
+            p = rd + rdlen;
+        }
+        return "";
+    }
+
+    private static int SkipName(byte[] b, int p)
+    {
+        while (p < b.Length)
+        {
+            int len = b[p];
+            if (len == 0) return p + 1;
+            if ((len & 0xC0) == 0xC0) return p + 2;   // 压缩指针，占 2 字节
+            p += 1 + len;
+        }
+        return p;
+    }
+
+    private static string ReadName(byte[] b, int p)
+    {
+        var sb = new System.Text.StringBuilder();
+        int guard = 0;
+        while (p < b.Length && guard++ < 32)
+        {
+            int len = b[p];
+            if (len == 0) break;
+            if ((len & 0xC0) == 0xC0)                 // 指针
+            {
+                if (p + 1 >= b.Length) break;
+                p = ((len & 0x3F) << 8) | b[p + 1];
+                continue;
+            }
+            p++;
+            if (p + len > b.Length) break;
+            sb.Append(System.Text.Encoding.ASCII.GetString(b, p, len)).Append('.');
+            p += len;
+        }
+        return sb.ToString();
+    }
+
+    // ================= 延迟：轻量 ping =================
+
+    /// <summary>
+    /// 快速模式下给"已经有名字/在邻居表里"的设备各发 1 个 ping。
+    /// 1 包/台、400ms 超时、40ms 间隔、最多 40 台 —— 和"254 地址 × 48 并发"不是一个量级。
+    /// </summary>
+    private static async Task LightPingAsync(
+        Dictionary<string, LanDevice> devices,
+        System.Collections.Concurrent.ConcurrentDictionary<string, long> alive,
+        HashSet<string> selfIps, Action<string> progress, CancellationToken ct)
+    {
+        var targets = devices.Values
+            .Where(d => !selfIps.Contains(d.Ip) && d.Ip.Contains('.'))
+            .Select(d => d.Ip).Take(41).ToList();
+        if (targets.Count == 0) return;
+        if (targets.Count > 40)
+        {
+            progress("设备太多（>40 台），跳过延迟探测");
+            return;
+        }
+
+        progress($"正在测延迟（{targets.Count} 台，每台 1 个包）…");
+        foreach (var ip in targets)
+        {
+            if (ct.IsCancellationRequested) break;
+            try
+            {
+                using var ping = new Ping();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var reply = await ping.SendPingAsync(ip, 400);
+                if (reply.Status == IPStatus.Success) alive[ip] = sw.ElapsedMilliseconds;
+            }
+            catch { }
+            try { await Task.Delay(40, ct); } catch (OperationCanceledException) { break; }
+        }
     }
 }
