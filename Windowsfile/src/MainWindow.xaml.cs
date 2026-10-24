@@ -198,9 +198,9 @@ public partial class MainWindow : Window
 
     private void InitConnTab()
     {
-        CmbRemoteAuth.ItemsSource = new[] { "自动（先试密钥，不行再弹密码）", "只用密钥", "只用密码" };
+        CmbRemoteAuth.ItemsSource = new[] { "自动（先密钥后密码）", "只用密钥", "只用密码" };
         var cfg = RemoteConfig.Load();
-        TxtRemoteHost.Text = cfg.Host;
+        TxtRemoteHost.Text = string.IsNullOrWhiteSpace(cfg.Hosts) ? cfg.Host : cfg.Hosts;
         TxtRemoteUser.Text = cfg.User;
         TxtRemotePort.Text = cfg.Port.ToString();
         CmbRemoteAuth.SelectedIndex = cfg.Auth switch { "key" => 1, "password" => 2, _ => 0 };
@@ -210,7 +210,10 @@ public partial class MainWindow : Window
     private RemoteConfig CollectRemote()
     {
         var cfg = RemoteConfig.Load();
-        cfg.Host = TxtRemoteHost.Text.Trim();
+        var all = TxtRemoteHost.Text.Trim();
+        cfg.Hosts = all;
+        cfg.Host = all.Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                     .Select(x => x.Trim()).FirstOrDefault() ?? "";
         cfg.User = TxtRemoteUser.Text.Trim();
         cfg.Port = int.TryParse(TxtRemotePort.Text.Trim(), out var p) && p > 0 && p < 65536 ? p : 22;
         cfg.Auth = CmbRemoteAuth.SelectedIndex switch { 1 => "key", 2 => "password", _ => "auto" };
@@ -232,9 +235,17 @@ public partial class MainWindow : Window
         if (!cfg.IsConfigured) { ConnLog("× 先把地址和用户名填上"); return; }
 
         BtnRemoteTest.IsEnabled = false;
-        ConnLog($"正在测试 {cfg.Target}:{cfg.Port} …");
+        ConnLog($"开始试 {cfg.HostList().Count} 个地址 …");
         try
         {
+            var host = await Remote.ResolveAsync(cfg, ConnLog);
+            if (host == null)
+            {
+                ConnLog("× 所有地址都连不上（不在同一网络？软路由没开机？）");
+                TxtFoot.Text = "× 连接失败：地址都不通";
+                return;
+            }
+            ConnLog($"选中 {host}，正在验证登录 …");
             var (ok, detail) = await Remote.TestAsync(cfg);
             ConnLog((ok ? "√ " : "× ") + detail);
             TxtFoot.Text = (ok ? "√ 连接正常：" : "× 连接失败：") + cfg.Target;
@@ -289,6 +300,24 @@ public partial class MainWindow : Window
             return null;
         }
         catch (Exception ex) { ConnLog("× 解压失败：" + ex.Message); return null; }
+    }
+
+    private async void OnOpenTerminal(object sender, RoutedEventArgs e)
+    {
+        var cfg = CollectRemote();
+        if (!cfg.IsConfigured) { ConnLog("× 先把地址和用户名填上"); return; }
+
+        BtnOpenTerm.IsEnabled = false;
+        try
+        {
+            var host = await Remote.ResolveAsync(cfg, ConnLog);
+            if (host == null) { ConnLog("× 地址都不通，没开终端"); return; }
+
+            ConnLog($"正在打开终端：{cfg.Target}");
+            Remote.OpenTerminal(cfg, "SSH - " + host);
+            TxtFoot.Text = "终端窗口已打开：" + cfg.Target;
+        }
+        finally { BtnOpenTerm.IsEnabled = true; }
     }
 
     private async void OnUploadPackage(object sender, RoutedEventArgs e) => await UploadPackageAsync();
