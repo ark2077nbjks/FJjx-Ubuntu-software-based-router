@@ -123,6 +123,9 @@ public static class StatusGather
         }
         else
         {
+            // 多地址：先探一遍，把能用的那个选出来（HTTP 层不管，纯 TCP 探测很快）
+            await Remote.ResolveAsync(rc);
+
             var (rc2, out2, err2) = await Remote.RunAsync("ssh.exe",
                 $"-o ConnectTimeout=4 -o BatchMode=yes -o StrictHostKeyChecking=accept-new " +
                 $"-o NumberOfPasswordPrompts=0 -p {rc.Port} {rc.Target} " +

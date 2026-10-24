@@ -9,6 +9,8 @@ namespace NetPanel.Services;
 public sealed class RemoteConfig
 {
     public string Host { get; set; } = "";
+    /// <summary>多个候选地址，逗号/空格分隔；Host 自动取第一个通的</summary>
+    public string Hosts { get; set; } = "";
     public string User { get; set; } = "";
     public int Port { get; set; } = 22;
     /// <summary>auto / key / password</summary>
@@ -19,6 +21,18 @@ public sealed class RemoteConfig
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(User);
     [System.Text.Json.Serialization.JsonIgnore]
     public string Target => $"{User}@{Host}";
+
+    /// <summary>所有候选地址（去重、去空）</summary>
+    public List<string> HostList()
+    {
+        var raw = new List<string>();
+        foreach (var part in (Hosts + "," + Host).Split(new[] { ',', ';', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var h = part.Trim();
+            if (h != "" && !raw.Contains(h)) raw.Add(h);
+        }
+        return raw;
+    }
 
     private static readonly JsonSerializerOptions Opt = new() { WriteIndented = true };
 
@@ -53,6 +67,75 @@ public static class Remote
         sb.Append($"-o ConnectTimeout=4 -o StrictHostKeyChecking=accept-new -p {cfg.Port} ");
         if (batchMode) sb.Append("-o BatchMode=yes -o NumberOfPasswordPrompts=0 ");
         return sb.ToString();
+    }
+
+    /// <summary>不带认证地探一下 22 端口开不开（快、也不会触发密码框）</summary>
+    public static async Task<bool> ProbeTcpAsync(string host, int port, int timeoutMs = 1200)
+    {
+        try
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            var task = tcp.ConnectAsync(host, port);
+            var done = await Task.WhenAny(task, Task.Delay(timeoutMs));
+            return done == task && tcp.Connected;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>多地址：按顺序探，第一个通的设为当前地址。返回 null 表示都不通。</summary>
+    public static async Task<string?> ResolveAsync(RemoteConfig cfg, Action<string>? log = null)
+    {
+        var hosts = cfg.HostList();
+        if (hosts.Count == 0) { log?.Invoke("× 没填地址"); return null; }
+
+        foreach (var h in hosts)
+        {
+            var ok = await ProbeTcpAsync(h, cfg.Port);
+            log?.Invoke((ok ? "√ " : "× ") + $"{h}:{cfg.Port}" + (ok ? "  通" : "  连不上"));
+            if (ok)
+            {
+                if (cfg.Host != h) { cfg.Host = h; cfg.Save(); }
+                return h;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>弹一个真正的 SSH 交互终端（能敲命令）</summary>
+    public static void OpenTerminal(RemoteConfig cfg, string title) =>
+        StartConsole($"""
+@echo off
+title {title}
+ssh.exe -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -p {cfg.Port} {cfg.Target}
+echo.
+echo ==== 会话结束，按任意键关闭 ====
+pause >nul
+""");
+
+    /// <summary>
+    /// 把脚本写成临时 bat，再用 start 开一个新控制台跑它。
+    /// 不这么绕的话，嵌套引号在 Windows 命令行里几乎必定被吃掉。
+    /// </summary>
+    private static void StartConsole(string script)
+    {
+        var bat = Path.Combine(Path.GetTempPath(), $"netpanel-{Guid.NewGuid():N}.bat");
+        // bat 必须 CRLF：LF 换行会让 cmd.exe 把整行拆碎（'192.168.50.1' 不是内部或外部命令）
+        var crlf = script.Replace("\r\n", "\n").Replace("\n", "\r\n");
+        File.WriteAllText(bat, crlf, Encoding.GetEncoding(936));
+        try
+        {
+            foreach (var old in Directory.GetFiles(Path.GetTempPath(), "netpanel-*.bat"))
+                if (DateTime.Now - File.GetLastWriteTime(old) > TimeSpan.FromDays(1))
+                    File.Delete(old);
+        }
+        catch { }
+
+        var psi = new ProcessStartInfo("cmd.exe", $"/c start \"\" \"{bat}\"")
+        {
+            UseShellExecute = true,
+            WorkingDirectory = AppPaths.BaseDir,
+        };
+        Process.Start(psi);
     }
 
     /// <summary>测试连接：只跑一条 echo，返回 (成功, 说明)</summary>
@@ -101,17 +184,15 @@ public static class Remote
     /// 在独立的控制台窗口里执行命令（sudo 要交互密码，必须有真终端）
     /// 程序不接触密码。
     /// </summary>
-    public static void RunInConsoleWindow(RemoteConfig cfg, string remoteCommand, string title)
-    {
-        var args = $"-t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -p {cfg.Port} {cfg.Target} \"{remoteCommand}\"";
-        var full = $"title {title} && ssh.exe {args} && echo. && echo ==== 已完成，按任意键关闭 ==== && pause";
-        var psi = new ProcessStartInfo("cmd.exe", "/c start \"\" cmd.exe /k \"" + full + "\"")
-        {
-            UseShellExecute = true,
-            WorkingDirectory = AppPaths.BaseDir,
-        };
-        Process.Start(psi);
-    }
+    public static void RunInConsoleWindow(RemoteConfig cfg, string remoteCommand, string title) =>
+        StartConsole($"""
+@echo off
+title {title}
+ssh.exe -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -p {cfg.Port} {cfg.Target} "{remoteCommand}"
+echo.
+echo ==== 已完成，按任意键关闭 ====
+pause >nul
+""");
 
     public static async Task<(int Rc, string Out, string Err)> RunAsync(string exe, string args, int timeoutSec = 30)
     {

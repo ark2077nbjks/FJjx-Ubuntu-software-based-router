@@ -18,6 +18,11 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // .NET 默认只有 UTF-8/UTF-16；写中文 bat、读 GBK 输出都要这张表
+        try { System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance); }
+        catch (Exception ex) { AppPaths.Log("注册编码表失败: " + ex.Message); }
+
         AppPaths.Ensure();
         AppPaths.Log("=== NetPanel 启动 ===");
         DispatcherUnhandledException += OnUnhandled;
