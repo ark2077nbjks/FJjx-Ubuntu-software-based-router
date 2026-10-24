@@ -112,11 +112,13 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="网络面板" FontSize="22" FontWeight="SemiBold"/>
                 <Border Background="#E8F0FE" CornerRadius="4" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtBadge" Text="v1.13 · 托盘常驻" FontSize="11.5" Foreground="#2F6FED"/>
+                    <TextBlock x:Name="TxtBadge" Text="v1.14 · 图标补全" FontSize="11.5" Foreground="#2F6FED"/>
                 </Border>
             </StackPanel>
-            <TextBlock Grid.Column="1" x:Name="TxtHint" Text="数据目录已就绪"
-                       Foreground="#7C8798" VerticalAlignment="Center" Margin="16,0,0,0"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                <Image x:Name="ImgDotLink" Source="/icons/dot_wait.png" Width="12" Height="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TxtHint" Text="数据目录已就绪" Foreground="#7C8798" VerticalAlignment="Center"/>
+            </StackPanel>
         </Grid>
 
         <!-- 主体 -->
@@ -157,18 +159,26 @@
 
                     <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,16,0">
                         <StackPanel>
-                            <TextBlock Text="本机（这台 Windows）" FontSize="13" FontWeight="SemiBold"
-                                       Foreground="#2F6FED" Margin="0,0,0,8"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Image x:Name="ImgDotLocal" Source="/icons/dot_wait.png" Width="12" Height="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="本机（这台 Windows）" FontSize="13" FontWeight="SemiBold" Foreground="#2F6FED"/>
+                            </StackPanel>
                             <TextBlock x:Name="TxtLocal" Style="{StaticResource Mono}"/>
-                            <TextBlock x:Name="TxtCampus" Style="{StaticResource Mono}" Margin="0,10,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
+                                <Image x:Name="ImgDotCampus" Source="/icons/dot_wait.png" Width="12" Height="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="校园网出口" FontSize="12.5" FontWeight="SemiBold" Foreground="#5B6474"/>
+                            </StackPanel>
+                            <TextBlock x:Name="TxtCampus" Style="{StaticResource Mono}" Margin="0,0,0,0"/>
                         </StackPanel>
                     </ScrollViewer>
 
                     <Border Grid.Column="1" BorderBrush="#DFE3EA" BorderThickness="1,0,0,0" Padding="18,0,0,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
-                                <TextBlock Text="远端软路由" FontSize="13" FontWeight="SemiBold"
-                                           Foreground="#2F6FED" Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Image x:Name="ImgDotMini" Source="/icons/dot_wait.png" Width="12" Height="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="远端软路由" FontSize="13" FontWeight="SemiBold" Foreground="#2F6FED"/>
+                                </StackPanel>
                                 <TextBlock x:Name="TxtMini" Style="{StaticResource Mono}"/>
                                 <TextBlock Text="每 1 分钟自动刷新；点上方「刷新」立即更新" Foreground="#9AA3B2" Margin="0,14,0,0"/>
                             </StackPanel>
@@ -192,7 +202,7 @@
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                         <TextBlock Text="网址连通性" FontSize="15" FontWeight="SemiBold"
                                    Foreground="#2F6FED" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <TextBox x:Name="TxtSites" Width="430" Height="32"
+                        <Image Source="/icons/n_internet_connected.png" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/><TextBox x:Name="TxtSites" Width="430" Height="32"
                                  VerticalContentAlignment="Center"
                                  ToolTip="域名或网址；要批量就一行一个粘贴进来"/>
                         <Button x:Name="BtnCheckSites" AutomationProperties.Name="检测" Height="32" Margin="8,0,0,0" Padding="14,0"
@@ -281,11 +291,10 @@
                     <Grid Grid.Row="0" Margin="0,0,0,8">
                         <TextBlock Style="{StaticResource PageTitle}" Text="局域网设备" VerticalAlignment="Center"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <CheckBox x:Name="ChkDeep" VerticalAlignment="Center" Margin="0,0,14,0"
+                            <Image Source="/icons/n_scan.png" Width="16" Height="16" Margin="0,0,4,0" VerticalAlignment="Center"/><CheckBox x:Name="ChkDeep" VerticalAlignment="Center" Margin="0,0,14,0"
                                       AutomationProperties.Name="深度扫描"
-                                      Content="深度扫描" Foreground="#4B5563"
-                                      ToolTip="默认只读邻居表，不发包。勾上才会 ping 整个网段找漏（16 并发限速）"/>
-                            <TextBlock Text="网段" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                      Content="深度扫描" Foreground="#4B5563" ToolTip="快速模式：读邻居表 + 问路由器要名字 + 每台 1 个 ping（很轻）&#x0a;深度扫描：对整段 254 个地址 ping，16 并发限速，更全但慢（约 10 秒）"/>
+                            <Image Source="/icons/n_subnet_mask.png" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="网段" VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <TextBox x:Name="TxtScanCidr" Width="150" Height="32" VerticalContentAlignment="Center"
                                      ToolTip="点「扫描」时自动填成本机所在网段"/>
                             <Button x:Name="BtnScan" AutomationProperties.Name="扫描设备" Height="32" Margin="10,0,0,0" Padding="14,0"
@@ -297,17 +306,17 @@
                             </Button>
                             <Button x:Name="BtnScanStop" AutomationProperties.Name="停止扫描" Height="32" Margin="8,0,0,0" Padding="12,0"
                                     Click="OnStopScan" IsEnabled="False" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
-                                <TextBlock Text="停止"/>
+                                <StackPanel Orientation="Horizontal"><Image Source="/icons/n_off.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="停止" VerticalAlignment="Center"/></StackPanel>
                             </Button>
                             <Button x:Name="BtnExportDev" AutomationProperties.Name="导出设备" Height="32" Margin="8,0,0,0" Padding="12,0"
                                     Click="OnExportDevices" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
-                                <TextBlock Text="导出 CSV"/>
+                                <StackPanel Orientation="Horizontal"><Image Source="/icons/n_export.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="导出 CSV" VerticalAlignment="Center"/></StackPanel>
                             </Button>
                         </StackPanel>
                     </Grid>
 
                     <TextBlock Grid.Row="1" x:Name="TxtScanInfo" Margin="0,0,0,8" FontSize="12" Foreground="#7C8798"
-                               TextWrapping="Wrap" Text="点「扫描」看当前网段有哪些设备。默认快速模式（只读邻居表，不发包，1 秒出结果）"/>
+                               TextWrapping="Wrap" Text="点「扫描」看当前网段有哪些设备。快速模式：读邻居表 + 问路由器要名字 + 每台发 1 个 ping 测延迟（约 2 秒）"/>
 
                     <Border Grid.Row="2" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4">
                         <DataGrid x:Name="DgDevices" AutoGenerateColumns="False" IsReadOnly="True"
@@ -320,7 +329,7 @@
                                 <DataGridTextColumn Header="MAC" Binding="{Binding Mac}" Width="160"/>
                                 <DataGridTextColumn Header="厂商" Binding="{Binding Vendor}" Width="120"/>
                                 <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*"/>
-                                <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="110"/>
+                                <DataGridTextColumn Header="连接" Binding="{Binding Conn}" Width="170"/>
                                 <DataGridTextColumn Header="状态" Binding="{Binding State}" Width="80"/>
                                 <DataGridTextColumn Header="延迟" Binding="{Binding Rtt}" Width="80"/>
                             </DataGrid.Columns>
@@ -400,7 +409,10 @@
                                        Foreground="#2F6FED"/>
                         </Border>
                         <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
-                            <TextBlock x:Name="TxtGameVerdict" Text="还没开始检测" FontSize="13.5" FontWeight="SemiBold"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Image x:Name="ImgDotGame" Source="/icons/dot_wait.png" Width="12" Height="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtGameVerdict" Text="还没开始检测" FontSize="13.5" FontWeight="SemiBold"/>
+                            </StackPanel>
                             <TextBlock x:Name="TxtGameStats" Text="延迟 —   抖动 —   丢包 —" FontSize="12.5"
                                        Foreground="#5B6474" Margin="0,4,0,0" FontFamily="Consolas"/>
                         </StackPanel>
@@ -435,7 +447,7 @@
                                   VerticalContentAlignment="Center"/>
                         <ComboBox x:Name="CmbDuration" AutomationProperties.Name="时长" Width="96" Height="32" Margin="8,0,0,0"
                                   VerticalContentAlignment="Center"/>
-                        <ComboBox x:Name="CmbConn" AutomationProperties.Name="连接数" Width="104" Height="32" Margin="8,0,0,0"
+                        <Image Source="/icons/n_bandwidth_limit.png" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/><ComboBox x:Name="CmbConn" AutomationProperties.Name="连接数" Width="104" Height="32" Margin="4,0,0,0"
                                   VerticalContentAlignment="Center" ToolTip="同时开几条连接。国内镜像单连接常被限速，多连接累加更接近真实带宽"/>
                         <Button x:Name="BtnSpeedStart" AutomationProperties.Name="开始测速"  Width="96" Height="32" Margin="8,0,0,0"
                                 Click="OnStartSpeed" Background="#2F6FED" Foreground="White"
@@ -487,7 +499,7 @@
                             </Button>
                             <Button x:Name="BtnTrafficOpen" AutomationProperties.Name="打开流量数据目录" Height="32" Margin="8,0,0,0" Padding="12,0"
                                     Click="OnTrafficOpenDir" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
-                                <TextBlock Text="打开数据目录"/>
+                                <StackPanel Orientation="Horizontal"><Image Source="/icons/n_data_usage.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="打开数据目录" VerticalAlignment="Center"/></StackPanel>
                             </Button>
                         </StackPanel>
                     </Grid>
@@ -562,7 +574,7 @@
                                 <TextBox x:Name="TxtRemoteUser" Width="132" Height="32" VerticalContentAlignment="Center"/>
                                 <TextBlock Text="端口" VerticalAlignment="Center" Margin="18,0,8,0"/>
                                 <TextBox x:Name="TxtRemotePort" Width="58" Height="32" VerticalContentAlignment="Center" Text="22"/>
-                                <TextBlock Text="登录" VerticalAlignment="Center" Margin="18,0,8,0"/>
+                                <Image Source="/icons/n_security_policy.png" Width="16" Height="16" Margin="18,0,6,0" VerticalAlignment="Center"/><TextBlock Text="登录" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <ComboBox x:Name="CmbRemoteAuth" AutomationProperties.Name="登录方式"
                                           Width="185" Height="32" VerticalContentAlignment="Center"/>
                             </StackPanel>
@@ -577,7 +589,7 @@
                                 </Button>
                                 <Button x:Name="BtnUpload" AutomationProperties.Name="上传安装包" Height="32" Margin="8,0,0,0" Padding="12,0"
                                         Click="OnUploadPackage" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
-                                    <TextBlock Text="上传到远端"/>
+                                    <StackPanel Orientation="Horizontal"><Image Source="/icons/n_import.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="上传到远端" VerticalAlignment="Center"/></StackPanel>
                                 </Button>
                             </StackPanel>
 
@@ -640,12 +652,12 @@
                             <Button x:Name="BtnLogClear" Height="32" Margin="8,0,0,0" Padding="14,0"
                                     Click="OnClearLog" Background="#EEF2F8" BorderThickness="1"
                                     BorderBrush="#D5DBE5" Cursor="Hand" ToolTip="清空日志（会先备份成 app.log.1）">
-                                <TextBlock Text="清空日志" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal"><Image Source="/icons/b_trash.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="清空日志" VerticalAlignment="Center"/></StackPanel>
                             </Button>
                             <Button x:Name="BtnLogOpen" Height="32" Margin="8,0,0,0" Padding="14,0"
                                     Click="OnOpenLogDir" Background="#EEF2F8" BorderThickness="1"
                                     BorderBrush="#D5DBE5" Cursor="Hand" ToolTip="在资源管理器里打开日志所在目录">
-                                <TextBlock Text="打开目录" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal"><Image Source="/icons/doc.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="打开目录" VerticalAlignment="Center"/></StackPanel>
                             </Button>
                         </StackPanel>
                     </Grid>

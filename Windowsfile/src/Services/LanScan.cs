@@ -202,7 +202,7 @@ public static class LanScan
                 {
                     var t = line.Trim();
 
-                    // ip neigh: 192.168.50.173 dev wlp2s0 lladdr 3c:cd:5d:xx:xx:xx REACHABLE
+                    // ip neigh: 192.168.1.10 dev wlan0 lladdr 3c:cd:5d:xx:xx:xx REACHABLE
                     var mn = Regex.Match(t, @"^(\d+\.\d+\.\d+\.\d+)\s+dev\s+\S+\s+lladdr\s+([0-9a-fA-F:]{17})");
                     if (mn.Success)
                     {
@@ -220,7 +220,7 @@ public static class LanScan
                         continue;
                     }
 
-                    // dnsmasq leases: 1730000000 3c:cd:5d:xx:xx:xx 192.168.50.173 my-phone *
+                    // dnsmasq leases: 1730000000 3c:cd:5d:xx:xx:xx 192.168.1.20 my-phone *
                     var ml = Regex.Match(t, @"^\d{9,}\s+([0-9a-fA-F:]{17})\s+(\d+\.\d+\.\d+\.\d+)\s+(\S+)");
                     if (ml.Success)
                     {

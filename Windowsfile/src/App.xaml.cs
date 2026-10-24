@@ -22,8 +22,10 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // 调试用：设 NETPANEL_MULTI=1 可以无视单实例锁（方便一边跑正式版一边测调试版）
+        var bypassLock = Environment.GetEnvironmentVariable("NETPANEL_MULTI") == "1";
         _single = new System.Threading.Mutex(true, "Global\\NetPanel_SingleInstance", out var isFirst);
-        if (!isFirst)
+        if (!isFirst && !bypassLock)
         {
             MessageBox.Show("网络面板已经开着了。\n\n如果窗口看不见，它可能缩在右下角托盘里 —— 双击那个蓝色路由器图标就能打开。\n（同一时间只能开一个：不然流量会重复统计，日志也会乱。）",
                 "网络面板", MessageBoxButton.OK, MessageBoxImage.Information);

@@ -78,6 +78,25 @@ public partial class MainWindow : Window
         };
     }
 
+    // ---------------- 状态圆点 ----------------
+
+    private static readonly BitmapImage DotOn  = new(new Uri("pack://application:,,,/icons/dot_online.png"));
+    private static readonly BitmapImage DotOff = new(new Uri("pack://application:,,,/icons/dot_offline.png"));
+    private static readonly BitmapImage DotWait = new(new Uri("pack://application:,,,/icons/dot_wait.png"));
+    private static readonly BitmapImage DotBad = new(new Uri("pack://application:,,,/icons/dot_bad.png"));
+
+    private static void SetDot(System.Windows.Controls.Image? img, string kind)
+    {
+        if (img == null) return;
+        img.Source = kind switch
+        {
+            "on" => DotOn,
+            "off" => DotOff,
+            "bad" => DotBad,
+            _ => DotWait,
+        };
+    }
+
     // ---------------- 托盘常驻 ----------------
 
     private void InitTray()
@@ -400,7 +419,7 @@ public partial class MainWindow : Window
 
             var online = list.Count(x => x.State == "在线");
             TxtScanInfo.Text = $"√ 共 {list.Count} 台，{online} 台在线" +
-                               (deep ? "（深度扫描）" : "（快速，未发包）") +
+                               (deep ? "（深度扫描）" : "（快速，轻量发包）") +
                                (cfg.IsConfigured ? " + 软路由邻居表" : "（软路由未连接，只看本机 ARP）");
             TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
             AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
@@ -740,10 +759,14 @@ public partial class MainWindow : Window
             await RefreshNicsAsync();
 
             TxtHint.Text = snap.MiniOnline ? "远端已连接" : "远端未连接";
+            SetDot(ImgDotLink, snap.MiniOnline ? "on" : "off");
             TxtFoot.Text = manual
                 ? $"√ 已手动刷新 {DateTime.Now:HH:mm:ss}"
                 : $"自动刷新 {DateTime.Now:HH:mm:ss}";
             TxtFoot.ToolTip = $"数据目录：{AppPaths.DataDir}";
+            SetDot(ImgDotLocal, "on");
+            SetDot(ImgDotCampus, snap.CampusOk ? "on" : "bad");
+            SetDot(ImgDotMini, snap.MiniOnline ? "on" : "off");
             AppPaths.Log($"刷新完成 MiniOnline={snap.MiniOnline}");
             NotifyLinkChange(snap.MiniOnline);
         }
@@ -1497,6 +1520,7 @@ public partial class MainWindow : Window
         BoxGameGrade.Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF2, 0xF8));
         TxtGameGrade.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
         TxtGameVerdict.Text = $"正在测 {host}（{count} 包）…";
+        SetDot(ImgDotGame, "wait");
         TxtGameStats.Text = "延迟 —   抖动 —   丢包 —";
         BtnGameStart.IsEnabled = false;
         BtnGameStop.IsEnabled = true;
@@ -1550,6 +1574,13 @@ public partial class MainWindow : Window
             double lossAvg = lossSum / Math.Max(rounds, 1);
 
             TxtGameGrade.Text = stats.Grade;
+            SetDot(ImgDotGame, stats.Grade switch
+            {
+                "极佳" => "on",
+                "良好" => "on",
+                "勉强" => "wait",
+                _ => "bad",
+            });
             TxtGameVerdict.Text = rounds > 1
                 ? $"{stats.Verdict}（{rounds} 轮平均）"
                 : stats.Verdict;
