@@ -1,0 +1,84 @@
+GrayRouter 1.0 · 一键把 Ubuntu 变成软路由
+================================================
+
+【这是什么】
+一个安装包。在 Ubuntu 上跑一条命令，这台机器就变成软路由：
+上游接校园网/宽带，下游发 WiFi 热点或网线，其他设备连上就能上网。
+
+【能不能装】
+先跑体检（只读，不改任何东西）：
+    bash grayrouter-doctor.sh
+
+它会告诉你：有几块网卡、哪块能当 WAN、哪块能发热点、支持哪些拓扑。
+不满足的拓扑会直接打 ×。
+
+【三种拓扑】
+  A  有线 WAN -> 无线 AP 当 LAN         笔记本 / 带无线的小主机
+  B  有线 WAN -> 有线 LAN               双网口工控机，最稳
+  C  无线 WAN（连别人 WiFi）-> 有线 LAN  蹭网再分给有线设备
+
+选哪台机器能做的那种，安装器会自动过滤掉不能用的。
+
+【安装·双击版（推荐给同学）】
+  1. 解压后先跑一次：   bash 准备.sh
+  2. 双击「GrayRouter 安装」→ 图形向导：
+       选接法 → 填 WiFi 名/密码 → 填网关 → 问要不要 TTL 伪装 → 确认
+       中途弹一次系统密码框（授权安装），输密码即可
+  3. 装完窗口里能看到结果，日志存到家目录 grayrrouter-install-*.log
+  4. 双击「GrayRouter 卸载」可图形化回滚
+  5. 双击「GrayRouter 体检」是只读检查，随时可跑
+
+  要求：系统里有 zenity / pkexec（Ubuntu 桌面版默认都有）。
+
+【安装·命令版】
+    sudo bash install.sh
+    # 演练，只看计划不改系统：
+    sudo bash install.sh --dry-run
+    # 全自动（适合脚本/远程）：
+    sudo bash install.sh --yes --topology=A --ssid=MyAP --password=12345678
+
+安装器会做 7 步：
+  1 探测硬件（网卡、出口、AP 能力）
+  2 选拓扑（自动过滤不可用的）
+  3 确认 WAN / LAN 分别是哪块网卡
+  4 填 SSID 和密码（有线 LAN 不需要）
+  5 打印计划，等你确认
+  6 执行安装
+  7 自检 + 报告
+
+【装完怎么验证】
+  路由器本身：  sudo /opt/grayrouter/bin/router-status.sh
+  免密码版：    /opt/grayrouter/bin/router-status-lite.sh
+  手机/电脑搜 WiFi 名（就是你填的 SSID）连上，能上网就成。
+
+【卸载】
+    sudo bash uninstall.sh
+逆序撤销：删热点连接、删开机服务、删 TTL 规则、删目录，
+原有网络连接一律不碰。
+
+【不会改动什么】
+  · 你原来的 WAN 连接配置（netplan / NetworkManager profile）
+  · 你原有的其他 WiFi 配置
+  · 系统默认路由
+只新建：GrayRouter-LAN 连接、/etc/grayrouter、/opt/grayrouter、一个 systemd 服务。
+所有被改动的文件都会先备份成 *.bak_grayrouter_时间戳。
+
+【常见问题】
+Q 装完手机连上但上不了网？
+A 上游没通。先确认这台机器自己能上网：
+  curl -I https://www.baidu.com
+  校园网需要网页认证的，要先用浏览器认证一次。
+
+Q 想改 WiFi 密码 / 名字？
+A sudo nmcli connection modify GrayRouter-LAN wifi-sec.psk 新密码
+  sudo nmcli connection up GrayRouter-LAN
+
+Q 想关掉开机自启？
+A sudo systemctl disable grayrouter
+
+Q 热点搜不到？
+A 有些无线网卡（尤其 MediaTek 部分型号）不支持 AP 模式，体检会报出来。
+
+【给 Windows 那边用】
+/opt/grayrouter/bin/grayrouter-info.sh 输出 KEY=VALUE 格式的状态，
+Windows「网络面板」靠它读这台机器的状态。

@@ -1,0 +1,519 @@
+﻿<Window x:Class="NetPanel.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="网络面板 NetPanel" Height="830" Width="1200" MinWidth="980" MinHeight="640" Icon="/icons/app.png"
+        WindowStartupLocation="CenterScreen"
+        Background="#F5F6F8" FontFamily="Microsoft YaHei UI" FontSize="13"
+        TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#1F2430"/>
+        </Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Padding" Value="18,8"/>
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+        <Style x:Key="Mono" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas, 等线"/>
+            <Setter Property="FontSize" Value="13.2"/>
+            <Setter Property="Foreground" Value="#2B3444"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="PageTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#26303F"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="Head" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#2F6FED"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style x:Key="NavText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
+        </Style>
+        <Style x:Key="NavTab" TargetType="TabItem">
+            <Setter Property="Foreground" Value="#5B6474"/>
+            <Setter Property="Height" Value="46"/>
+            <Setter Property="Margin" Value="8,2,8,2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="14,0,10,0">
+                            <Grid>
+                                <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
+                                <Rectangle x:Name="Accent" Width="3" Height="20" RadiusX="1.5" RadiusY="1.5"
+                                           Fill="Transparent" HorizontalAlignment="Left"
+                                           Margin="-14,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E8F0FE"/>
+                                <Setter TargetName="Accent" Property="Fill" Value="#2F6FED"/>
+                                <Setter Property="Foreground" Value="#2F6FED"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Bd" Property="Background" Value="#F1F5FC"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="NavTabControl" TargetType="TabControl">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="172"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Background="#FAFBFD" BorderBrush="#E7EAF0" BorderThickness="1"
+                                    CornerRadius="6" Padding="0,10">
+                                <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1"/>
+                            </Border>
+                            <Border Grid.Column="1" Background="White" Margin="10,0,0,0"
+                                    BorderBrush="#E7EAF0" BorderThickness="1" CornerRadius="6" Padding="16">
+                                <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                  ContentSource="SelectedContent"/>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部 -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="网络面板" FontSize="22" FontWeight="SemiBold"/>
+                <Border Background="#E8F0FE" CornerRadius="4" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtBadge" Text="v1.5 · 连接与部署" FontSize="11.5" Foreground="#2F6FED"/>
+                </Border>
+            </StackPanel>
+            <TextBlock Grid.Column="1" x:Name="TxtHint" Text="数据目录已就绪"
+                       Foreground="#7C8798" VerticalAlignment="Center" Margin="16,0,0,0"/>
+        </Grid>
+
+        <!-- 主体 -->
+        <TabControl Grid.Row="1" Margin="0,14,0,0" Style="{StaticResource NavTabControl}"
+                    TabStripPlacement="Left" ItemContainerStyle="{StaticResource NavTab}">
+
+            <TabItem AutomationProperties.Name="状态">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/home.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="状态" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="运行状态"/>
+                        <Button x:Name="BtnRefresh" AutomationProperties.Name="刷新" HorizontalAlignment="Right" Width="92" Height="32"
+                                Click="OnRefresh" Background="#2F6FED" Foreground="White"
+                                BorderThickness="0" FontSize="13.5" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/refresh_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="刷新" VerticalAlignment="Center" Foreground="White"/></StackPanel></Button>
+                    </Grid>
+
+                    <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.05*"/>
+                        <ColumnDefinition Width="1*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,16,0">
+                        <StackPanel>
+                            <TextBlock Text="本机（这台 Windows）" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="#2F6FED" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="TxtLocal" Style="{StaticResource Mono}"/>
+                            <TextBlock x:Name="TxtCampus" Style="{StaticResource Mono}" Margin="0,10,0,0"/>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Border Grid.Column="1" BorderBrush="#DFE3EA" BorderThickness="1,0,0,0" Padding="18,0,0,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="远端软路由" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="#2F6FED" Margin="0,0,0,8"/>
+                                <TextBlock x:Name="TxtMini" Style="{StaticResource Mono}"/>
+                                <TextBlock Text="每 1 分钟自动刷新；点上方「刷新」立即更新" Foreground="#9AA3B2" Margin="0,14,0,0"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+
+            <TabItem AutomationProperties.Name="网址检测">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/globe.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="网址检测" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="网址连通性" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="#2F6FED" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBox x:Name="TxtSites" Width="430" Height="32"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="域名或网址；要批量就一行一个粘贴进来"/>
+                        <Button x:Name="BtnCheckSites" AutomationProperties.Name="检测" Height="32" Margin="8,0,0,0" Padding="14,0"
+                                Click="OnCheckSites" Background="#2F6FED" Foreground="White"
+                                BorderThickness="0" Cursor="Hand">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="/icons/globe_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="检测" VerticalAlignment="Center" Foreground="White"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Height="32" Margin="8,0,0,0" Padding="14,0"
+                                Click="OnCheckAllPresets" AutomationProperties.Name="测全部常用" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" Cursor="Hand">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="/icons/star.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="测全部常用" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BtnExportSites" AutomationProperties.Name="导出结果" Height="32" Margin="8,0,0,0" Padding="14,0"
+                                Click="OnExportSites" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" Cursor="Hand" ToolTip="把这次检测结果存成 csv（excel 能直接打开）">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="/icons/upload.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="导出" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Margin="0,0,0,6">
+                        <TextBlock Text="国内常用（点一个就测它）" FontSize="12" Foreground="#7C8798" Margin="0,0,0,5"/>
+                        <WrapPanel x:Name="PanelPresetsCn" Margin="0,0,0,6"/>
+                        <TextBlock Text="国外常用" FontSize="12" Foreground="#7C8798" Margin="0,0,0,5"/>
+                        <WrapPanel x:Name="PanelPresetsForeign" Margin="0,0,0,6"/>
+                        <TextBlock Text="GitHub 相关（主站和 CDN 在国内表现差很多）" FontSize="12" Foreground="#7C8798" Margin="0,0,0,5"/>
+                        <WrapPanel x:Name="PanelPresetsGitHub"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" x:Name="TxtSiteHint" Text="一行一个可批量；结果显示状态码与各段耗时"
+                               FontSize="12" Foreground="#9AA3B2" Margin="0,6,0,8"/>
+
+                    <Border Grid.Row="3" Background="White" BorderBrush="#E4E8EF" BorderThickness="1"
+                            CornerRadius="4" Padding="14,10">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="PanelSiteResults"/>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem AutomationProperties.Name="网卡">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/lan.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="网卡" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="启用 / 禁用网卡" VerticalAlignment="Center"/>
+                        <Button  Width="96" Height="32" Margin="16,0,0,0"
+                                Click="OnRefreshNics" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/refresh.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="刷新列表" VerticalAlignment="Center"/></StackPanel></Button>
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                        <TextBlock Text="所有操作都会先弹确认框；禁用无线网卡会立刻断网，请看清提示。"
+                                   Foreground="#7C8798" FontSize="12"/>
+                        <TextBlock x:Name="TxtNicNotice" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="#C88600" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="PanelNics"/>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <TabItem AutomationProperties.Name="WiFi">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/wifi.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="WiFi" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="无线网络" VerticalAlignment="Center"/>
+                        <Button  Width="80" Height="32" Margin="16,0,0,0"
+                                Click="OnScanWifi" Background="#2F6FED" Foreground="White"
+                                BorderThickness="0" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/wifi_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="扫描" VerticalAlignment="Center" Foreground="White"/></StackPanel></Button>
+                        <Button  Width="96" Height="32" Margin="8,0,0,0"
+                                Click="OnDisconnectWifi" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/net_off.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="断开当前" VerticalAlignment="Center"/></StackPanel></Button>
+                        <Button  Width="118" Height="32" Margin="8,0,0,0"
+                                Click="OnOpenLocation" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/gear.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="打开位置设置" VerticalAlignment="Center"/></StackPanel></Button>
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" x:Name="TxtWifiHint"
+                               Text="Windows 11 要求「位置服务」开着才能扫到 WiFi 列表。"
+                               Foreground="#7C8798" FontSize="12" Margin="0,0,0,10"
+                               TextWrapping="Wrap"/>
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="PanelWifi"/>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <TabItem AutomationProperties.Name="游戏延迟">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/gauge.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="游戏延迟" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="游戏延迟 / 丢包（CS2 亚服）" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="CmbGameTarget" AutomationProperties.Name="目标" Width="250" Height="32" Margin="14,0,0,0"
+                                  VerticalContentAlignment="Center"/>
+                        <TextBox x:Name="TxtGameHost" Width="150" Height="32" Margin="8,0,0,0"
+                                 VerticalContentAlignment="Center" ToolTip="自定义目标：IP 或域名"/>
+                        <ComboBox x:Name="CmbGameCount" AutomationProperties.Name="包数" Width="86" Height="32" Margin="8,0,0,0"
+                                  VerticalContentAlignment="Center"/>
+                        <ComboBox x:Name="CmbGameRounds" AutomationProperties.Name="连测次数" Width="96" Height="32" Margin="8,0,0,0"
+                                  VerticalContentAlignment="Center" ToolTip="连测多轮取平均，WiFi 抖动大时更准"/>
+                        <Button x:Name="BtnGameStart" AutomationProperties.Name="开始检测"  Width="96" Height="32" Margin="8,0,0,0"
+                                Click="OnStartGamePing" Background="#2F6FED" Foreground="White"
+                                BorderThickness="0" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/wrench_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="开始检测" VerticalAlignment="Center" Foreground="White"/></StackPanel></Button>
+                        <Button x:Name="BtnGameStop" AutomationProperties.Name="停止检测" Width="72" Height="32" Margin="8,0,0,0"
+                                Click="OnStopGamePing" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" IsEnabled="False" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/power.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="停止" VerticalAlignment="Center"/></StackPanel></Button>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1" x:Name="TxtGameHint"
+                               Text="选一个目标（或在右边填 IP）后点「开始检测」。预置的香港节点就是 CS2 亚服线路。"
+                               Foreground="#7C8798" FontSize="12" Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+                        <Border x:Name="BoxGameGrade" Background="#EEF2F8" CornerRadius="6" Padding="14,8"
+                                VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtGameGrade" Text="—" FontSize="18" FontWeight="Bold"
+                                       Foreground="#2F6FED"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
+                            <TextBlock x:Name="TxtGameVerdict" Text="还没开始检测" FontSize="13.5" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="TxtGameStats" Text="延迟 —   抖动 —   丢包 —" FontSize="12.5"
+                                       Foreground="#5B6474" Margin="0,4,0,0" FontFamily="Consolas"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border Grid.Row="3" Background="White" BorderBrush="#E4E8EF" BorderThickness="1"
+                            CornerRadius="4" Padding="14,12,14,12">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="每个包的往返时间（ms，× 表示丢包）" FontSize="12"
+                                           Foreground="#7C8798" Margin="0,0,0,8"/>
+                                <TextBlock x:Name="TxtGamePackets" Text="" FontFamily="Consolas" FontSize="13"
+                                           TextWrapping="Wrap" LineHeight="22"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem AutomationProperties.Name="测速">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/bars.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="测速" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="网络测速" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="CmbSource" AutomationProperties.Name="测速源" Width="230" Height="32" Margin="16,0,0,0"
+                                  VerticalContentAlignment="Center"/>
+                        <ComboBox x:Name="CmbDuration" AutomationProperties.Name="时长" Width="96" Height="32" Margin="8,0,0,0"
+                                  VerticalContentAlignment="Center"/>
+                        <ComboBox x:Name="CmbConn" AutomationProperties.Name="连接数" Width="104" Height="32" Margin="8,0,0,0"
+                                  VerticalContentAlignment="Center" ToolTip="同时开几条连接。国内镜像单连接常被限速，多连接累加更接近真实带宽"/>
+                        <Button x:Name="BtnSpeedStart" AutomationProperties.Name="开始测速"  Width="96" Height="32" Margin="8,0,0,0"
+                                Click="OnStartSpeed" Background="#2F6FED" Foreground="White"
+                                BorderThickness="0" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/gauge_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="开始测速" VerticalAlignment="Center" Foreground="White"/></StackPanel></Button>
+                        <Button x:Name="BtnSpeedStop" AutomationProperties.Name="停止测速" Width="72" Height="32" Margin="8,0,0,0"
+                                Click="OnStopSpeed" Background="#EEF2F8" BorderThickness="1"
+                                BorderBrush="#D5DBE5" IsEnabled="False" Cursor="Hand"><StackPanel Orientation="Horizontal"><Image Source="/icons/power.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="停止" VerticalAlignment="Center"/></StackPanel></Button>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,10">
+                        <TextBlock x:Name="TxtSpeedNow" Text="0.0" FontSize="30" FontWeight="Bold"
+                                   Foreground="#2F6FED" VerticalAlignment="Bottom"/>
+                        <TextBlock Text=" Mbps" FontSize="14" Foreground="#7C8798"
+                                   VerticalAlignment="Bottom" Margin="4,0,26,6"/>
+                        <StackPanel VerticalAlignment="Bottom" Margin="0,0,0,4">
+                            <TextBlock x:Name="TxtSpeedAvg" Text="平均 —" FontSize="12.5" Foreground="#5B6474"/>
+                            <TextBlock x:Name="TxtSpeedBytes" Text="已下载 —" FontSize="12.5" Foreground="#5B6474" Margin="0,3,0,0"/>
+                            <TextBlock x:Name="TxtSpeedPing" Text="延迟 —" FontSize="12.5" Foreground="#5B6474" Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border Grid.Row="2" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4">
+                        <Canvas x:Name="ChartCanvas" ClipToBounds="True" Margin="0"/>
+                    </Border>
+                </Grid>
+            </TabItem>
+        
+            <TabItem AutomationProperties.Name="连接">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/link.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="连接" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Style="{StaticResource PageTitle}" Text="连接与部署"/>
+                        <Button x:Name="BtnRemoteTest" AutomationProperties.Name="测试连接" HorizontalAlignment="Right"
+                                Height="32" Padding="14,0" Click="OnTestRemote" Background="#2F6FED" Foreground="White"
+                                BorderThickness="0" Cursor="Hand">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="/icons/net_on_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="测试连接" VerticalAlignment="Center" Foreground="White"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <Border Grid.Row="1" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4" Padding="16,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="地址" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBox x:Name="TxtRemoteHost" Width="190" Height="32" VerticalContentAlignment="Center"
+                                         ToolTip="软路由的 IP 或主机名"/>
+                                <TextBlock Text="用户名" VerticalAlignment="Center" Margin="18,0,8,0"/>
+                                <TextBox x:Name="TxtRemoteUser" Width="160" Height="32" VerticalContentAlignment="Center"/>
+                                <TextBlock Text="端口" VerticalAlignment="Center" Margin="18,0,8,0"/>
+                                <TextBox x:Name="TxtRemotePort" Width="64" Height="32" VerticalContentAlignment="Center" Text="22"/>
+                                <TextBlock Text="登录" VerticalAlignment="Center" Margin="18,0,8,0"/>
+                                <ComboBox x:Name="CmbRemoteAuth" AutomationProperties.Name="登录方式"
+                                          Width="180" Height="32" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <TextBlock Text="部署包" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBox x:Name="TxtPackageDir" Width="360" Height="32" VerticalContentAlignment="Center"
+                                         ToolTip="GrayRouter 的 zip 包，或已解压的目录"/>
+                                <Button x:Name="BtnPickPackage" Height="32" Margin="8,0,0,0" Padding="12,0" Click="OnPickPackage"
+                                        Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
+                                    <TextBlock Text="选择 zip…"/>
+                                </Button>
+                                <Button x:Name="BtnUpload" AutomationProperties.Name="上传安装包" Height="32" Margin="8,0,0,0" Padding="12,0"
+                                        Click="OnUploadPackage" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
+                                    <TextBlock Text="上传到远端"/>
+                                </Button>
+                            </StackPanel>
+
+                            <Grid Margin="0,12,0,0">
+                                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#7C8798" TextWrapping="Wrap"
+                                           Margin="0,0,190,0"
+                                           Text="密码不会保存：登录方式选「密码」时，部署会弹出终端窗口，密码在那个窗口里输入，本程序看不到。"/>
+                                <Button x:Name="BtnDeploy" AutomationProperties.Name="开始部署" HorizontalAlignment="Right"
+                                        Width="160" Height="32" Padding="12,0" Click="OnDeploy"
+                                        Background="#2F6FED" Foreground="White" BorderThickness="0" Cursor="Hand">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image Source="/icons/upload_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="开始部署" VerticalAlignment="Center" Foreground="White"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="2" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4" Margin="0,10,0,0">
+                        <TextBox x:Name="TxtConnLog" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 FontFamily="Consolas" FontSize="12" Foreground="#2B3444"
+                                 VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Padding="10,8"/>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem AutomationProperties.Name="日志">
+                <TabItem.Header><StackPanel Orientation="Horizontal"><Image Source="/icons/doc.png" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="日志" Style="{StaticResource NavText}"/></StackPanel></TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource PageTitle}" Text="运行日志"/>
+                            <TextBlock x:Name="TxtLogInfo" Margin="12,0,0,0" VerticalAlignment="Center"
+                                       FontSize="12" Foreground="#7C8798"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="BtnLogRefresh" AutomationProperties.Name="刷新日志" Height="32" Padding="14,0"
+                                    Click="OnRefreshLog" Background="#2F6FED" Foreground="White"
+                                    BorderThickness="0" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="/icons/refresh_w.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="刷新" VerticalAlignment="Center" Foreground="White"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnLogClear" Height="32" Margin="8,0,0,0" Padding="14,0"
+                                    Click="OnClearLog" Background="#EEF2F8" BorderThickness="1"
+                                    BorderBrush="#D5DBE5" Cursor="Hand" ToolTip="清空日志（会先备份成 app.log.1）">
+                                <TextBlock Text="清空日志" VerticalAlignment="Center"/>
+                            </Button>
+                            <Button x:Name="BtnLogOpen" Height="32" Margin="8,0,0,0" Padding="14,0"
+                                    Click="OnOpenLogDir" Background="#EEF2F8" BorderThickness="1"
+                                    BorderBrush="#D5DBE5" Cursor="Hand" ToolTip="在资源管理器里打开日志所在目录">
+                                <TextBlock Text="打开目录" VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Grid.Row="1" Background="White" BorderBrush="#E4E8EF" BorderThickness="1" CornerRadius="4">
+                        <TextBox x:Name="TxtLog" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 FontFamily="Consolas" FontSize="12" Foreground="#2B3444"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap" Padding="10,8"/>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- 底栏 -->
+        <TextBlock Grid.Row="2" x:Name="TxtFoot" Text="正在初始化…"
+                   Foreground="#7C8798" FontSize="12" Margin="2,10,0,0"/>
+    </Grid>
+</Window>

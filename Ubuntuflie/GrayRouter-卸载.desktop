@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GrayRouter 卸载
+Name[zh_CN]=GrayRouter 卸载
+Comment=撤销 GrayRouter 的所有改动
+Exec=sh -c 'd=$(dirname "$1"); cd "$d"; exec bash uninstall-gui.sh' _ %k
+Icon=edit-delete
+Terminal=false
+Categories=Network;System;

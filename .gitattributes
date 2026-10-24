@@ -1,0 +1,13 @@
+* text=auto
+
+# 脚本必须是 LF，否则 Ubuntu 上会报 "set: -: 无效的选项"
+*.sh        text eol=lf
+*.desktop   text eol=lf
+
+# GBK 编码的说明文件、二进制文件：一律不做换行转换
+*.txt       -text
+*.zip       binary
+*.exe       binary
+*.ico       binary
+*.png       binary
+*.jpg       binary
