@@ -118,13 +118,14 @@ pause >nul
     /// </summary>
     private static void StartConsole(string script)
     {
-        var bat = Path.Combine(Path.GetTempPath(), $"netpanel-{Guid.NewGuid():N}.bat");
+        Directory.CreateDirectory(AppPaths.TmpDir);
+        var bat = Path.Combine(AppPaths.TmpDir, $"netpanel-{Guid.NewGuid():N}.bat");
         // bat 必须 CRLF：LF 换行会让 cmd.exe 把整行拆碎（'192.168.50.1' 不是内部或外部命令）
         var crlf = script.Replace("\r\n", "\n").Replace("\n", "\r\n");
         File.WriteAllText(bat, crlf, Encoding.GetEncoding(936));
         try
         {
-            foreach (var old in Directory.GetFiles(Path.GetTempPath(), "netpanel-*.bat"))
+            foreach (var old in Directory.GetFiles(AppPaths.TmpDir, "netpanel-*.bat"))
                 if (DateTime.Now - File.GetLastWriteTime(old) > TimeSpan.FromDays(1))
                     File.Delete(old);
         }

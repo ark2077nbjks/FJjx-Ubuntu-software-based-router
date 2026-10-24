@@ -29,11 +29,30 @@ public static class AppPaths
     public static string SnapshotFile => Path.Combine(DataDir, "last-status.txt");
     public static string SettingsFile => Path.Combine(DataDir, "settings.json");
     public static string RemoteFile => Path.Combine(DataDir, "remote.json");
+    /// <summary>程序自己的临时文件也放在数据目录里，绝不写系统 TEMP</summary>
+    public static string TmpDir => Path.Combine(DataDir, "tmp");
 
     public static void Ensure()
     {
         try { Directory.CreateDirectory(DataDir); } catch { }
+        try { Directory.CreateDirectory(TmpDir); } catch { }
     }
+
+    /// <summary>目录总大小（字节）</summary>
+    public static long DirSize(string dir)
+    {
+        try
+        {
+            if (!Directory.Exists(dir)) return 0;
+            return new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+        catch { return 0; }
+    }
+
+    public static string Human(long bytes) =>
+        bytes >= 1024 * 1024 ? $"{bytes / 1024.0 / 1024.0:F1} MB"
+        : bytes >= 1024 ? $"{bytes / 1024.0:F0} KB"
+        : $"{bytes} B";
 
     public static void Log(string msg)
     {
