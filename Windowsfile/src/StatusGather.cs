@@ -14,6 +14,7 @@ public sealed class Snapshot
     public string Mini = "";
     public string Raw = "";
     public bool MiniOnline;
+    public bool CampusOk;      // 204 探测通过 = 已认证能上网
 }
 
 public static class StatusGather
@@ -122,6 +123,7 @@ public static class StatusGather
         catch { }
 
         campus.AppendLine($"  generate_204 : {code}   {(code == "204" ? "√ 能上网" : "× 不通")}");
+            snap.CampusOk = code == "204";
         campus.AppendLine($"  公网出口 IP  : {egress}");
         campus.AppendLine();
         campus.AppendLine("【判定】");
