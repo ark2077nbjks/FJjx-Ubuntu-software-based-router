@@ -44,6 +44,44 @@ printf "${C_N}"
 [ "$DRY" = 1 ] && warn "演练模式（--dry-run）：只检查和打印计划，不会改动任何东西"
 [ "$DRY" = 0 ] && need_root
 
+# ---------- 0. 依赖自检 ----------
+step "0/7 检查运行环境"
+GR_MISSING=0
+have() { command -v "$1" >/dev/null 2>&1; }
+
+if have nmcli; then
+  ok "NetworkManager 已安装"
+  if [ "$(systemctl is-active NetworkManager 2>/dev/null)" = "active" ]; then
+    ok "NetworkManager 正在运行"
+  else
+    warn "NetworkManager 没在运行，请先执行： sudo systemctl enable --now NetworkManager"
+    GR_MISSING=1
+  fi
+else
+  warn "缺少 NetworkManager（nmcli）—— 本脚本靠它建热点、配 IP、开共享"
+  echo "    Ubuntu 桌面版自带； Server 版或精简系统请先装："
+  echo "      sudo apt update && sudo apt install -y network-manager"
+  GR_MISSING=1
+fi
+
+if have ip; then ok "iproute2 已安装"
+else warn "缺少 iproute2： sudo apt install -y iproute2"; GR_MISSING=1; fi
+
+if have nft; then ok "nftables 已安装（会写 TTL=128 规则）"
+else warn "没装 nftables → TTL 伪装那一步会跳过，不影响上网： sudo apt install -y nftables"; fi
+
+if have iw; then :; else warn "没装 iw → 无法检查无线是否支持 AP 模式： sudo apt install -y iw"; fi
+
+if [ "$GR_MISSING" = 1 ]; then
+  if [ "$DRY" = 1 ]; then
+    warn "演练模式：依赖不全，真装会失败，上面列了需要的命令"
+  else
+    die "依赖不全，先补齐上面的再运行（想只看计划可加 --dry-run）"
+  fi
+fi
+echo
+
+
 # ---------- 1. 探测 ----------
 step "1/7 探测硬件"
 gr_scan_nics
