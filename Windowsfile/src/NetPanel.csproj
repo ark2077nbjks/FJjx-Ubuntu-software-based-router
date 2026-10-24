@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>NetPanel</AssemblyName>
+    <RootNamespace>NetPanel</RootNamespace>
+    <ApplicationManifest Condition="'$(NoAdmin)' != 'true'">app.manifest</ApplicationManifest>
+    <Version>1.5.0</Version>
+    <ApplicationIcon>icons\NetPanel.ico</ApplicationIcon>
+    <Product>网络面板</Product>
+    <AssemblyTitle>网络面板 NetPanel</AssemblyTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="icons\*.png" />
+  </ItemGroup>
+
+
+  <!-- 发布版不带调试符号：避免 exe 里残留构建机的绝对路径（隐私） -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+  </PropertyGroup>
+
+</Project>

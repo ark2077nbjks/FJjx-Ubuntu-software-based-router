@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GrayRouter 安装
+Name[zh_CN]=GrayRouter 安装
+Comment=把这台 Ubuntu 变成软路由（图形向导）
+Exec=sh -c 'd=$(dirname "$1"); cd "$d"; exec bash install-gui.sh' _ %k
+Icon=network-wireless
+Terminal=false
+Categories=Network;System;

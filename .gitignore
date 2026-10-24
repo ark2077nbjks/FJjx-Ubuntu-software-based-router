@@ -1,0 +1,15 @@
+.DS_Store
+Thumbs.db
+
+# 只留档/临时，不进仓库
+Ubuntuflie/bin_legacy_reference/
+Ubuntuflie/package_test/
+Ubuntuflie/GrayRouter-1.0.0/
+Windowsfile/icons_raw/
+
+# 构建产物
+Windowsfile/src/bin/
+Windowsfile/src/obj/
+*.bak*
+*.pdb
+*.dll
