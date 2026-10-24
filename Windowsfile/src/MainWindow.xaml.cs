@@ -18,8 +18,18 @@ public partial class MainWindow : Window
     // 网卡热插拔轮询（8 秒一次，只查名字，很轻）
     private readonly DispatcherTimer _nicPoll = new() { Interval = TimeSpan.FromSeconds(8) };
     private HashSet<string>? _knownNics;
+
+    // ---- 托盘常驻 ----
+    private AppSettings _cfg = AppSettings.Load();
+    private TrayIcon? _tray;
+    private bool _reallyExit;
+    private bool? _lastMiniOnline;
     private bool _nicPolling;
     private bool _busy;
+
+    // ---- 流量（每 15 秒读一次网卡计数器，只在本机内存里算，不发包）----
+    private readonly DispatcherTimer _trafficTick = new() { Interval = TimeSpan.FromSeconds(15) };
+    private int _trafficCount;
 
     // ---- 测速 ----
     private readonly List<SpeedSample> _samples = new();
@@ -57,8 +67,253 @@ public partial class MainWindow : Window
         InitSites();
         InitConnTab();
         InitDeviceTab();
-        Closing += (_, _) => SaveWindowState();
-        Closed += (_, _) => AppPaths.Log("窗口关闭");
+        InitTrafficTab();
+        InitTray();
+        Closing += OnClosingToTray;
+        Closed += (_, _) =>
+        {
+            _trafficTick.Stop();
+            _tray?.Dispose();
+            AppPaths.Log("窗口关闭");
+        };
+    }
+
+    // ---------------- 托盘常驻 ----------------
+
+    private void InitTray()
+    {
+        try
+        {
+            _tray = new TrayIcon(_cfg);
+            _tray.ShowRequested += () =>
+            {
+                Show();
+                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                Activate();
+                Topmost = true; Topmost = false;   // 确保被拉到最前
+            };
+            _tray.SettingsChanged += c => _cfg = c;
+            _tray.ExitRequested += () =>
+            {
+                _reallyExit = true;
+                SaveWindowState();
+                _tray?.Dispose();
+                _tray = null;
+                Close();
+                Application.Current.Shutdown();
+            };
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[托盘] 初始化失败: " + ex.Message);
+        }
+    }
+
+    private void OnClosingToTray(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        SaveWindowState();
+        if (_reallyExit) return;
+        if (!_cfg.CloseToTray)
+        {
+            AppPaths.Log("[托盘] 设置为直接退出，结束进程");
+            return;
+        }
+
+        // 缩到托盘：窗口藏起来，采样和定时器都继续跑
+        e.Cancel = true;
+        Hide();
+        _tray?.SetTooltip("网络面板（后台运行中）");
+        _tray?.ShowMinimizedTip();
+        AppPaths.Log("[托盘] 窗口已最小化到托盘，后台继续采样");
+    }
+
+    /// <summary>远端软路由连上 / 断掉时弹气泡（跟上次状态比）</summary>
+    private void NotifyLinkChange(bool online)
+    {
+        if (!_cfg.NotifyOnOffline) { _lastMiniOnline = online; return; }
+        if (_lastMiniOnline is null) { _lastMiniOnline = online; return; }
+        if (_lastMiniOnline == online) return;
+
+        if (online)
+        {
+            _tray?.Balloon("软路由已连上", "远端重新可达，正常的网络状态。");
+            AppPaths.Log("[提醒] 远端恢复在线");
+        }
+        else
+        {
+            _tray?.Balloon("软路由连不上", "远端地址不可达 —— 可能换了网络（不再连 Gray-Router）、机器关机，或校园网掉认证。点「一键诊断」看断在哪一层。", warn: true);
+            AppPaths.Log("[提醒] 远端掉线");
+        }
+        _lastMiniOnline = online;
+    }
+
+    // ---------------- 流量 ----------------
+
+    public sealed class TrafficRow
+    {
+        public string Adapter { get; set; } = "";
+        public string Down { get; set; } = "";
+        public string Up { get; set; } = "";
+        public string Total { get; set; } = "";
+        public string Share { get; set; } = "";
+    }
+
+    private void InitTrafficTab()
+    {
+        try { Traffic.Prune(30); } catch { }
+        CvTraffic.SizeChanged += (_, _) => RenderTrafficChart();
+        _trafficTick.Tick += async (_, _) => await TrafficTickAsync();
+        _trafficTick.Start();
+        Traffic.Sample();                 // 第一次只记基线
+        RefreshTrafficView();
+    }
+
+    private async Task TrafficTickAsync()
+    {
+        try
+        {
+            var rows = await Task.Run(() => Traffic.Sample());
+            if (rows.Count > 0)
+            {
+                await Task.Run(() => Traffic.Append(rows));
+                var d = rows.Sum(r => r.DownKb) / 1024.0;
+                var u = rows.Sum(r => r.UpKb) / 1024.0;
+                TxtTrafficLive.Text = $"刚刚 ↓{Traffic.SizeText(d)}  ↑{Traffic.SizeText(u)}";
+            }
+            else TxtTrafficLive.Text = "空闲中";
+
+            if (++_trafficCount % 4 == 0) RefreshTrafficView();   // 图 1 分钟重绘一次，省 CPU
+        }
+        catch (Exception ex) { AppPaths.Log("[流量] 采样异常: " + ex.Message); }
+    }
+
+    private void RefreshTrafficView()
+    {
+        try
+        {
+            var today = Traffic.Total(DateTime.Today);
+            var yest = Traffic.Total(DateTime.Today.AddDays(-1));
+            var week = Traffic.TotalDays(7);
+            TxtTrafficInfo.Text =
+                $"今天 ↓{Traffic.SizeText(today.downMb)} ↑{Traffic.SizeText(today.upMb)}" +
+                $"   昨天 ↓{Traffic.SizeText(yest.downMb)} ↑{Traffic.SizeText(yest.upMb)}" +
+                $"   近 7 天 ↓{Traffic.SizeText(week.downMb)} ↑{Traffic.SizeText(week.upMb)}" +
+                $"   ·  每 15 秒采样 · 保留 30 天 · 数据在 data\\{System.IO.Path.GetFileName(Traffic.TodayFile)}";
+
+            var per = Traffic.PerAdapter(DateTime.Today);
+            var sum = per.Sum(x => x.downMb + x.upMb);
+            DgTraffic.ItemsSource = per.Select(x =>
+            {
+                var total = x.downMb + x.upMb;
+                return new TrafficRow
+                {
+                    Adapter = x.adapter,
+                    Down = Traffic.SizeText(x.downMb),
+                    Up = Traffic.SizeText(x.upMb),
+                    Total = Traffic.SizeText(total),
+                    Share = sum <= 0 ? "—" : $"{total / sum * 100:F1}%",
+                };
+            }).ToList();
+
+            RenderTrafficChart();
+        }
+        catch (Exception ex) { AppPaths.Log("[流量] 刷新失败: " + ex.Message); }
+    }
+
+    /// <summary>24 根柱：每小时一组，绿色下行、蓝色上行</summary>
+    private void RenderTrafficChart()
+    {
+        if (CvTraffic == null) return;
+        CvTraffic.Children.Clear();
+
+        double w = CvTraffic.ActualWidth, h = CvTraffic.ActualHeight;
+        if (w < 120 || h < 80) return;
+
+        var buckets = Traffic.HourlyBuckets(DateTime.Today);
+        double max = 0;
+        foreach (var b in buckets) max = Math.Max(max, Math.Max(b[0], b[1]));
+        if (max <= 0) max = 0.1;
+
+        const double padLeft = 56, padRight = 10, padTop = 8, padBottom = 20;
+        double plotW = w - padLeft - padRight, plotH = h - padTop - padBottom;
+        double slot = plotW / 24, barW = Math.Max(3, Math.Min(12, slot * 0.32));
+
+        // 横向参考线 25% / 50% / 75%
+        for (int i = 1; i <= 3; i++)
+        {
+            double y = padTop + plotH * (1 - i / 4.0);
+            CvTraffic.Children.Add(new System.Windows.Shapes.Line
+            {
+                X1 = padLeft, X2 = padLeft + plotW, Y1 = y, Y2 = y,
+                Stroke = new SolidColorBrush(Color.FromRgb(0xED, 0xF0, 0xF5)),
+                StrokeThickness = 1,
+            });
+        }
+
+        // Y 轴两个刻度
+        AddCanvasText(Traffic.SizeText(max), 4, padTop - 4, 11, "#9AA5B4");
+        AddCanvasText("0", 4, padTop + plotH - 12, 11, "#9AA5B4");
+
+        for (int hour = 0; hour < 24; hour++)
+        {
+            double x0 = padLeft + hour * slot + (slot - barW * 2 - 2) / 2;
+            double baseY = padTop + plotH;
+
+            double hDown = buckets[hour][0] / max * plotH;
+            double hUp = buckets[hour][1] / max * plotH;
+
+            if (buckets[hour][0] > 0)
+                CvTraffic.Children.Add(Bar(x0, baseY - hDown, barW, hDown, "#2FB86B",
+                    $"{hour:D2}:00  下行 {Traffic.SizeText(buckets[hour][0])}"));
+            if (buckets[hour][1] > 0)
+                CvTraffic.Children.Add(Bar(x0 + barW + 2, baseY - hUp, barW, hUp, "#2F6FED",
+                    $"{hour:D2}:00  上行 {Traffic.SizeText(buckets[hour][1])}"));
+
+            if (hour % 3 == 0)
+                AddCanvasText($"{hour}", x0 - 2, baseY + 3, 11, "#9AA5B4");
+        }
+    }
+
+    private static System.Windows.Shapes.Rectangle Bar(double x, double y, double w, double h, string color, string tip)
+    {
+        var r = new System.Windows.Shapes.Rectangle
+        {
+            Width = w,
+            Height = Math.Max(1, h),
+            Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)),
+            RadiusX = 2, RadiusY = 2,
+            ToolTip = tip,
+        };
+        Canvas.SetLeft(r, x);
+        Canvas.SetTop(r, y);
+        return r;
+    }
+
+    private void AddCanvasText(string text, double x, double y, double size, string color)
+    {
+        var t = new TextBlock
+        {
+            Text = text,
+            FontSize = size,
+            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)),
+        };
+        Canvas.SetLeft(t, x);
+        Canvas.SetTop(t, y);
+        CvTraffic.Children.Add(t);
+    }
+
+    private void OnTrafficRefresh(object sender, RoutedEventArgs e)
+    {
+        var rows = Traffic.Sample();
+        if (rows.Count > 0) Traffic.Append(rows);
+        RefreshTrafficView();
+        TxtTrafficLive.Text = "已刷新 " + DateTime.Now.ToString("HH:mm:ss");
+    }
+
+    private void OnTrafficOpenDir(object sender, RoutedEventArgs e)
+    {
+        try { System.Diagnostics.Process.Start("explorer.exe", AppPaths.DataDir); }
+        catch (Exception ex) { AppPaths.Log("[流量] 打开目录失败: " + ex.Message); }
     }
 
     // ---------------- 窗口位置/大小记忆 ----------------
@@ -134,7 +389,8 @@ public partial class MainWindow : Window
 
         try
         {
-            var list = await LanScan.ScanAsync(cidr, cfg, msg =>
+            var deep = ChkDeep.IsChecked == true;
+            var list = await LanScan.ScanAsync(cidr, cfg, deep, msg =>
             {
                 Dispatcher.Invoke(() => TxtScanInfo.Text = msg);
             }, _scanCts.Token);
@@ -144,7 +400,8 @@ public partial class MainWindow : Window
 
             var online = list.Count(x => x.State == "在线");
             TxtScanInfo.Text = $"√ 共 {list.Count} 台，{online} 台在线" +
-                               (cfg.IsConfigured ? "（含软路由邻居表）" : "（只读本机 ARP）");
+                               (deep ? "（深度扫描）" : "（快速，未发包）") +
+                               (cfg.IsConfigured ? " + 软路由邻居表" : "（软路由未连接，只看本机 ARP）");
             TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
             AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
         }
@@ -425,6 +682,22 @@ public partial class MainWindow : Window
         catch (Exception ex) { AppPaths.Log("打开目录失败: " + ex.Message); }
     }
 
+    // ---------------- 一键网络诊断 ----------------
+
+    private void OnDiagnose(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var win = new DiagnoseWindow(RemoteConfig.Load()) { Owner = this };
+            win.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[诊断] 打开窗口失败: " + ex.Message);
+            MessageBox.Show("诊断窗口打不开：" + ex.Message, "网络面板", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private async void OnRefresh(object sender, RoutedEventArgs e)
     {
         // 手动刷新：立刻跑一次，并把自动刷新的计时重新归零
@@ -472,6 +745,7 @@ public partial class MainWindow : Window
                 : $"自动刷新 {DateTime.Now:HH:mm:ss}";
             TxtFoot.ToolTip = $"数据目录：{AppPaths.DataDir}";
             AppPaths.Log($"刷新完成 MiniOnline={snap.MiniOnline}");
+            NotifyLinkChange(snap.MiniOnline);
         }
         catch (Exception ex)
         {
@@ -968,14 +1242,7 @@ public partial class MainWindow : Window
         FillPresets(PanelPresetsForeign, PresetsForeign);
         FillPresets(PanelPresetsGitHub, PresetsGitHub);
 
-        try
-        {
-            var json = File.ReadAllText(AppPaths.SettingsFile);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("sites", out var v))
-                TxtSites.Text = v.GetString() ?? "baidu.com";
-        }
-        catch { TxtSites.Text = "baidu.com"; }
+        TxtSites.Text = string.IsNullOrWhiteSpace(_cfg.Sites) ? "baidu.com" : _cfg.Sites;
     }
 
 
@@ -1179,16 +1446,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void SaveSites(string text)
+    private void SaveSites(string text)
     {
-        try
-        {
-            AppPaths.Ensure();
-            File.WriteAllText(AppPaths.SettingsFile,
-                System.Text.Json.JsonSerializer.Serialize(new { sites = text }),
-                Encoding.UTF8);
-        }
-        catch { }
+        _cfg.Sites = text;
+        _cfg.Save();
     }
 
     // ---------------- 游戏延迟页 ----------------

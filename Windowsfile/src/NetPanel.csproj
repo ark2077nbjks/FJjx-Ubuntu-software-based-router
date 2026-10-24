@@ -6,17 +6,25 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>NetPanel</AssemblyName>
     <RootNamespace>NetPanel</RootNamespace>
     <ApplicationManifest Condition="'$(NoAdmin)' != 'true'">app.manifest</ApplicationManifest>
-    <Version>1.7.0</Version>
+    <Version>1.10.0</Version>
     <ApplicationIcon>icons\NetPanel.ico</ApplicationIcon>
     <Product>网络面板</Product>
     <AssemblyTitle>网络面板 NetPanel</AssemblyTitle>
   </PropertyGroup>
 
+  <!-- WinForms 会塞全局 using（Forms / Drawing），会跟 WPF 的 Button/Panel/Color/Application 撞名，这里去掉 -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
   <ItemGroup>
     <Resource Include="icons\*.png" />
+    <Resource Include="icons\NetPanelTray.ico" />
   </ItemGroup>
 
 
