@@ -24,5 +24,8 @@ echo "启动 $LAN_CON ..."
 sysctl -q -w net.ipv4.ip_forward=1 || true
 nmcli connection up "$LAN_CON" >/dev/null 2>&1 || { printf "${C_R}LAN 启动失败${C_N}\n"; exit 1; }
 [ -r "$GR_ETC/ttl.nft" ] && nft -f "$GR_ETC/ttl.nft" 2>/dev/null || true
+# 伪装层：服务拉起 + 引流规则
+systemctl start ua3f >/dev/null 2>&1 || true
+[ -x "$GR_OPT/bin/ua3f-rules.sh" ] && bash "$GR_OPT/bin/ua3f-rules.sh" apply >/dev/null 2>&1 || true
 sleep 1
 printf "${C_G}已启动${C_N}：$(ip -4 -br addr show "$LAN_IF" 2>/dev/null | awk '{print $3}')\n"

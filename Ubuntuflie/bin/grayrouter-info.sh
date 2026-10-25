@@ -23,6 +23,8 @@ gw=$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')
 active=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "^${LAN_CON}:" && echo 1 || echo 0)
 clients=$(ip neigh show dev "$LAN_IF" 2>/dev/null | awk '/REACHABLE|STALE|DELAY/{print $1}' | grep -v '^fe80' | wc -l)
 code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' https://www.baidu.com 2>/dev/null)
+ua3f=$(systemctl is-active ua3f 2>/dev/null || true)
+ua3f_listen=$(ss -lnt 2>/dev/null | awk '$4 ~ /:1080$/ {n++} END{print n+0}')
 
 echo "TOPOLOGY=$TOPO"
 echo "WAN_IF=$WAN_IF"
@@ -35,4 +37,6 @@ echo "LAN_ACTIVE=$active"
 echo "CLIENTS=$clients"
 echo "IP_FORWARD=$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)"
 echo "OUT_HTTP=$code"
+echo "UA3F=${ua3f:-inactive}"
+echo "UA3F_LISTEN=${ua3f_listen:-0}"
 echo "TS=$(date '+%F %T')"

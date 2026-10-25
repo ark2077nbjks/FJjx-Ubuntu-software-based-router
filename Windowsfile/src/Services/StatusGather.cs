@@ -306,6 +306,15 @@ public static class StatusGather
                     secMini.Rows.Add(new StatusRow { Label = "转发", Value = (d.GetValueOrDefault("LAN_ACTIVE") == "1" ? "√ 已启动" : "× 没起来")
                                                                     + $" · 客户端 {d.GetValueOrDefault("CLIENTS")}" });
                     secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTP {d.GetValueOrDefault("OUT_HTTP")} · ip_forward={d.GetValueOrDefault("IP_FORWARD")}" });
+
+                    // 伪装层（UA3F：IPID 重写；不做 MitM）
+                    var ua3fCn = !d.ContainsKey("UA3F")
+                        ? "— 远端没报（旧版采集脚本）"
+                        : (d.GetValueOrDefault("UA3F") == "active"
+                            ? (d.GetValueOrDefault("UA3F_LISTEN", "0") == "1" ? "√ 运行中 · 1080 在听" : "√ 运行中 · 1080 没监听")
+                            : "× 未运行");
+                    mini.AppendLine($"  伪装 {ua3fCn}");
+                    secMini.Rows.Add(new StatusRow { Label = "伪装", Value = ua3fCn });
                     secMini.Rows.Add(new StatusRow { Label = "采集", Value = d.GetValueOrDefault("TS"), Sub = true });
                 }
                 else
@@ -326,6 +335,13 @@ public static class StatusGather
                     secMini.Rows.Add(new StatusRow { Label = "无线", Value = $"{d.GetValueOrDefault("AP_TYPE")} / {d.GetValueOrDefault("AP_SSID")}  {d.GetValueOrDefault("AP_IP")}" });
                     secMini.Rows.Add(new StatusRow { Label = "客户端", Value = $"{d.GetValueOrDefault("CLIENTS")} · 转发 ip_forward={d.GetValueOrDefault("FWD")}" });
                     secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTPS {d.GetValueOrDefault("HTTPS")} · 出口 {d.GetValueOrDefault("EGRESS")}" });
+
+                    // 伪装层（旧版采集脚本不带这项时显示“—”，不误报未运行）
+                    var ua3fCn2 = !d.ContainsKey("UA3F")
+                        ? "— 远端没报（旧版采集脚本）"
+                        : (d.GetValueOrDefault("UA3F") == "1" || d.GetValueOrDefault("UA3F") == "active" ? "√ 运行中" : "× 未运行");
+                    mini.AppendLine($"  伪装 {ua3fCn2}");
+                    secMini.Rows.Add(new StatusRow { Label = "伪装", Value = ua3fCn2 });
                 }
             }
             else if (out2.Contains("NOINFO"))

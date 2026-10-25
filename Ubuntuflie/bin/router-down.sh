@@ -21,4 +21,5 @@ C_Y=$'\033[33m'; C_N=$'\033[0m'
 echo "停止 $LAN_CON ..."
 nmcli connection down "$LAN_CON" >/dev/null 2>&1 || true
 [ -r "$GR_ETC/ttl.nft" ] && nft delete table ip grayrouter 2>/dev/null || true
+[ -x "$GR_OPT/bin/ua3f-rules.sh" ] && bash "$GR_OPT/bin/ua3f-rules.sh" clear >/dev/null 2>&1 || true
 printf "${C_Y}已停止${C_N}（上游网络未改动）\n"
