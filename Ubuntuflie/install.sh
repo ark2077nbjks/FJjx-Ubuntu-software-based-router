@@ -296,6 +296,53 @@ if [ "$T_HARDEN" = "ttl" ]; then
   fi
 fi
 
+# 伪装层：UA3F（IPID 重写 + 明文 UA；不做 MitM，客户端零证书零配置）
+UA3F_OK=0
+if [ -x "$HERE/bin/ua3f" ]; then
+  install -m 755 "$HERE/bin/ua3f" "$GR_OPT/bin/ua3f"
+  install -m 755 "$HERE/bin/ua3f-rules.sh" "$GR_OPT/bin/ua3f-rules.sh"
+  install -m 644 "$HERE/etc/ua3f.yaml" "$GR_ETC/ua3f.yaml"
+  track_created "$GR_OPT/bin/ua3f"
+  track_created "$GR_ETC/ua3f.yaml"
+  UA3F_UNIT=${SYSTEMD_DIR:-/etc/systemd/system}/ua3f.service
+  cat >"$UA3F_UNIT" <<UA3FUNIT
+[Unit]
+Description=GrayRouter 伪装层（UA3F：IPID 重写）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$GR_OPT/bin/ua3f -c $GR_ETC/ua3f.yaml
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+UA3FUNIT
+  track_unit "$UA3F_UNIT"
+  systemctl daemon-reload
+  if systemctl enable --now ua3f.service >/dev/null 2>&1; then
+    sleep 2
+    if systemctl is-active --quiet ua3f; then
+      UA3F_OK=1
+      ok "伪装层已启动（UA3F，IPID 重写）"
+    else
+      warn "UA3F 没起来（不影响上网）：journalctl -u ua3f -n 30"
+    fi
+  else
+    warn "UA3F 开机自启设置失败（不影响上网）"
+  fi
+  if [ "$UA3F_OK" = "1" ] && bash "$GR_OPT/bin/ua3f-rules.sh" apply >/dev/null 2>&1; then
+    ok "伪装规则已加载（tproxy → 1080）"
+  else
+    warn "伪装规则没加载（可能内核缺 nf_tproxy，不影响上网）"
+  fi
+else
+  warn "包里没有 ua3f 二进制，跳过伪装层"
+fi
+
 # 开机自启
 SYSTEMD_DIR=${SYSTEMD_DIR:-/etc/systemd/system}
 UNIT=$SYSTEMD_DIR/grayrouter.service
@@ -310,7 +357,9 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/nmcli connection up $LAN_CON
 ExecStartPost=-/usr/bin/nft -f $GR_ETC/ttl.nft
+ExecStartPost=-/usr/bin/bash $GR_OPT/bin/ua3f-rules.sh apply
 ExecStop=/usr/bin/nmcli connection down $LAN_CON
+ExecStopPost=-/usr/bin/bash $GR_OPT/bin/ua3f-rules.sh clear
 
 [Install]
 WantedBy=multi-user.target
@@ -327,6 +376,16 @@ FAIL=0
 have_ip() { ip -4 -br addr show "$1" 2>/dev/null | grep -q "$2"; }
 have_ip "$LAN_IF" "${LANIP%%.*}" && ok "LAN 网卡有 IP" || { bad "LAN 网卡没有 IP"; FAIL=1; }
 [ "$(cat /proc/sys/net/ipv4/ip_forward)" = "1" ] && ok "ip_forward=1" || { bad "ip_forward 没开"; FAIL=1; }
+if systemctl is-active --quiet ua3f 2>/dev/null; then
+  ok "伪装层 ua3f 运行中"
+else
+  warn "伪装层 ua3f 没在跑（不影响上网，可稍后 systemctl start ua3f）"
+fi
+if nft list table ip gray_ua3f >/dev/null 2>&1; then
+  ok "伪装规则表已加载"
+else
+  warn "伪装规则表没加载"
+fi
 [ -n "$GR_DEF_IF" ] && ok "上游默认路由在（$GR_DEF_IF）" || warn "上游还没联网，装完自己接通"
 if curl -s -m 6 -o /dev/null -w "%{http_code}" https://www.baidu.com 2>/dev/null | grep -qE '^(2|3)'; then
   ok "路由器本身能出网"

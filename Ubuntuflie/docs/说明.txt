@@ -82,3 +82,19 @@ A 有些无线网卡（尤其 MediaTek 部分型号）不支持 AP 模式，体�
 【给 Windows 那边用】
 /opt/grayrouter/bin/grayrouter-info.sh 输出 KEY=VALUE 格式的状态，
 Windows「网络面板」靠它读这台机器的状态。
+
+【伪装层（UA3F）】
+装的时候自动装好，不用在手机/电脑上装任何证书。
+  · IPID 重写：改 IP 头里的序号，防止被识别成一号多设备（HTTPS 也有效）
+  · 引流规则：nft 表 ip gray_ua3f（tproxy → 127.0.0.1:1080）+ 策略路由表 457
+  · 服务：ua3f.service，开机自启
+
+看状态：
+  systemctl status ua3f
+  sudo bash /opt/grayrouter/bin/ua3f-rules.sh status
+
+临时关掉伪装（不影响上网）：
+  sudo bash /opt/grayrouter/bin/ua3f-rules.sh clear
+  sudo systemctl stop ua3f
+
+明确不做的事：不开 MitM、不解密 HTTPS、不发任何证书给客户端。

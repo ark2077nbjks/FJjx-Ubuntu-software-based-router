@@ -55,7 +55,7 @@
 
 ## 快速开始（Ubuntu）
 
-1. 把 `Ubuntuflie/GrayRouter-1.0.1.zip` 拷到 Ubuntu 上，右键「解压到此处」。
+1. 把 `Ubuntuflie/GrayRouter-1.1.0.zip` 拷到 Ubuntu 上，右键「解压到此处」。
 2. 双击 **`GrayRouter-安装.desktop`**（第一次可能要点「标记为可信」或右键「允许启动」）。
 3. 向导里选拓扑、填热点名和密码 → 确认 → 输一次 sudo 密码。
 4. 装完手机/电脑连 `Gray-Router` 就能上网。
@@ -67,6 +67,25 @@ bash grayrouter-doctor.sh                 # 先体检（只读，不改任何东
 sudo bash install.sh                      # 交互安装
 sudo bash install.sh --help               # 看所有参数（静默安装用）
 ```
+
+## 伪装层（默认就装，客户端零配置）
+
+安装时自动装好 **UA3F**，它在软路由上做两件事，**不需要在任何手机/电脑上装证书**：
+
+- **IPID 重写** —— 改 IP 头里的 16 位序号，让同一账号后面的多台设备看起来像一台（对 HTTPS 同样有效）
+- **ua3f.service** 常驻，开机自启；引流规则用独立 nft 表 `ip gray_ua3f`（tproxy → 1080）+ 策略路由表 457
+
+不做的事（明确不做的）：**不开 MitM、不解密 HTTPS、不装任何客户端证书**。
+
+相关命令：
+
+```bash
+systemctl status ua3f                     # 服务在不在跑
+sudo bash /opt/grayrouter/bin/ua3f-rules.sh status   # 规则/策略路由/1080 监听
+sudo bash /opt/grayrouter/bin/ua3f-rules.sh clear    # 想临时关掉伪装
+```
+
+`router-down.sh` 会把规则一起清掉；`uninstall.sh` 会停服务并删规则表。
 
 卸载：
 

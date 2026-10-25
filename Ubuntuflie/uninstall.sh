@@ -20,6 +20,8 @@ confirm "继续？" "n" || die "已取消"
 
 step "1/3 停止服务"
 systemctl disable --now grayrouter.service >/dev/null 2>&1 && ok "服务已停" || info "服务本来就没在跑"
+systemctl disable --now ua3f.service >/dev/null 2>&1 && ok "伪装层已停" || true
+[ -x /opt/grayrouter/bin/ua3f-rules.sh ] && bash /opt/grayrouter/bin/ua3f-rules.sh clear >/dev/null 2>&1 || true
 
 step "2/3 逆序回滚"
 if [ -f "$GR_JOURNAL" ]; then
