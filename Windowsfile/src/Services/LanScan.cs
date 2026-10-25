@@ -91,6 +91,27 @@ public static class LanScan
         ["00:1C:DF"] = "Belkin",       ["94:10:3E"] = "Belkin",
     };
 
+    /// <summary>已连接时长：秒 → 12 分钟 / 3 小时 20 分 / 2 天</summary>
+    public static string CnDur(int secs)
+    {
+        if (secs < 60) return secs + " 秒";
+        if (secs < 3600) return (secs / 60) + " 分钟";
+        if (secs < 86400) return (secs / 3600) + " 小时" + (secs % 3600 / 60 > 0 ? " " + (secs % 3600 / 60) + " 分" : "");
+        return (secs / 86400) + " 天";
+    }
+
+    /// <summary>清掉 DHCP 主机名里的随机后缀、下划线，例如 HUAWEI_P30-132378065a → HUAWEI P30</summary>
+    public static string CleanName(string raw)
+    {
+        var s = (raw ?? "").Trim();
+        if (s == "") return "";
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"[-_][0-9a-fA-F]{6,}$", "");
+        s = s.Replace('_', ' ');
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\s{2,}", " ").Trim();
+        if (s.Length > 28) s = s.Substring(0, 28) + "…";
+        return s;
+    }
+
     public static string Vendor(string mac)
     {
         if (string.IsNullOrWhiteSpace(mac) || mac.Length < 8) return "—";
@@ -258,7 +279,9 @@ public static class LanScan
                       "echo '---ROUTE---'; ip route get 1.1.1.1 2>/dev/null | head -1; " +
                       "echo '---LEASES---'; " +
                       "cat /var/lib/misc/dnsmasq.leases 2>/dev/null; " +
-                      "cat /var/lib/NetworkManager/*.leases 2>/dev/null; true";
+                      "cat /var/lib/NetworkManager/*.leases 2>/dev/null; " +
+                      "echo '---SPEED---'; for i in $(ls /sys/class/net 2>/dev/null); do case $i in lo|docker*|veth*|br-*) continue;; esac; " +
+                      "printf 'SPD|%s|%s\\n' \"$i\" \"$(cat /sys/class/net/$i/speed 2>/dev/null)\"; done; true";
             var (rc2, rem, err2) = await Remote.RunAsync("ssh.exe",
                 $"-o ConnectTimeout=4 -o BatchMode=yes -o StrictHostKeyChecking=accept-new " +
                 $"-o NumberOfPasswordPrompts=0 -p {rc.Port} {rc.Target} \"{cmd}\"", 20);
@@ -274,6 +297,8 @@ public static class LanScan
                 var stationOn = new Dictionary<string, string>(StringComparer.Ordinal);    // MAC → 接口名
                 var ifaceType = new Dictionary<string, string>(StringComparer.Ordinal);    // 接口 → AP/station/...
                 var ifaceBand = new Dictionary<string, string>(StringComparer.Ordinal);    // 接口 → 2.4G/5G
+                var ifaceSpeed = new Dictionary<string, int>(StringComparer.Ordinal);      // 接口 → Mbps
+                var connSecOf = new Dictionary<string, int>(StringComparer.Ordinal);       // MAC → 已连接秒数
 
                 var seg = "NEIGH";
                 string? lastIface = null;
@@ -285,6 +310,7 @@ public static class LanScan
                     if (t == "---IW---") { seg = "IW"; lastIface = null; continue; }
                     if (t == "---STATION---") { seg = "STATION"; lastIface = null; lastStation = null; continue; }
                     if (t == "---ROUTE---") { seg = "ROUTE"; continue; }
+                    if (t == "---SPEED---") { seg = "SPEED"; continue; }
                     if (t == "---LEASES---") { seg = "LEASES"; continue; }
                     if (t == "") continue;
 
@@ -316,6 +342,17 @@ public static class LanScan
                         var mg = Regex.Match(t, @"^signal:\s+(-?\d+)\s");
                         if (mg.Success && lastStation != null)
                             signalOf[lastStation] = mg.Groups[1].Value + "dBm";
+                        var mct = Regex.Match(t, @"^connected time:\s+(\d+)\s+seconds");
+                        if (mct.Success && lastStation != null && int.TryParse(mct.Groups[1].Value, out var secs))
+                            connSecOf[lastStation] = secs;
+                        continue;
+                    }
+
+                    if (seg == "SPEED")
+                    {
+                        var msp = Regex.Match(t, @"^SPD\|(\S+)\|(-?\d+)$");
+                        if (msp.Success && int.TryParse(msp.Groups[2].Value, out var sp) && sp > 0)
+                            ifaceSpeed[msp.Groups[1].Value] = sp;
                         continue;
                     }
 
@@ -367,14 +404,20 @@ public static class LanScan
                     {
                         var band = ifaceBand.TryGetValue(apIface, out var bd) ? bd : "";
                         var sig = signalOf.TryGetValue(macKey, out var sg) ? sg : "";
-                        d.Conn = ("无线 " + band + " " + sig).Trim();
+                        var parts = new List<string> { "无线" };
+                        if (band != "") parts.Add(band);
+                        if (sig != "") parts.Add(sig);
+                        if (connSecOf.TryGetValue(macKey, out var cs)) parts.Add(CnDur(cs));
+                        d.Conn = string.Join(" · ", parts);
                         continue;
                     }
                     if (ifaceOf.TryGetValue(d.Ip, out var ifc))
                     {
                         if (!string.IsNullOrEmpty(wanIface) && ifc == wanIface) d.Conn = "有线（外网侧）";
-                        else if (ifaceType.TryGetValue(ifc, out var ty) && ty == "AP") d.Conn = "无线 " + (ifaceBand.TryGetValue(ifc, out var b2) ? b2 : "");
-                        else d.Conn = ifc;
+                        else if (ifaceType.TryGetValue(ifc, out var ty) && ty == "AP")
+                            d.Conn = "无线" + (ifaceBand.TryGetValue(ifc, out var b2) ? " · " + b2 : "");
+                        else
+                            d.Conn = ifaceSpeed.TryGetValue(ifc, out var sp) ? $"有线 · {sp} Mbps" : "有线 · " + ifc;
                         continue;
                     }
                     // 留着空，交给后面统一兜底（网关 / 同网段 / 本机）
@@ -383,7 +426,7 @@ public static class LanScan
                 AppPaths.Log($"[设备] 解析：接口={ifaceOf.Count} 站点={stationOn.Count} 信号={signalOf.Count} 类型={ifaceType.Count} 频段={ifaceBand.Count} wan={wanIface} 名字={names.Count}");
 
                 foreach (var kv in names)
-                    if (devices.TryGetValue(kv.Key, out var d)) d.Name = kv.Value;
+                    if (devices.TryGetValue(kv.Key, out var d)) d.Name = CleanName(kv.Value);
             }
         }
 
@@ -392,7 +435,8 @@ public static class LanScan
         foreach (var d in devices.Values)
             if (string.IsNullOrEmpty(d.Conn))
                 d.Conn = selfIps.Contains(d.Ip) ? "本机"
-                        : (!string.IsNullOrEmpty(localGw) && d.Ip == localGw ? "网关（本机直连）" : "同网段");
+                        : (!string.IsNullOrEmpty(localGw) && d.Ip == localGw ? "网关 · 本机直连" : "同网段");
+
 
         // 自己这台也列出来（ARP 表里没有自己的条目）
         foreach (var sip in selfIps)
@@ -405,6 +449,15 @@ public static class LanScan
         // ---------- ③.5 名称：问软路由的 dnsmasq 要反向 DNS ----------
         // 只对"已经找到的设备"查，绝不扫网段；查不到就留空。
         await FillNamesAsync(devices, head, selfIps, progress, ct);
+
+        // 名称兜底：dnsmasq 也问不到，才按类型给个能看懂的名字（必须在 FillNamesAsync 之后）
+        foreach (var d in devices.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(d.Name)) { d.Name = CleanName(d.Name); continue; }
+            d.Name = selfIps.Contains(d.Ip) ? "这台电脑"
+                   : (!string.IsNullOrEmpty(localGw) && d.Ip == localGw ? "网关"
+                      : (d.Vendor is "随机 MAC" ? "手机（隐私地址）" : "未知设备"));
+        }
 
         // ---------- ③.8 延迟：快速模式给已知设备补 1 个轻 ping ----------
         // 深度模式下面的 alive 已经是 3 包真实值，这里只补快速模式。
