@@ -1,3 +1,4 @@
+using System.Linq;
 ﻿using System.Windows;
 using System.Windows.Threading;
 using NetPanel.Services;
@@ -36,6 +37,28 @@ public partial class App : Application
         // .NET 默认只有 UTF-8/UTF-16；写中文 bat、读 GBK 输出都要这张表
         try { System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance); }
         catch (Exception ex) { AppPaths.Log("注册编码表失败: " + ex.Message); }
+
+
+        // 隐藏自检：NetPanel.exe --memtest 跑一次内存优化，把结果写日志后退出（用于验证权限/命令是否正常）
+        if (e.Args.Contains("--memtest"))
+        {
+            var r = MemOptimize.Run(m => AppPaths.Log("[内存自检] " + m));
+            AppPaths.Log($"[内存自检] 权限={r.PrivilegeOk} 命令成功={r.Steps}/3 可用 {r.BeforeGB:F2} GB → {r.AfterGB:F2} GB，释放 {r.FreedMB:F0} MB，错误={r.Error}");
+            Shutdown();
+            return;
+        }
+
+
+        // 隐藏自检：NetPanel.exe --movelog=D:\某目录 把日志搬过去，验证剪切迁移
+        var moveArg = e.Args.FirstOrDefault(x => x.StartsWith("--movelog=", StringComparison.OrdinalIgnoreCase));
+        if (moveArg != null)
+        {
+            var target = moveArg["--movelog=".Length..];
+            var (ok, msg) = AppPaths.MoveLogTo(target);
+            AppPaths.Log($"[日志迁移自检] ok={ok} {msg}");
+            Shutdown();
+            return;
+        }
 
         AppPaths.Ensure();
         AppPaths.Log("=== NetPanel 启动 ===");

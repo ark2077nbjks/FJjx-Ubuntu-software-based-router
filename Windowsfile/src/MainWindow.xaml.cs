@@ -5,6 +5,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using NetPanel.Services;
 using Microsoft.Win32;
@@ -30,6 +32,11 @@ public partial class MainWindow : Window
 
     // ---- 流量（每 15 秒读一次网卡计数器，只在本机内存里算，不发包）----
     private readonly DispatcherTimer _trafficTick = new() { Interval = TimeSpan.FromSeconds(15) };
+    // 代理检测：本地层 10 秒（零联网），出口/延迟 60 秒
+    private readonly DispatcherTimer _proxyLocalTick = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _proxyRemoteTick = new() { Interval = TimeSpan.FromSeconds(60) };
+    private string _pLocal = "", _pRemote = "", _pLat = "";
+    private bool _pLocalBusy, _pRemoteBusy;
     private int _trafficCount;
 
     // ---- 测速 ----
@@ -48,6 +55,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         AppPaths.Ensure();
         RestoreWindowState();          // 记住上次大小/位置
+        TxtBadge.Text = $"{Ver.Text()} · 网段自适应";   // 版本号跟着程序集走，不再写死
         AppPaths.Log($"窗口创建  {Ver.Text()}  数据目录={AppPaths.DataDir}");
 
         Loaded += async (_, _) =>
@@ -61,11 +69,19 @@ public partial class MainWindow : Window
         };
         _timer.Tick += async (_, _) => await RefreshAsync();
 
-        _nicPoll.Tick += async (_, _) => await PollAdaptersAsync();
-        _nicPoll.Start();
+        _nicPoll.Tick += async (_, _) => await PollAdaptersAsync();   // 只在「网卡」页可见时启动
         InitSpeedTab();
+        Activated += (_, _) =>
+        {
+            if (CurrentPage == "状态" && (DateTime.Now - _lastNicProbe).TotalSeconds > 25)
+                _ = WatchNicsAsync();
+            if (CurrentPage == "设备") _ = RefreshScanCidrAsync(false);   // 换网回来顺手校正
+        };
         InitGameTab();
+        InitOtherTab();
+        LoadCampusUi();
         InitSites();
+        InitProxyTab();
         InitConnTab();
         InitDeviceTab();
         InitTrafficTab();
@@ -398,10 +414,33 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _scanCts;
     private List<LanDevice> _devices = new();
 
+    private bool _cidrUserEdited;     // 用户手动改过网段就不再自动覆盖
+    private bool _settingCidr;        // 程序自己写文本框时的护栏
+    private bool _cidrHooked;
+    private string _lastCidr = "";
+
     private async void InitDeviceTab()
     {
+        if (!_cidrHooked)
+        {
+            _cidrHooked = true;
+            TxtScanCidr.TextChanged += (_, _) => { if (!_settingCidr) _cidrUserEdited = true; };
+        }
+        await RefreshScanCidrAsync(force: true);
+    }
+
+    /// <summary>按当前网络重新填扫描网段；用户手改过就只提示不改</summary>
+    private async Task RefreshScanCidrAsync(bool force)
+    {
+        if (_cidrUserEdited && !force) return;
         var cidr = await LanScan.GuessLocalCidrAsync();
-        TxtScanCidr.Text = string.IsNullOrWhiteSpace(cidr) ? "192.168.1.0/24" : cidr;
+        if (string.IsNullOrWhiteSpace(cidr)) cidr = "192.168.1.0/24";
+        if (cidr == _lastCidr && !force) return;
+        _lastCidr = cidr;
+        _settingCidr = true;
+        TxtScanCidr.Text = cidr;
+        _settingCidr = false;
+        _cidrUserEdited = false;
     }
 
     private async void OnScanDevices(object sender, RoutedEventArgs e)
@@ -417,6 +456,11 @@ public partial class MainWindow : Window
             TxtScanInfo.Text = "× 只支持 /24（一个 C 段，254 个地址）";
             return;
         }
+
+        var locals = LanScan.LocalCidrs();
+        var cidrMismatch = locals.Count > 0 && !locals.Contains(cidr);
+        if (cidrMismatch)
+            TxtScanInfo.Text = $"注意：本机在 {string.Join("、", locals)}，扫 {cidr} 大概率 0 台";
 
         BtnScan.IsEnabled = false;
         BtnScanStop.IsEnabled = true;
@@ -438,6 +482,8 @@ public partial class MainWindow : Window
             TxtScanInfo.Text = $"√ 共 {list.Count} 台，{online} 台在线" +
                                (deep ? "（深度扫描）" : "（快速，轻量发包）") +
                                (cfg.IsConfigured ? " + 软路由邻居表" : "（软路由未连接，只看本机 ARP）");
+            if (list.Count == 0 && cidrMismatch)
+                TxtScanInfo.Text += $"　← 本机在 {string.Join("、", locals)}，网段是不是填错了";
             TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
             AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
         }
@@ -537,10 +583,40 @@ public partial class MainWindow : Window
     }
 
     /// <summary>切到「连接」页时静默探一次地址（不阻塞、只探一次）</summary>
+    /// <summary>当前页名（按 AutomationProperties.Name 取，插页不会串位）</summary>
+    private string CurrentPage =>
+        (NavTabs.SelectedItem as TabItem)?.GetValue(System.Windows.Automation.AutomationProperties.NameProperty) as string ?? "";
+
     private async void OnNavChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.Source is not TabControl) return;
-        if (NavTabs.SelectedIndex != 8 || _detectTried) return;   // 8 = 连接
+        var page = CurrentPage;
+
+        // 状态页：切进来顺手查一次远端网口（一次 ssh，不常驻）
+        if (page == "状态" && (DateTime.Now - _lastNicProbe).TotalSeconds > 25)
+            _ = WatchNicsAsync();
+
+        // 代理检测页：进来开始实时刷新，离开就停（省资源）
+        if (page == "代理检测") StartProxyWatch();
+        else StopProxyWatch();
+
+        // 设备页：进来按当前网络重填扫描网段（换过网就不会再扫旧网段）
+        if (page == "设备") _ = RefreshScanCidrAsync(false);
+
+        // 网卡页：只在看得见时做热插拔轮询（8 秒一次本地查询），切走立刻停
+        if (page == "网卡") { _nicPoll.Start(); _ = PollAdaptersAsync(); }
+        else _nicPoll.Stop();
+
+        // 校园网页：第一次进来，账号空着就从 minipc 的 Config.yaml 读一份（只读，不动配置）
+        if (page == "校园网" && TxtCampusUser.Text.Trim().Length == 0 && !_campusPrefilled)
+        {
+            _campusPrefilled = true;
+            _ = PrefillCampusUserAsync();
+        }
+
+        if (page == "其他") RefreshOtherRuntime();
+
+        if (page != "连接" || _detectTried) return;
         _detectTried = true;
         await DetectRemoteAsync(silent: true);
     }
@@ -740,6 +816,98 @@ public partial class MainWindow : Window
         }
     }
 
+    // ---------------- 代理检测 ----------------
+
+    private void InitProxyTab()
+    {
+        _proxyLocalTick.Tick += async (_, _) => await ProxyLocalTickAsync();
+        _proxyRemoteTick.Tick += async (_, _) => await ProxyRemoteTickAsync();
+    }
+
+    private void StartProxyWatch()
+    {
+        if (!_proxyLocalTick.IsEnabled) _proxyLocalTick.Start();
+        if (!_proxyRemoteTick.IsEnabled) _proxyRemoteTick.Start();
+        _ = ProxyLocalTickAsync();       // 立刻来一次，不用等 10 秒
+        _ = ProxyRemoteTickAsync();
+    }
+
+    private void StopProxyWatch()
+    {
+        _proxyLocalTick.Stop();
+        _proxyRemoteTick.Stop();
+    }
+
+    private async Task ProxyLocalTickAsync()
+    {
+        if (_pLocalBusy) return;
+        _pLocalBusy = true;
+        try
+        {
+            var loc = await ProxyCheck.LocalAsync();
+            _pLocal = loc.Text;
+            ComposeProxyDetail();
+            UpdateProxyVerdict(loc.Likely, loc.Findings);
+        }
+        catch (Exception ex) { AppPaths.Log("[代理] 本地检测失败: " + ex.Message); }
+        finally { _pLocalBusy = false; }
+    }
+
+    private async Task ProxyRemoteTickAsync()
+    {
+        if (_pRemoteBusy) return;
+        _pRemoteBusy = true;
+        try
+        {
+            var (rem, lat) = await ProxyCheck.RemoteAsync();
+            _pRemote = rem;
+            _pLat = lat;
+            ComposeProxyDetail();
+        }
+        catch (Exception ex) { AppPaths.Log("[代理] 出口检测失败: " + ex.Message); }
+        finally { _pRemoteBusy = false; }
+    }
+
+    private void ComposeProxyDetail()
+    {
+        var parts = new[] { _pLocal, _pRemote, _pLat }.Where(x => !string.IsNullOrWhiteSpace(x));
+        TxtProxyDetail.Text = string.Join("\n\n", parts);
+    }
+
+    private void UpdateProxyVerdict(bool likely, List<string> findings)
+    {
+        var head = likely ? "! 检测到代理/加速器相关配置（实时）" : "✓ 没发现本地代理（实时）";
+        var mid = findings.Count > 0 ? "：" + string.Join("、", findings) : "";
+        var ipLine = _pRemote.Split('\n').FirstOrDefault(x => x.Contains("← "))?.Trim() ?? "出口信息获取中…";
+        TxtProxyVerdict.Text = $"{head}{mid}\n{ipLine}";
+        SetDot(ImgProxyDot, likely ? "bad" : "on");
+    }
+
+    private async void OnProxyCheck(object sender, RoutedEventArgs e)
+    {
+        BtnProxyCheck.IsEnabled = false;
+        TxtFoot.Text = "正在完整检测…";
+        try
+        {
+            _pRemote = "（正在查出口 IP…）";
+            await ProxyLocalTickAsync();
+            await ProxyRemoteTickAsync();
+            AppPaths.Log("[代理] 手动检测完成，检测到代理=" + (_pLocal.Contains("√") ? "是" : "否"));
+            TxtFoot.Text = "代理检测完成";
+        }
+        finally { BtnProxyCheck.IsEnabled = true; }
+    }
+
+    private void OnProxyCopy(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(TxtProxyVerdict.Text + "\n\n" + TxtProxyDetail.Text);
+            TxtFoot.Text = "结果已复制到剪贴板";
+        }
+        catch (Exception ex) { TxtFoot.Text = "复制失败：" + ex.Message; }
+    }
+
     // ---------------- 日志页 ----------------
 
     private void LoadLog()
@@ -845,6 +1013,365 @@ public partial class MainWindow : Window
             _timer.Start();
         }
     }
+    private string _lastNicSet = "";
+    private DateTime _lastNicProbe = DateTime.MinValue;
+    private bool _probingNic;
+
+    private void SetNicHint(string text, bool ok)
+    {
+        TxtNicHint.Text = text;
+        TxtNicHint.Foreground = new SolidColorBrush(ok ? Color.FromRgb(0x2F, 0x8F, 0x5B) : Color.FromRgb(0xC0, 0x39, 0x2B));
+    }
+
+
+
+    // ---------------- 其他页 ----------------
+    private void InitOtherTab()
+    {
+        try
+        {
+            TxtOtherVer.Text = $"{Ver.Text()}  ·  单文件版";
+            TxtOtherExe.Text = Environment.ProcessPath ?? AppPaths.BaseDir;
+            TxtOtherData.Text = AppPaths.DataDir;
+            TxtOtherOs.Text = RuntimeInformation.OSDescription + $"（{(Environment.Is64BitProcess ? "64" : "32")} 位）";
+            TxtOtherNet.Text = RuntimeInformation.FrameworkDescription.Replace(".NET ", "");
+            TxtOtherRepo.Text = "https://github.com/ark2077njbks/FJjx-Ubuntu-software-based-router";
+            RefreshOtherRuntime();
+            RefreshLogInfo();
+        }
+        catch (Exception ex) { AppPaths.Log("[其他] 初始化失败: " + ex.Message); }
+    }
+
+    private void RefreshOtherRuntime()
+    {
+        try
+        {
+            TxtMemAvail.Text = $"当前可用 {MemOptimize.AvailPhys() / 1073741824.0:F1} GB / 共 {MemOptimize.TotalPhys() / 1073741824.0:F1} GB";
+            var up = DateTime.Now - Process.GetCurrentProcess().StartTime;
+            TxtOtherUp.Text = $"{(int)up.TotalHours} 小时 {up.Minutes} 分 {up.Seconds} 秒";
+            using var p = Process.GetCurrentProcess();
+            TxtOtherMem.Text = $"{p.WorkingSet64 / 1048576.0:F0} MB（峰值 {p.PeakWorkingSet64 / 1048576.0:F0} MB）";
+        }
+        catch { }
+    }
+
+
+    private async void OnMemOptimize(object sender, RoutedEventArgs e)
+    {
+        if (_memBusy) return;
+        _memBusy = true;
+        BtnMemOptimize.IsEnabled = false;
+        BtnMemOptimize.Content = "优化中…";
+        TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74));
+        TxtMemResult.Text = "正在优化…";
+        AppPaths.Log("[内存] 开始优化");
+        try
+        {
+            var r = await Task.Run(() => MemOptimize.Run(m => Dispatcher.Invoke(() => TxtMemResult.Text = m)));
+            if (r.Error.Length > 0 && r.Steps == 0)
+            {
+                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
+                TxtMemResult.Text = "优化失败：" + r.Error;
+                AppPaths.Log("[内存] 失败：" + r.Error);
+            }
+            else
+            {
+                var saved = MemOptimize.AvailPhys() - r.AvailBefore;
+                string delta = r.FreedMB > 0 ? $"释放约 {r.FreedMB:F0} MB" : "内存本来就很充裕，变化不大";
+                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x8E, 0x5A));
+                TxtMemResult.Text = $"完成：可用 {r.BeforeGB:F1} GB → {r.AfterGB:F1} GB（{delta}）";
+                AppPaths.Log($"[内存] 完成：可用 {r.BeforeGB:F1} GB → {r.AfterGB:F1} GB，释放 {r.FreedMB:F0} MB，命令成功 {r.Steps}/3");
+                RefreshOtherRuntime();
+            }
+            TxtMemAvail.Text = $"当前可用 {MemOptimize.AvailPhys() / 1073741824.0:F1} GB / 共 {MemOptimize.TotalPhys() / 1073741824.0:F1} GB";
+        }
+        catch (Exception ex)
+        {
+            TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
+            TxtMemResult.Text = "出错了：" + ex.Message;
+            AppPaths.Log("[内存] 异常：" + ex.Message);
+        }
+        finally
+        {
+            BtnMemOptimize.Content = "优化内存";
+            BtnMemOptimize.IsEnabled = true;
+            _memBusy = false;
+        }
+    }
+
+    private bool _memBusy;
+
+    private static void OpenPath(string path, bool isDir)
+    {
+        try
+        {
+            if (isDir) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+            else if (System.IO.File.Exists(path)) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            else MessageBox.Show("文件不存在：\n" + path, "其他", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) { MessageBox.Show("打不开：" + ex.Message, "其他", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    private void OnOpenExeDir(object sender, RoutedEventArgs e) => OpenPath(AppPaths.BaseDir, true);
+    private void OnOpenDataDir(object sender, RoutedEventArgs e) => OpenPath(AppPaths.DataDir, true);
+    private void OnOpenLogFile(object sender, RoutedEventArgs e) => OpenPath(AppPaths.LogFile, false);
+    private void OnOpenSettingsFile(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(AppPaths.SettingsFile)) _cfg.Save();   // 第一次点就先写出来
+            Process.Start(new ProcessStartInfo("notepad.exe", $"\"{AppPaths.SettingsFile}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex) { MessageBox.Show("打不开记事本：" + ex.Message, "设置文件", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+    private void OnOpenExportDir(object sender, RoutedEventArgs e)
+    {
+        var dir = _cfg.LastExportDir;
+        if (string.IsNullOrWhiteSpace(dir) || !System.IO.Directory.Exists(dir))
+        {
+            MessageBox.Show("还没有导出过测速结果。\n\n在「测速」页跑完一次后，点「导出本次结果」选个位置。", "测速导出目录",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        OpenPath(dir, true);
+    }
+
+    private void RefreshLogInfo()
+    {
+        try
+        {
+            TxtLogDir.Text = AppPaths.LogDir;
+            var size = System.IO.File.Exists(AppPaths.LogFile) ? new System.IO.FileInfo(AppPaths.LogFile).Length : 0;
+            TxtLogSize.Text = size > 0 ? $"{AppPaths.Human(size)}（{System.IO.File.ReadLines(AppPaths.LogFile).Count()} 行）" : "还没有日志";
+        }
+        catch { }
+    }
+
+    private void OnChangeLogDir(object sender, RoutedEventArgs e)
+    {
+        using var dlg = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选一个文件夹，日志 app.log 会搬过去",
+            UseDescriptionForTitle = true,
+            SelectedPath = AppPaths.LogDir,
+        };
+        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+        ApplyLogDir(dlg.SelectedPath);
+    }
+
+    private void OnResetLogDir(object sender, RoutedEventArgs e) => ApplyLogDir("");
+
+    private void ApplyLogDir(string target)
+    {
+        var (ok, msg) = AppPaths.MoveLogTo(string.IsNullOrWhiteSpace(target) ? null : target);
+        if (!ok)
+        {
+            MessageBox.Show(msg + "\n\n日志位置没有改。", "日志", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        _cfg.LogDir = string.IsNullOrWhiteSpace(target) ? "" : target;
+        _cfg.Save();
+        AppPaths.Log("[日志] " + msg);
+        RefreshLogInfo();
+    }
+
+    private void OnClearLogFile(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show("确定清空日志？\n\n只会清掉 app.log 里的内容，不会删文件本身。", "清空日志",
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        try
+        {
+            System.IO.File.WriteAllText(AppPaths.LogFile, "", new UTF8Encoding(false));
+            AppPaths.Log($"日志已清空（{DateTime.Now:yyyy-MM-dd HH:mm:ss}）");
+            RefreshLogInfo();
+            LoadLog();
+        }
+        catch (Exception ex) { MessageBox.Show("清空失败：" + ex.Message, "日志", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    private void OnOpenUninstaller(object sender, RoutedEventArgs e)
+    {
+        var exe = System.IO.Path.Combine(AppPaths.BaseDir, "..", "卸载程序.exe");
+        exe = System.IO.Path.GetFullPath(exe);
+        if (!System.IO.File.Exists(exe))
+        {
+            MessageBox.Show("没找到卸载程序（应在软件根目录：卸载程序.exe）", "其他", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        OpenPath(exe, false);
+    }
+
+    private void OnOpenRepo(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("https://github.com/ark2077njbks/FJjx-Ubuntu-software-based-router") { UseShellExecute = true }); }
+        catch (Exception ex) { MessageBox.Show("打不开浏览器：" + ex.Message, "其他", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    // ---------------- 校园网登录 / 注销 ----------------
+    private void LoadCampusUi()
+    {
+        try
+        {
+            var c = CampusLogin.LoadCreds();
+            TxtCampusUser.Text = c.Username;
+            CmbCampusIsp.SelectionChanged += (_, _) =>
+                TxtCampusIspCustom.Visibility = CmbCampusIsp.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
+            CmbCampusIf.SelectedIndex = c.Interface == "wlp2s0" ? 1 : 0;
+            CmbCampusIsp.SelectedIndex = c.UserType switch
+            {
+                "unicom" => 0, "cmcc" => 1, "telecom" => 2,
+                "" => 3,
+                _ => 4,
+            };
+            if (CmbCampusIsp.SelectedIndex == 4) TxtCampusIspCustom.Text = c.UserType;
+            TxtCampusIspCustom.Visibility = CmbCampusIsp.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
+            var pw = CampusLogin.UnprotectPassword(c);
+            if (!string.IsNullOrEmpty(pw))
+            {
+                PwdCampus.Password = pw;
+                TxtCampusHint.Text = "已记住账号（密码本机加密保存），直接点登录";
+            }
+        }
+        catch { }
+    }
+
+    private bool _campusPrefilled;
+
+    /// <summary>账号空着时从远端 Config.yaml 读账号（不含密码），省得手打</summary>
+    private async Task PrefillCampusUserAsync()
+    {
+        try
+        {
+            var rc = RemoteConfig.Load();
+            if (!rc.IsConfigured) return;
+            var yaml = await CampusLogin.ReadRemoteConfigAsync(rc);
+            var m = System.Text.RegularExpressions.Regex.Match(yaml, "username\\s*:\\s*\"?([0-9A-Za-z_]+)");
+            if (m.Success && TxtCampusUser.Text.Trim().Length == 0)
+            {
+                TxtCampusUser.Text = m.Groups[1].Value;
+                TxtCampusHint.Text = "账号已从 minipc 读出来，补密码就能登录（密码只存本机，加密）";
+            }
+        }
+        catch { }
+    }
+
+    private string CampusIface => (CmbCampusIf.SelectedItem as ComboBoxItem)?.Content as string ?? "eno1";
+
+    /// <summary>运营商 → srun 的 user_type（空 = 校园网/校内认证）</summary>
+    private string CampusUserType => CmbCampusIsp.SelectedIndex switch
+    {
+        0 => "unicom",
+        1 => "cmcc",
+        2 => "telecom",
+        3 => "",
+        _ => TxtCampusIspCustom.Text.Trim().ToLowerInvariant(),
+    };
+
+    private string CampusIspName => CmbCampusIsp.SelectedIndex == 4
+        ? (CampusUserType == "" ? "校园网" : CampusUserType)
+        : (CmbCampusIsp.SelectedItem as ComboBoxItem)?.Content as string ?? "中国联通";
+
+    private async void OnCampusLogin(object sender, RoutedEventArgs e)
+    {
+        var user = TxtCampusUser.Text.Trim();
+        var pwd = PwdCampus.Password;
+        if (pwd.Length == 0)   // 密码框空着就用本机存的那份
+            pwd = CampusLogin.UnprotectPassword(CampusLogin.LoadCreds());
+        if (user.Length == 0) { TxtCampusLog.Text = "× 先填账号。"; return; }
+        if (pwd.Length == 0) { TxtCampusLog.Text = "× 先填密码（第一次登录必须填一次）。"; return; }
+
+        BtnCampusLogin.IsEnabled = false;
+        BtnCampusLogout.IsEnabled = false;
+        TxtCampusLog.Text = "正在登录：先把凭据写到 minipc 的 ~/Config.yaml，再执行 bitsrun…";
+        try
+        {
+            var (ok, msg) = await CampusLogin.LoginAsync(user, pwd, CampusIface, CampusUserType);
+            CampusLogin.SaveCreds(user, pwd, CampusIface, CampusUserType);
+            TxtCampusLog.Text = $"{DateTime.Now:HH:mm:ss}  {(ok ? "√" : "×")} {msg}\n\n网卡 {CampusIface} · 账号 {user}\n"
+                              + $"运营商 {CampusIspName} · 网卡 {CampusIface}\n"
+                              + (ok ? "已在线。状态页「校园网出口」会自动更新。" : "没成功的话看上面那行报错原文；运营商选错也会被拒。");
+            AppPaths.Log($"[校园网] 登录 {(ok ? "成功" : "失败")} user={user} isp={CampusUserType} iface={CampusIface} msg={msg}");
+            if (ok) TxtCampusHint.Text = "已登录，密码已在本机加密保存";
+        }
+        catch (Exception ex)
+        {
+            TxtCampusLog.Text = "× 异常：" + ex.Message;
+            AppPaths.Log("[校园网] 登录异常: " + ex.Message);
+        }
+        finally { BtnCampusLogin.IsEnabled = true; BtnCampusLogout.IsEnabled = true; }
+    }
+
+    private async void OnCampusLogout(object sender, RoutedEventArgs e)
+    {
+        var r = MessageBox.Show(
+            "注销会真的断网。\n\nminipc 的校园网会话会被结束，接在它下面的设备（包括这台笔记本）都会掉线，\n要重新上网得再点一次「登录」。\n\n确定注销吗？",
+            "校园网注销", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes) return;
+
+        BtnCampusLogin.IsEnabled = false;
+        BtnCampusLogout.IsEnabled = false;
+        TxtCampusLog.Text = "正在调门户注销接口…（注销成功后网络会断）";
+        try
+        {
+            var (ok, msg) = await CampusLogin.LogoutAsync(TxtCampusUser.Text.Trim());
+            TxtCampusLog.Text = $"{DateTime.Now:HH:mm:ss}  {(ok ? "√" : "×")} {msg}";
+            AppPaths.Log($"[校园网] 注销 {(ok ? "成功" : "失败")} msg={msg}");
+        }
+        catch (Exception ex)
+        {
+            TxtCampusLog.Text = "× 异常：" + ex.Message;
+            AppPaths.Log("[校园网] 注销异常: " + ex.Message);
+        }
+        finally { BtnCampusLogin.IsEnabled = true; BtnCampusLogout.IsEnabled = true; }
+    }
+
+    private async void OnCampusStatus(object sender, RoutedEventArgs e)
+    {
+        BtnCampusStatus.IsEnabled = false;
+        TxtCampusLog.Text = "正在查（只读，不断网）…";
+        try
+        {
+            var txt = await CampusLogin.StatusAsync();
+            TxtCampusLog.Text = $"{DateTime.Now:HH:mm:ss}  {txt}";
+        }
+        catch (Exception ex) { TxtCampusLog.Text = "× 异常：" + ex.Message; }
+        finally { BtnCampusStatus.IsEnabled = true; }
+    }
+
+    /// <summary>静默探测：只在切回状态页/窗口重新激活时用一次 ssh 比对，不常驻轮询</summary>
+    private async Task WatchNicsAsync()
+    {
+        if (_probingNic || _busy) return;
+        _probingNic = true;
+        try
+        {
+            var rc = RemoteConfig.Load();
+            if (!rc.IsConfigured) return;
+
+            var names = await StatusGather.RemoteNicNamesAsync(rc);
+            if (string.IsNullOrEmpty(names)) return;
+
+            var real = names.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Where(n => !(n.StartsWith("docker") || n.StartsWith("veth") || n.StartsWith("br-")
+                                       || n.StartsWith("virbr") || n.StartsWith("tun") || n.StartsWith("tap") || n == "lo"))
+                            .OrderBy(n => n, StringComparer.Ordinal).ToArray();
+            var set = string.Join(",", real);
+            _lastNicProbe = DateTime.Now;
+
+            if (_lastNicSet != "" && set != _lastNicSet)
+            {
+                var added = real.Except(_lastNicSet.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToArray();
+                var removed = _lastNicSet.Split(',', StringSplitOptions.RemoveEmptyEntries).Except(real).ToArray();
+                AppPaths.Log($"[网口] 变化：新增「{string.Join("、", added)}」 消失「{string.Join("、", removed)}」");
+                await RefreshAsync(false);          // 变了才整页刷新，刷新里会写绿字提示
+                return;
+            }
+            _lastNicSet = set;
+        }
+        catch (Exception ex) { AppPaths.Log("[网口] 探测异常: " + ex.Message); }
+        finally { _probingNic = false; }
+    }
+
     private async void OnRefreshNics(object sender, RoutedEventArgs e) => await RefreshNicsAsync();
 
     private async Task RefreshAsync(bool manual = false)
@@ -856,9 +1383,24 @@ public partial class MainWindow : Window
         try
         {
             var snap = await StatusGather.CollectAsync();
-            TxtLocal.Text = snap.Local;
-            TxtCampus.Text = snap.Campus;
-            TxtMini.Text = snap.Mini;
+            RenderSections(StpLocal, snap.LocalSections);
+            RenderSections(StpCampus, snap.CampusSections);
+            RenderSections(StpMini, snap.MiniSections);
+
+            // 刷新本身就带网口检测：远端新插的 USB 网卡会在这里冒出来
+            var nicNames = snap.RemoteNics.Select(n => n.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+            var nicSet = string.Join(",", nicNames);
+            var beforeSet = _lastNicSet.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var nicAdded = nicNames.Except(beforeSet).ToArray();
+            if (_lastNicSet != "" && nicSet != _lastNicSet)
+                AppPaths.Log($"[网口] 变化：新增「{string.Join("、", nicAdded)}」 "
+                    + $"消失「{string.Join("、", beforeSet.Except(nicNames))}」");
+            _lastNicSet = nicSet;
+            _lastNicProbe = DateTime.Now;
+            if (nicNames.Length > 0)
+                SetNicHint(nicAdded.Length > 0
+                    ? $"√ 发现新网口：{string.Join("、", nicAdded)}"
+                    : $"√ 远端网口 {nicNames.Length} 个：{string.Join("、", nicNames)}", true);
 
             try { File.WriteAllText(AppPaths.SnapshotFile, snap.Raw, new UTF8Encoding(false)); } catch { }
 
@@ -897,6 +1439,7 @@ public partial class MainWindow : Window
     {
         if (_nicPolling) return;
         _nicPolling = true;
+        if (Environment.GetEnvironmentVariable("NETPANEL_NICDEBUG") == "1") AppPaths.Log("[网卡] 轮询一次");
         try
         {
             var list = await StatusGather.GetPhysicalAdaptersAsync();
@@ -969,14 +1512,14 @@ public partial class MainWindow : Window
             var info = new StackPanel();
             info.Children.Add(new TextBlock
             {
-                Text = $"{a.Name}     [{a.Status}]",
+                Text = $"{a.Name}     [{StatusGather.LocalStatus(a.Status, a.IsDisabled)}]",
                 FontSize = 15,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = a.IsDisabled
                     ? new SolidColorBrush(Color.FromRgb(0xB4, 0x3B, 0x3B))
                     : a.Status.Equals("Up", StringComparison.OrdinalIgnoreCase)
                         ? new SolidColorBrush(Color.FromRgb(0x1E, 0x8E, 0x5A))
-                        : new SolidColorBrush(Color.FromRgb(0x1F, 0x24, 0x30))
+                        : new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98))
             });
             info.Children.Add(new TextBlock
             {
@@ -1002,9 +1545,12 @@ public partial class MainWindow : Window
                 VerticalAlignment = VerticalAlignment.Center
             };
 
+            bool absent = !a.IsDisabled && a.Status.Equals("Not Present", StringComparison.OrdinalIgnoreCase);
             var btnEnable = MakeButton("启用", true, a.IsDisabled);
+            btnEnable.ToolTip = a.IsDisabled ? "在设备管理器层面重新启用这块网卡" : "这块网卡现在是启用的";
             btnEnable.Click += async (_, _) => await ToggleAdapterAsync(a.Name, true);
-            var btnDisable = MakeButton("禁用", false, !a.IsDisabled);
+            var btnDisable = MakeButton("禁用", false, !a.IsDisabled && !absent);
+            btnDisable.ToolTip = absent ? "设备当前未就绪（设备管理器里看得到黄色感叹号/已禁用），先在那儿处理" : "";
             btnDisable.Click += async (_, _) => await ToggleAdapterAsync(a.Name, false);
             btns.Children.Add(btnEnable);
             btns.Children.Add(btnDisable);
@@ -1736,11 +2282,120 @@ public partial class MainWindow : Window
 
     // ---------------- 测速页 ----------------
 
+    /// <summary>后台把每个测速源的 IP 解析出来（单域名 3 秒超时，个别域名慢不拖累整体）</summary>
+    private async Task ResolveSourceIpsAsync()
+    {
+        try
+        {
+            await Task.WhenAll(SpeedTest.Sources.Select(async src =>
+            {
+                if (!string.IsNullOrEmpty(src.Ip)) return;
+                try
+                {
+                    var t = SpeedTest.ResolveIpAsync(src.Url);
+                    var done = await Task.WhenAny(t, Task.Delay(3000));
+                    src.Ip = done == t ? await t : "";
+                }
+                catch { src.Ip = ""; }
+            }));
+            var got = SpeedTest.Sources.Count(x => !string.IsNullOrEmpty(x.Ip) && x.Ip != "—");
+            AppPaths.Log($"[测速] 源 IP 解析完成 {got}/{SpeedTest.Sources.Length}");
+            if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(RefreshSourceList); return; }
+            RefreshSourceList();
+        }
+        catch (Exception ex) { AppPaths.Log("[测速] 源 IP 解析异常: " + ex.Message); }
+    }
+
+    private void RefreshSourceList()
+    {
+        var idx = Math.Max(CmbSource.SelectedIndex, 0);
+        CmbSource.ItemsSource = SpeedTest.Sources.Select(x => x.ToString()).ToList();
+        if (idx >= 0 && idx < SpeedTest.Sources.Length) CmbSource.SelectedIndex = idx;
+        AppPaths.Log($"[测速] 下拉 {CmbSource.Items.Count} 条就绪，选中「{CmbSource.Text}」");
+    }
+
+    /// <summary>把结构化状态渲染成「标签列 + 值列」，中文混排也不会错位</summary>
+    private void RenderSections(Panel host, List<NetPanel.Services.StatusSection> sections)
+    {
+        host.Children.Clear();
+        if (sections == null || sections.Count == 0) return;
+
+        foreach (var sec in sections)
+        {
+            if (!string.IsNullOrWhiteSpace(sec.Title))
+            {
+                host.Children.Add(new TextBlock
+                {
+                    Text = sec.Title,
+                    FontSize = 12.5,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74)),
+                    Margin = new Thickness(0, host.Children.Count == 0 ? 0 : 14, 0, 6),
+                });
+            }
+
+            foreach (var row in sec.Rows)
+            {
+                if (string.IsNullOrEmpty(row.Label) && string.IsNullOrEmpty(row.Value))
+                {
+                    host.Children.Add(new TextBlock { Text = "", Height = 4 });
+                    continue;
+                }
+
+                var g = new Grid { Margin = new Thickness(0, 1, 0, 1) };
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                // 有没有图标都占同一格，保证所有行结构一致、标签列永远对齐
+                FrameworkElement iconCell;
+                if (!string.IsNullOrEmpty(row.Icon))
+                    iconCell = new Image
+                    {
+                        Source = new BitmapImage(new Uri($"pack://application:,,,/icons/{row.Icon}")),
+                        Width = 14, Height = 14,
+                        VerticalAlignment = VerticalAlignment.Top,
+                        Margin = new Thickness(0, 3, 0, 0),
+                    };
+                else
+                    iconCell = new Border { Width = 14, Height = 14 };
+                Grid.SetColumn(iconCell, 0);
+                g.Children.Add(iconCell);
+
+                var lbl = new TextBlock
+                {
+                    Text = row.Label,
+                    FontSize = 12.5,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x94, 0xA3)),
+                    TextAlignment = TextAlignment.Right,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                };
+                var val = new TextBlock
+                {
+                    Text = row.Value,
+                    FontSize = 12.5,
+                    Foreground = new SolidColorBrush(row.Sub ? Color.FromRgb(0x8A, 0x94, 0xA3) : Color.FromRgb(0x1F, 0x2A, 0x3D)),
+                    TextWrapping = row.Sub ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                    TextTrimming = row.Sub ? TextTrimming.CharacterEllipsis : TextTrimming.None,
+                    LineHeight = 19,
+                    ToolTip = row.Value,
+                };
+                Grid.SetColumn(lbl, 1);
+                Grid.SetColumn(val, 2);
+                g.Children.Add(lbl);
+                g.Children.Add(val);
+                host.Children.Add(g);
+            }
+        }
+    }
+
     private void InitSpeedTab()
     {
-        CmbSource.ItemsSource = SpeedTest.Sources;
-        CmbSource.DisplayMemberPath = "Name";
-        CmbSource.SelectedIndex = 0;
+        CmbSource.ItemsSource = SpeedTest.Sources.Select(x => x.ToString()).ToList();
+        _ = ResolveSourceIpsAsync();
+        if (CmbSource.SelectedIndex < 0) CmbSource.SelectedIndex = 0;
 
         CmbDuration.ItemsSource = new[] { "10 秒", "20 秒", "30 秒" };
         CmbDuration.SelectedIndex = 1;
@@ -1748,87 +2403,228 @@ public partial class MainWindow : Window
         CmbConn.ItemsSource = new[] { "1 连接", "2 连接", "4 连接", "8 连接" };
         CmbConn.SelectedIndex = 2;   // 默认 4 连接
 
+        CmbSource.ToolTip = "列表里选，或直接填 URL（http/https）";
+        DrawGauge(0, "待机");
         ChartCanvas.SizeChanged += (_, _) => RedrawChart();
         ChartCanvas.Background = Brushes.White;
         RedrawChart();
     }
 
-    /// <summary>每次测速结束追加一行到 data\speed.csv（首行自动写表头）</summary>
-    private static void AppendSpeedCsv(SpeedResult r)
+    /// <summary>    // 测速结果不再自动写盘，等用户手动导出
+    private SpeedResult? _lastSpeed;
+    private string _lastUp = "-", _lastPing = "-", _lastJitter = "-";
+
+    private void OnExportSpeed(object sender, RoutedEventArgs e)
     {
+        if (_lastSpeed == null)
+        {
+            MessageBox.Show("还没有测速结果。\n\n先跑一次测速，再点导出。", "导出测速结果", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "保存测速结果",
+            Filter = "日志文件 (*.log)|*.log|文本文件 (*.txt)|*.txt",
+            FileName = $"测速-{DateTime.Now:yyyyMMdd-HHmmss}.log",
+            DefaultExt = ".log",
+        };
+        if (!string.IsNullOrWhiteSpace(_cfg.LastExportDir) && System.IO.Directory.Exists(_cfg.LastExportDir))
+            dlg.InitialDirectory = _cfg.LastExportDir;
+
+        if (dlg.ShowDialog() != true) return;
+
         try
         {
-            AppPaths.Ensure();
-            var file = System.IO.Path.Combine(AppPaths.DataDir, "speed.csv");
-            bool needHeader = !File.Exists(file);
+            var r = _lastSpeed;
             var sb = new StringBuilder();
-            if (needHeader) sb.AppendLine("时间,测速源,连接数,平均Mbps,峰值Mbps,下载MB,时长秒");
-            sb.AppendLine(string.Join(",",
-                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                Csv(r.Source),
-                r.Connections.ToString(),
-                r.AverageMbps.ToString("F1"),
-                r.PeakMbps.ToString("F1"),
-                (r.Bytes / 1048576.0).ToString("F1"),
-                r.Seconds.ToString("F1")));
-            File.AppendAllText(file, sb.ToString(), new UTF8Encoding(true));
+            sb.AppendLine("网络面板 · 测速记录");
+            sb.AppendLine("========================");
+            sb.AppendLine($"时间      {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"测速源    {r.Source}");
+            sb.AppendLine($"连接数    {r.Connections}");
+            sb.AppendLine();
+            sb.AppendLine($"下行平均  {r.AverageMbps:F1} Mbps");
+            sb.AppendLine($"下行峰值  {r.PeakMbps:F1} Mbps");
+            sb.AppendLine($"上行      {_lastUp} Mbps");
+            sb.AppendLine($"下载量    {r.Bytes / 1048576.0:F1} MB");
+            sb.AppendLine($"用时      {r.Seconds:F1} 秒");
+            sb.AppendLine();
+            sb.AppendLine($"延迟      {_lastPing} ms");
+            sb.AppendLine($"抖动      {_lastJitter} ms");
+            sb.AppendLine($"丢包      {_pingLoss}/5");
+            sb.AppendLine();
+            sb.AppendLine($"状态      {(r.Cancelled ? "中途停止（数据不完整）" : "正常完成")}");
+            System.IO.File.WriteAllText(dlg.FileName, sb.ToString(), new UTF8Encoding(true));
+
+            _cfg.LastExportDir = System.IO.Path.GetDirectoryName(dlg.FileName) ?? "";
+            _cfg.Save();
+            AppPaths.Log($"[测速] 已导出结果到 {dlg.FileName}");
+            TxtFoot.Text = "√ 已导出：" + dlg.FileName;
         }
-        catch (Exception ex) { AppPaths.Log("写 speed.csv 失败: " + ex.Message); }
+        catch (Exception ex)
+        {
+            MessageBox.Show("导出失败：\n" + ex.Message, "导出测速结果", MessageBoxButton.OK, MessageBoxImage.Warning);
+            AppPaths.Log("[测速] 导出失败：" + ex.Message);
+        }
+    }
+
+    private double _gaugeMax = 100;
+    private int _pingLoss;
+
+    /// <summary>仪表盘：半圆弧 + 指针，按当前速度换算角度</summary>
+    private void DrawGauge(double mbps, string phase)
+    {
+        if (mbps > _gaugeMax)
+            _gaugeMax = mbps <= 200 ? 200 : mbps <= 500 ? 500 : mbps <= 1000 ? 1000 : 2000;
+
+        const double cx = 180, cy = 180, r = 132;
+        double frac = Math.Clamp(mbps / _gaugeMax, 0, 1);
+
+        static PathGeometry Arc(double cx, double cy, double r, double frac)
+        {
+            double a = Math.PI * (1 - frac);
+            var end = new Point(cx + r * Math.Cos(a), cy - r * Math.Sin(a));
+            var fig = new PathFigure { StartPoint = new Point(cx - r, cy) };
+            fig.Segments.Add(new ArcSegment(end, new Size(r, r), 0, frac > 0.5, SweepDirection.Clockwise, true));
+            return new PathGeometry(new[] { fig });
+        }
+
+        PthGaugeBg.Data = Arc(cx, cy, r, 1);
+        PthGaugeFg.Data = Arc(cx, cy, r, frac);
+        NeedleRotate.Angle = frac * 180 - 90;
+        TxtGaugeBig.Text = mbps.ToString("F1");
+        TxtGaugeScaleR.Text = _gaugeMax.ToString("F0");
+        if (!string.IsNullOrEmpty(phase)) TxtPhase.Text = phase;
     }
 
     private async void OnStartSpeed(object sender, RoutedEventArgs e)
     {
         if (_speedRunning) return;
 
-        var source = CmbSource.SelectedItem as SpeedSource ?? SpeedTest.Sources[0];
+        // 自定义地址优先；没填就用下拉里选的
+        SpeedSource source;
+        var custom = (TxtCustomUrl.Text ?? "").Trim();
+        if (custom.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            source = new SpeedSource { Name = "自定义", Url = custom };
+        else
+        {
+            var pick = CmbSource.SelectedIndex;
+            if (pick < 0 || pick >= SpeedTest.Sources.Length) pick = 0;
+            source = SpeedTest.Sources[pick];
+        }
+
         _speedWindow = CmbDuration.SelectedIndex switch { 0 => 10, 2 => 30, _ => 20 };
         int conns = CmbConn.SelectedIndex switch { 0 => 1, 1 => 2, 3 => 8, _ => 4 };
 
         _samples.Clear();
+        _upPoints.Clear();
+        _downSeconds = 0;
         _speedRunning = true;
         BtnSpeedStart.IsEnabled = false;
         BtnSpeedStop.IsEnabled = true;
         CmbSource.IsEnabled = false;
         CmbDuration.IsEnabled = false;
         CmbConn.IsEnabled = false;
-        TxtSpeedNow.Text = "0.0";
+        _gaugeMax = 100;
+        TxtDown.Text = "—"; TxtUp.Text = "—"; TxtPing.Text = "—"; TxtJitter.Text = "—";
         TxtSpeedAvg.Text = "平均 —";
-        TxtSpeedBytes.Text = "已下载 —";
-        TxtSpeedPing.Text = "延迟 检测中…";
+        TxtSrcInfo.Text = "测速源 " + source.Name;
+        DrawGauge(0, "延迟");
         RedrawChart();
-        AppPaths.Log($"测速开始 source={source.Name} duration={_speedWindow}s conns={conns}");
+        AppPaths.Log($"测速开始 source={source.Name} url={source.Url} duration={_speedWindow}s conns={conns}");
 
         _speedCts = new CancellationTokenSource();
+        var ct = _speedCts.Token;
 
         try
         {
-            int ping = await SpeedTest.PingAsync(source.Url);
-            TxtSpeedPing.Text = ping >= 0 ? $"延迟 {ping} ms" : "延迟 失败";
-
-            var progress = new Progress<SpeedSample>(s =>
+            // ① 延迟 / 抖动
+            var ip = await SpeedTest.ResolveIpAsync(source.Url);
+            TxtSrcInfo.Text = $"{source.Name} · {new Uri(source.Url).Host} ({ip})";
+            var ping = await SpeedTest.MeasurePingAsync(source.Url, 5, ct);
+            if (ping.Avg >= 0)
             {
-                _samples.Add(s);
-                TxtSpeedNow.Text = s.Mbps.ToString("F1");
-                TxtSpeedBytes.Text = $"已下载 {s.TotalBytes / 1024.0 / 1024.0:F1} MB";
-                double avg = s.TotalBytes * 8.0 / Math.Max(s.Seconds, 0.1) / 1_000_000.0;
-                TxtSpeedAvg.Text = $"平均 {avg:F1} Mbps";
+                TxtPing.Text = ping.Avg.ToString();
+                TxtJitter.Text = ping.Jitter.ToString();
+                _pingLoss = ping.Loss;
+            }
+            else { TxtPing.Text = "失败"; TxtJitter.Text = "—"; }
+
+            // ② 下载
+            DrawGauge(0, "下行测速");
+            var progress = new Progress<SpeedSample>(sm =>
+            {
+                if (sm.Mbps <= 0.01) return;      // 收尾空采样会把曲线拉出一条零线
+                _samples.Add(sm);
+                TxtDown.Text = sm.Mbps.ToString("F1");
+                DrawGauge(sm.Mbps, "下行测速");
+                double avg = sm.TotalBytes * 8.0 / Math.Max(sm.Seconds, 0.1) / 1_000_000.0;
+                TxtSpeedAvg.Text = $"平均 {avg:F1} Mbps · 已下载 {sm.TotalBytes / 1048576.0:F1} MB";
                 RedrawChart();
             });
 
-            var result = await SpeedTest.RunAsync(source, TimeSpan.FromSeconds(_speedWindow), conns, progress, _speedCts.Token);
+            // 选中源挂了（403/404/被墙/超时）就自动换下一个，最多试 3 个，别让整次测速白跑
+            SpeedResult? result = null;
+            var tried = new List<string>();
+            foreach (var cand in new[] { source }.Concat(SpeedTest.Sources.Where(x => x.Name != source.Name)))
+            {
+                if (tried.Count >= 3 || ct.IsCancellationRequested) break;
+                tried.Add(cand.Name);
+                try
+                {
+                    _samples.Clear();
+                    TxtSrcInfo.Text = $"{cand.Name} · {new Uri(cand.Url).Host}";
+                    DrawGauge(0, "下行测速");
+                    var r = await SpeedTest.RunAsync(cand, TimeSpan.FromSeconds(_speedWindow), conns, progress, ct);
+                    if (r.Bytes >= 1_000_000) { result = r; source = cand; break; }
+                    AppPaths.Log($"[测速] {cand.Name} 没测出数据，换下一个源");
+                    TxtFoot.Text = $"「{cand.Name}」没测出数据，自动换源…";
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    AppPaths.Log($"[测速] {cand.Name} 失败：{ex.Message}");
+                    TxtFoot.Text = $"「{cand.Name}」连不上，自动换源…";
+                }
+            }
+            if (result == null) throw new Exception(ct.IsCancellationRequested ? "测速已停止" : "试了 3 个测速源都连不上，检查一下网络");
 
-            TxtSpeedNow.Text = result.AverageMbps.ToString("F1");
-            TxtSpeedAvg.Text = $"平均 {result.AverageMbps:F1} Mbps   峰值 {result.PeakMbps:F1}   {result.Connections} 连接";
-            TxtSpeedBytes.Text = $"已下载 {result.Bytes / 1024.0 / 1024.0:F1} MB / {result.Seconds:F1} 秒";
+            _downSeconds = _samples.Count > 0 ? _samples.Max(x => x.Seconds) : _speedWindow;
+            TxtDown.Text = result.AverageMbps.ToString("F1");
+            TxtSpeedAvg.Text = $"平均 {result.AverageMbps:F1} Mbps · 峰值 {result.PeakMbps:F1} · {result.Connections} 连接 · 下载 {result.Bytes / 1048576.0:F1} MB · 丢包 {_pingLoss}/5";
+
+            // ③ 上传（Cloudflare __up，境外；国内镜像不收 POST）
+            if (!ct.IsCancellationRequested)
+            {
+                DrawGauge(0, "上行测速");
+                _gaugeMax = 100;
+                var upSw = System.Diagnostics.Stopwatch.StartNew();
+                var upMbps = await SpeedTest.UploadAsync(TimeSpan.FromSeconds(Math.Max(6, _speedWindow / 2)),
+                    Math.Min(conns, 4),
+                    v => Dispatcher.Invoke(() =>
+                    {
+                        TxtUp.Text = v.ToString("F1");
+                        DrawGauge(v, "上行测速");
+                        if (v > 0.01) { _upPoints.Add((_downSeconds + upSw.Elapsed.TotalSeconds, v)); RedrawChart(); }
+                    }), ct);
+                TxtUp.Text = upMbps.ToString("F1");
+                DrawGauge(result.AverageMbps, "完成");
+                TxtPhase.Text = "完成";
+            }
+            else TxtPhase.Text = "已停止";
+
             TxtFoot.Text = result.Cancelled
                 ? "测速已停止"
-                : $"√ 测速完成：平均 {result.AverageMbps:F1} Mbps（{result.Source}）";
-            AppPaths.Log($"测速完成 avg={result.AverageMbps:F1} peak={result.PeakMbps:F1} bytes={result.Bytes} sec={result.Seconds:F1} cancelled={result.Cancelled}");
-            AppendSpeedCsv(result);
+                : $"√ 测速完成：下行 {result.AverageMbps:F1} Mbps / 上行 {TxtUp.Text} Mbps / 延迟 {TxtPing.Text} ms（{source.Name}）";
+            AppPaths.Log($"测速完成 down={result.AverageMbps:F1} up={TxtUp.Text} ping={TxtPing.Text} jitter={TxtJitter.Text} bytes={result.Bytes} cancelled={result.Cancelled}");
+            // 不自动落盘：只记在内存里，等用户点「导出本次结果」才写文件
+            _lastSpeed = result;
+            _lastUp = TxtUp.Text; _lastPing = TxtPing.Text; _lastJitter = TxtJitter.Text;
         }
         catch (Exception ex)
         {
             TxtFoot.Text = "× 测速失败：" + ex.Message;
+            TxtPhase.Text = "失败";
             AppPaths.Log("测速异常: " + ex);
             MessageBox.Show("测速失败：\n" + ex.Message + "\n\n换个测速源或稍后再试。", "失败",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1854,6 +2650,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>XY 折线图：横轴时间、纵轴 Mbps，边测边画</summary>
+    private readonly List<(double Sec, double Mbps)> _upPoints = new();
+    private double _downSeconds;
+
     private void RedrawChart()
     {
         ChartCanvas.Children.Clear();
@@ -1867,8 +2666,9 @@ public partial class MainWindow : Window
         double ph = h - top - bottom;
 
         // 纵轴刻度：按已观测峰值取整
-        double peak = _samples.Count > 0 ? _samples.Max(s => s.Mbps) : 0;
-        double maxY = NiceCeil(Math.Max(peak * 1.2, 5));
+        double peakDown = _samples.Count > 0 ? _samples.Max(s => s.Mbps) : 0;
+        double peakUp = _upPoints.Count > 0 ? _upPoints.Max(p => p.Mbps) : 0;
+        double maxY = NiceCeil(Math.Max(Math.Max(peakDown, peakUp) * 1.2, 5));
 
         var axisBrush = new SolidColorBrush(Color.FromRgb(0xD5, 0xDB, 0xE5));
         var gridBrush = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF6));
@@ -1906,7 +2706,9 @@ public partial class MainWindow : Window
         ChartCanvas.Children.Add(unit);
 
         // 横轴：时间刻度
-        double window = Math.Max(_speedWindow, 1);
+        double lastDown = _samples.Count > 0 ? _samples[^1].Seconds : 0;
+        double lastUp = _upPoints.Count > 0 ? _upPoints[^1].Sec : 0;
+        double window = Math.Max(Math.Max(_speedWindow, lastDown), Math.Max(lastUp, 1));
         for (int i = 0; i <= 4; i++)
         {
             double x = left + pw * i / 4.0;
@@ -1922,46 +2724,112 @@ public partial class MainWindow : Window
             ChartCanvas.Children.Add(t);
         }
 
-        // 折线
-        if (_samples.Count >= 2)
-        {
-            var poly = new Polyline
-            {
-                Stroke = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED)),
-                StrokeThickness = 2,
-                StrokeLineJoin = PenLineJoin.Round
-            };
-            foreach (var s in _samples)
-            {
-                double x = left + Math.Clamp(s.Seconds / window, 0, 1) * pw;
-                double y = top + ph - Math.Clamp(s.Mbps / maxY, 0, 1) * ph;
-                poly.Points.Add(new Point(x, y));
-            }
-            ChartCanvas.Children.Add(poly);
+        // 图例（安兔兔那种两根线：下载蓝、上传绿）
+        var lgBrushDown = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
+        var lgBrushUp = new SolidColorBrush(Color.FromRgb(0x1E, 0x8E, 0x5A));
+        AddLegend(left + 8, top + ph - 24, lgBrushDown, "下载");
+        AddLegend(left + 78, top + ph - 24, lgBrushUp, "上传");
 
-            // 末端小圆点
-            var last = poly.Points[^1];
-            var dot = new Ellipse
-            {
-                Width = 7, Height = 7,
-                Fill = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED))
-            };
-            Canvas.SetLeft(dot, last.X - 3.5);
-            Canvas.SetTop(dot, last.Y - 3.5);
-            ChartCanvas.Children.Add(dot);
-        }
-        else
+        bool any = _samples.Count >= 2 || _upPoints.Count >= 2;
+        if (!any)
         {
             var hint = new TextBlock
             {
-                Text = _speedRunning ? "正在采集数据…" : "点「开始测速」，这里会实时画出速度曲线",
+                Text = _speedRunning ? "正在采集数据…" : "点「开始测速」，这里会实时画出下载/上传两条曲线",
                 FontSize = 13,
                 Foreground = textBrush
             };
             Canvas.SetLeft(hint, left + 10);
             Canvas.SetTop(hint, top + ph / 2 - 10);
             ChartCanvas.Children.Add(hint);
+            return;
         }
+
+        // 下载/上行的分界线（安兔兔那种分段感）
+        if (_upPoints.Count > 0 && _downSeconds > 0)
+        {
+            double xd = left + Math.Clamp(_downSeconds / window, 0, 1) * pw;
+            ChartCanvas.Children.Add(new Line
+            {
+                X1 = xd, Y1 = top, X2 = xd, Y2 = top + ph,
+                Stroke = new SolidColorBrush(Color.FromRgb(0xD5, 0xDB, 0xE5)),
+                StrokeThickness = 1,
+                StrokeDashArray = new DoubleCollection { 3, 3 }
+            });
+            var lbl = new TextBlock
+            {
+                Text = "上行开始", FontSize = 10.5,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA3, 0xB2))
+            };
+            Canvas.SetLeft(lbl, xd + 4);
+            Canvas.SetTop(lbl, top + 2);
+            ChartCanvas.Children.Add(lbl);
+        }
+
+        // 下载曲线
+        if (_samples.Count >= 2)
+        {
+            var poly = new Polyline
+            {
+                Stroke = lgBrushDown,
+                StrokeThickness = 2,
+                StrokeLineJoin = PenLineJoin.Round
+            };
+            foreach (var sm in _samples)
+            {
+                double x = left + Math.Clamp(sm.Seconds / window, 0, 1) * pw;
+                double y = top + ph - Math.Clamp(sm.Mbps / maxY, 0, 1) * ph;
+                poly.Points.Add(new Point(x, y));
+            }
+            ChartCanvas.Children.Add(poly);
+            AddDot(poly.Points[^1], lgBrushDown);
+        }
+
+        // 上传曲线（时间轴接着下载往后走）
+        if (_upPoints.Count >= 2)
+        {
+            var polyUp = new Polyline
+            {
+                Stroke = lgBrushUp,
+                StrokeThickness = 2,
+                StrokeLineJoin = PenLineJoin.Round
+            };
+            foreach (var p in _upPoints)
+            {
+                double x = left + Math.Clamp(p.Sec / window, 0, 1) * pw;
+                double y = top + ph - Math.Clamp(p.Mbps / maxY, 0, 1) * ph;
+                polyUp.Points.Add(new Point(x, y));
+            }
+            ChartCanvas.Children.Add(polyUp);
+            AddDot(polyUp.Points[^1], lgBrushUp);
+        }
+    }
+
+    /// <summary>曲线末端的小圆点</summary>
+    private void AddDot(Point p, Brush brush)
+    {
+        var dot = new Ellipse { Width = 7, Height = 7, Fill = brush };
+        Canvas.SetLeft(dot, p.X - 3.5);
+        Canvas.SetTop(dot, p.Y - 3.5);
+        ChartCanvas.Children.Add(dot);
+    }
+
+    /// <summary>图例：一根短线 + 文字</summary>
+    private void AddLegend(double x, double y, Brush brush, string text)
+    {
+        ChartCanvas.Children.Add(new Line
+        {
+            X1 = x, Y1 = y + 7, X2 = x + 16, Y2 = y + 7,
+            Stroke = brush, StrokeThickness = 3, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round
+        });
+        var t = new TextBlock
+        {
+            Text = text, FontSize = 11.5,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74))
+        };
+        Canvas.SetLeft(t, x + 21);
+        Canvas.SetTop(t, y);
+        ChartCanvas.Children.Add(t);
     }
 
     /// <summary>把上限取成 5/10/20/25/50/100… 这种好读的数</summary>

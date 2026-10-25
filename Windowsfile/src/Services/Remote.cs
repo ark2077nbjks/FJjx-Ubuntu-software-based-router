@@ -233,4 +233,43 @@ pause >nul
         }
         catch (Exception ex) { return (-1, "", ex.Message); }
     }
+
+    /// <summary>跑一条命令并把内容喂给它的 stdin（写远端文件用，密码不进命令行参数）</summary>
+    public static async Task<(int Rc, string Out, string Err)> RunWithInputAsync(
+        string exe, string args, string stdinText, int timeoutSec = 30)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exe, args)
+            {
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+            using var p = Process.Start(psi)!;
+            var outTask = p.StandardOutput.ReadToEndAsync();
+            var errTask = p.StandardError.ReadToEndAsync();
+            try
+            {
+                await p.StandardInput.WriteAsync(stdinText);
+                await p.StandardInput.FlushAsync();
+                p.StandardInput.Close();
+            }
+            catch { }
+
+            var waitTask = p.WaitForExitAsync();
+            var done = await Task.WhenAny(waitTask, Task.Delay(timeoutSec * 1000));
+            if (done != waitTask)
+            {
+                try { p.Kill(true); } catch { }
+                return (-1, "", "超时");
+            }
+            return (p.ExitCode, await outTask, await errTask);
+        }
+        catch (Exception ex) { return (-1, "", ex.Message); }
+    }
 }

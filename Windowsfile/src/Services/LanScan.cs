@@ -106,6 +106,31 @@ public static class LanScan
     }
 
     /// <summary>猜本机所在网段，返回 192.168.1.0/24 这种（纯 .NET，不起 PowerShell，快）</summary>
+
+    /// <summary>本机所有可用的 /24 网段（去掉回环、169.254、隧道）</summary>
+    public static List<string> LocalCidrs()
+    {
+        var res = new List<string>();
+        try
+        {
+            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+                foreach (var u in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (u.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                    var str = u.Address.ToString();
+                    if (str.StartsWith("127.") || str.StartsWith("169.254.")) continue;
+                    var b = u.Address.GetAddressBytes();
+                    res.Add($"{b[0]}.{b[1]}.{b[2]}.0/24");
+                }
+            }
+        }
+        catch { }
+        return res.Distinct().ToList();
+    }
+
     public static Task<string> GuessLocalCidrAsync()
     {
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
