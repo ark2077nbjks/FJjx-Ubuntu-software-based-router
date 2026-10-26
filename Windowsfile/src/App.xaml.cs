@@ -32,7 +32,10 @@ public partial class App : Application
         base.OnStartup(e);
 
         // 调试用：设 NETPANEL_MULTI=1 可以无视单实例锁（方便一边跑正式版一边测调试版）
-        var bypassLock = Environment.GetEnvironmentVariable("NETPANEL_MULTI") == "1";
+        // 命令行 --multi 等价于 NETPANEL_MULTI=1（提权启动时环境变量会丢，所以留个参数口）
+        var bypassLock = Environment.GetEnvironmentVariable("NETPANEL_MULTI") == "1"
+                         || Environment.GetCommandLineArgs().Any(a =>
+                                a.Equals("--multi", StringComparison.OrdinalIgnoreCase));
         _single = new System.Threading.Mutex(true, "Global\\NetPanel_SingleInstance", out var isFirst);
         if (!isFirst && !bypassLock)
         {

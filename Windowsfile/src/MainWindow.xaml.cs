@@ -491,8 +491,13 @@ public partial class MainWindow : Window
             });
         }
 
-        // Y 轴两个刻度
-        AddCanvasText(Traffic.SizeText(max), 4, padTop - 4, 11, "#9AA5B4");
+        // Y 轴刻度：0 必画；顶部总量刻度如果会和「最新小时」的标注撞位，就不画（避免糊成一团）
+        int _lastHour = -1;
+        for (int i = 0; i < 24; i++)
+            if (buckets[i][0] > 0 || buckets[i][1] > 0) _lastHour = i;
+        bool topBusy = _lastHour >= 0 &&
+                       Math.Max(buckets[_lastHour][0], buckets[_lastHour][1]) >= max * 0.85;
+        if (!topBusy) AddCanvasText(Traffic.SizeText(max), 4, padTop - 4, 11, "#9AA5B4");
         AddCanvasText("0", 4, padTop + plotH - 12, 11, "#9AA5B4");
 
         for (int hour = 0; hour < 24; hour++)
@@ -510,6 +515,45 @@ public partial class MainWindow : Window
                 CvTraffic.Children.Add(Bar(x0 + barW + 2, baseY - hUp, barW, hUp, "#2F6FED",
                     $"{hour:D2}:00  上行 {Traffic.SizeText(buckets[hour][1])}"));
 
+        }
+
+        // ---- 左侧 Y 轴：把最右边那组柱子（最新一小时）的数值标上去 ----
+        {
+            int lastHour = -1;
+            for (int i = 0; i < 24; i++)
+                if (buckets[i][0] > 0 || buckets[i][1] > 0) lastHour = i;
+
+            if (lastHour >= 0)
+            {
+                double vd = buckets[lastHour][0], vu = buckets[lastHour][1];
+                double baseY = padTop + plotH;
+
+                void YLabel(double val, Color col, bool isDown)
+                {
+                    if (val <= 0) return;
+                    double y = baseY - val / max * plotH;
+                    var tb = new TextBlock
+                    {
+                        Text = Traffic.SizeText(val),
+                        FontSize = 10,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = new SolidColorBrush(col),
+                    };
+                    tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    Canvas.SetLeft(tb, Math.Max(0, padLeft - 8 - tb.DesiredSize.Width));
+                    Canvas.SetTop(tb, Math.Max(0, y - tb.DesiredSize.Height / 2));
+                    CvTraffic.Children.Add(tb);
+
+                    CvTraffic.Children.Add(new System.Windows.Shapes.Line
+                    {
+                        X1 = padLeft - 5, X2 = padLeft, Y1 = y, Y2 = y,
+                        Stroke = new SolidColorBrush(col), StrokeThickness = 1,
+                    });
+                }
+
+                YLabel(vd, Color.FromRgb(0x2F, 0xB8, 0x6B), true);
+                YLabel(vu, Color.FromRgb(0x2F, 0x6F, 0xED), false);
+            }
         }
 
         // ---- 时间轴：底部基线 + 每个整点标签（窄了自动隔一个/隔两个） ----
