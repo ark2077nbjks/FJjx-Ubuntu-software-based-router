@@ -1961,7 +1961,7 @@
                                     Margin="0,0,0,8"
                                     FontSize="12"
                                     Foreground="#FF7C8798"
-                                    Text="每 15 秒记一次网卡收发量。只读系统计数器，不发包、不影响网速。"
+                                    Text="每 1 分钟记一次网卡收发量。只读系统计数器，不发包、不影响网速。"
                                     TextWrapping="Wrap" />
                                 <Border
                                     Grid.Row="2"
