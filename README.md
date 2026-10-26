@@ -199,6 +199,25 @@ sudo bash uninstall.sh -y                 # 全部清理干净
 ---
 
 
+## 设备管理（拉黑 / 流量）
+
+面板「设备」页扫描出局域网设备后，每行右侧有「拉黑」按钮，顶部有「全部解除」。
+
+- **拉黑按 MAC，不按 IP** —— 设备换 IP、重连 DHCP 都逃不掉。规则写在 nft 表 `inet gray_dev`，`forward` 和 `input` 两条链都丢包：设备照样连着 WiFi，但完全上不了网。
+- **解除**即时生效，`全部解除` 一次清空。
+- **流量列**读的是内核 `iw ... station dump` 的 `rx/tx bytes`（和 OpenWrt 同一套数据源），不走自己数包，最准也最省 CPU。
+- 黑名单存在 `/etc/grayrouter/devices.json`，由 `grayrouter-devices.service` 开机恢复。
+
+装一次（Ubuntu 侧，需要 sudo）：
+
+```bash
+sudo bash Ubuntuflie/install-devmgr.sh
+```
+
+它会把 `bin/grayrouter-devices.sh` 装到 `/usr/local/bin/`、装好开机恢复单元、给遥控助手 `grayrouter-ctl.sh` 的白名单加上 5 条设备命令（会先备份原文件）。
+
+命令白名单只接受 `aa:bb:cc:dd:ee:ff` 形式的参数，别的格式直接拒绝 —— 面板没法借这条通道执行任意命令。
+
 ## 目录结构
 
 ```

@@ -1012,6 +1012,29 @@
                                                     </StackPanel>
                                                 </Button>
                                                 <Button
+                                                    x:Name="BtnUnblockAll"
+                                                    Height="32"
+                                                    Margin="8,0,0,0"
+                                                    Padding="12,0"
+                                                    AutomationProperties.Name="全部解除"
+                                                    Background="#FFEEF2F8"
+                                                    BorderBrush="#FFD5DBE5"
+                                                    BorderThickness="1"
+                                                    Click="OnDevUnblockAll"
+                                                    Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <StackPanel.Children>
+                                                            <Image
+                                                                Width="15"
+                                                                Height="15"
+                                                                Margin="0,0,6,0"
+                                                                VerticalAlignment="Center"
+                                                                Source="/icons/shield_check.png" />
+                                                            <TextBlock VerticalAlignment="Center" Text="全部解除" />
+                                                        </StackPanel.Children>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button
                                                     x:Name="BtnExportDev"
                                                     Height="32"
                                                     Margin="8,0,0,0"
@@ -1091,6 +1114,28 @@
                                                     Width="80"
                                                     Binding="{Binding Rtt}"
                                                     Header="延迟" />
+                                                <DataGridTextColumn
+                                                    Width="152"
+                                                    Binding="{Binding Traffic}"
+                                                    Header="流量 ↑/↓" />
+                                                <DataGridTemplateColumn Width="92" Header="操作">
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <Button
+                                                                MinWidth="62"
+                                                                Height="22"
+                                                                Padding="6,0"
+                                                                AutomationProperties.Name="设备操作"
+                                                                Background="#FFEEF2F8"
+                                                                BorderBrush="#FFD5DBE5"
+                                                                BorderThickness="1"
+                                                                Click="OnDevAction"
+                                                                Content="{Binding ActionText}"
+                                                                Cursor="Hand"
+                                                                FontSize="12" />
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
                                             </DataGrid.Columns>
                                         </DataGrid>
                                     </Border.Child>

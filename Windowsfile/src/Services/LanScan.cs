@@ -15,6 +15,9 @@ public sealed class LanDevice
     public string Conn { get; set; } = "";     // 显示用：本机 / 无线 2.4G -49dBm / 有线 / 同网段
     public string State { get; set; } = "";    // 在线 / 不在线
     public string Rtt { get; set; } = "";      // 12 ms / —
+    public string Traffic { get; set; } = "";  // 上行 / 下行（软路由计数）
+    public bool Blocked { get; set; }          // 是否已拉黑
+    public string ActionText => Blocked ? "解除" : "拉黑";
 }
 
 /// <summary>
