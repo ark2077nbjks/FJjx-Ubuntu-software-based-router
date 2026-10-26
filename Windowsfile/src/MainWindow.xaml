@@ -1887,10 +1887,9 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="300" />
                                 <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="200" />
-</Grid.RowDefinitions>
+                            </Grid.RowDefinitions>
                             <Grid.Children>
                                 <Grid Margin="0,0,0,8" Row="0">
                                     <Grid.Children>
