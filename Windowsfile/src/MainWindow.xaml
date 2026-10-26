@@ -50,7 +50,7 @@
                                         x:Name="TxtBadge"
                                         FontSize="11.5"
                                         Foreground="#FF2F6FED"
-                                        Text="v1.29.2 · 日志设置" />
+                                        Text="日志设置" />
                                 </Border.Child>
                             </Border>
                         </StackPanel.Children>

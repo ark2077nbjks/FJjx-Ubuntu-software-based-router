@@ -10,7 +10,7 @@
     <AssemblyName>NetPanel</AssemblyName>
     <RootNamespace>NetPanel</RootNamespace>
     <ApplicationManifest Condition="'$(NoAdmin)' != 'true'">app.manifest</ApplicationManifest>
-    <Version>1.35.0</Version>
+    <Version>1.35</Version>
     <ApplicationIcon>icons\NetPanel.ico</ApplicationIcon>
     <Product>网络面板</Product>
     <AssemblyTitle>网络面板 NetPanel</AssemblyTitle>
@@ -29,7 +29,7 @@
   <ItemGroup>
     <EmbeddedResource Include="assets\GrayRouter.zip" LogicalName="deploy.zip" Condition="Exists('assets\GrayRouter.zip')" />
     <!-- 仓库里没有 assets 时，用 Ubuntuflie 下的发布包 -->
-    <EmbeddedResource Include="..\..\Ubuntuflie\GrayRouter-1.1.2.zip" LogicalName="deploy.zip" Condition="!Exists('assets\GrayRouter.zip')" />
+    <EmbeddedResource Include="..\..\Ubuntuflie\GrayRouter-1.35.zip" LogicalName="deploy.zip" Condition="!Exists('assets\GrayRouter.zip')" />
   </ItemGroup>
 
   <ItemGroup>
