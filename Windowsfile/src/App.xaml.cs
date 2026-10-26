@@ -19,6 +19,9 @@ public partial class App : Application
     // 单实例锁：两个面板同时跑会把流量统计算两遍、日志互相打架
     private static System.Threading.Mutex? _single;
 
+    /// <summary>--page=名字：启动后直接切到指定页（截图/自检用）</summary>
+    public static string? StartPage;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -38,6 +41,10 @@ public partial class App : Application
         try { System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance); }
         catch (Exception ex) { AppPaths.Log("注册编码表失败: " + ex.Message); }
 
+
+        // 隐藏参数：--page=无线频段 启动后直接切到那一页（截图核对用）
+        var pageArg = e.Args.FirstOrDefault(x => x.StartsWith("--page="));
+        if (pageArg != null) StartPage = pageArg.Substring("--page=".Length);
 
         // 隐藏自检：NetPanel.exe --memtest 跑一次内存优化，把结果写日志后退出（用于验证权限/命令是否正常）
         if (e.Args.Contains("--memtest"))

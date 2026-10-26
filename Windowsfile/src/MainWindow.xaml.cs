@@ -32,6 +32,14 @@ public partial class MainWindow : Window
 
     // ---- 流量（每 15 秒读一次网卡计数器，只在本机内存里算，不发包）----
     private readonly DispatcherTimer _trafficTick = new() { Interval = TimeSpan.FromSeconds(15) };
+    // 无线频段页：2 秒一次 iw 读取（只读，离页即停）
+    private readonly DispatcherTimer _apTick = new() { Interval = TimeSpan.FromSeconds(2) };
+    private bool _apBusy;
+    private static readonly SolidColorBrush ApGray = new(Color.FromRgb(0x9A, 0xA3, 0xB2));
+    private static readonly SolidColorBrush ApWarn = new(Color.FromRgb(0xC0, 0x50, 0x2F));
+    private static readonly SolidColorBrush ApInk = new(Color.FromRgb(0x1F, 0x27, 0x33));
+    private static readonly SolidColorBrush ApSub = new(Color.FromRgb(0x6B, 0x74, 0x82));
+
     // 代理检测：本地层 10 秒（零联网），出口/延迟 60 秒
     private readonly DispatcherTimer _proxyLocalTick = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _proxyRemoteTick = new() { Interval = TimeSpan.FromSeconds(60) };
@@ -82,6 +90,35 @@ public partial class MainWindow : Window
         LoadCampusUi();
         InitSites();
         InitProxyTab();
+        InitApTab();
+        InitUpd();
+
+        if (App.StartPage is string spRaw)
+        {
+            var sp = spRaw.Trim();
+            sp = sp.ToLowerInvariant() switch
+            {
+                "ap" or "wifi" => "无线频段",
+                "other" => "其他",
+                "status" => "状态",
+                "log" or "logs" => "日志",
+                "nic" => "网卡",
+                "device" => "设备",
+                _ => sp,
+            };
+            var matched = false;
+            foreach (var item in NavTabs.Items)
+            {
+                if (item is TabItem ti &&
+                    (System.Windows.Automation.AutomationProperties.GetName(ti) ?? "") == sp)
+                {
+                    NavTabs.SelectedItem = ti;
+                    matched = true;
+                    break;
+                }
+            }
+            AppPaths.Log($"[启动] --page={spRaw} 匹配={matched}");
+        }
         InitConnTab();
         InitDeviceTab();
         InitTrafficTab();
@@ -638,6 +675,10 @@ public partial class MainWindow : Window
         if (page == "代理检测") StartProxyWatch();
         else StopProxyWatch();
 
+        // 无线频段页：进页开始 2 秒热检测，离页立刻停
+        if (page == "无线频段") StartApWatch();
+        else StopApWatch();
+
         // 设备页：进来按当前网络重填扫描网段（换过网就不会再扫旧网段）
         if (page == "设备") _ = RefreshScanCidrAsync(false);
 
@@ -855,6 +896,329 @@ public partial class MainWindow : Window
     }
 
     // ---------------- 代理检测 ----------------
+
+    // ---------------- 无线频段 ----------------
+
+    private void InitApTab()
+    {
+        _apTick.Tick += async (_, _) => await ApTickAsync();
+    }
+
+    private void StartApWatch()
+    {
+        if (!_apTick.IsEnabled) _apTick.Start();
+        _ = ApTickAsync();
+    }
+
+    private void StopApWatch() => _apTick.Stop();
+
+    private async Task ApTickAsync()
+    {
+        if (_apBusy) return;
+        _apBusy = true;
+        try
+        {
+            var ap = await ApGather.ReadAsync();
+            _apLast = ap;
+            if (CmbApBand.Items.Count == 0) { if (ap.Ok) PopulateApSelectors(ap); }
+            else UpdateApplyState();
+            TxtApBand.Text = ap.BandText;
+            TxtApCh.Text = ap.ChText;
+            TxtApWidth.Text = ap.WidthText;
+            TxtApPower.Text = ap.PowerText;
+            TxtApSsid.Text = ap.SsidText;
+            TxtApSta.Text = ap.Ok ? $"{ap.StaCount} 台" : "—";
+
+            if (ap.Ok)
+            {
+                TxtApHint.Text = $"网卡 {ap.Iface} · AP 模式 · {DateTime.Now:HH:mm:ss} 更新";
+                TxtApHint.Foreground = ApGray;
+            }
+            else
+            {
+                TxtApHint.Text = string.IsNullOrWhiteSpace(ap.Err) ? "读不到远端" : ap.Err;
+                TxtApHint.Foreground = ApWarn;
+            }
+
+            StkApSta.Children.Clear();
+            if (!ap.Ok || ap.Stas.Count == 0)
+            {
+                StkApSta.Children.Add(new TextBlock
+                {
+                    Text = ap.Ok ? "没有设备连接" : "—",
+                    FontSize = 12,
+                    Foreground = ApGray
+                });
+                return;
+            }
+            foreach (var st in ap.Stas) StkApSta.Children.Add(BuildApStaRow(st));
+        }
+        catch (Exception ex) { AppPaths.Log("[无线频段] " + ex.Message); }
+        finally { _apBusy = false; }
+    }
+
+    private bool _apSwitchBusy;
+    private bool _apSelUpdating;
+    private ApInfo? _apLast;
+    private static readonly int[] Ch24 = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+    private static readonly int[] Ch5 = { 36, 40, 44, 48, 149, 153, 157, 161, 165 };
+
+    private void OnApSelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_apSelUpdating) return;
+        if (ReferenceEquals(sender, CmbApBand)) RebuildChannelItems();
+        UpdateApplyState();
+    }
+
+    /// <summary>按当前频段重建信道下拉（自动 + 实测可用信道）</summary>
+    private void RebuildChannelItems()
+    {
+        var is5 = CmbApBand.SelectedIndex == 1;
+        var auto = is5 ? 36 : 6;
+        var list = is5 ? Ch5 : Ch24;
+
+        _apSelUpdating = true;
+        try
+        {
+            CmbApCh.Items.Clear();
+            CmbApCh.Items.Add($"自动（{auto}）");
+            foreach (var c in list) CmbApCh.Items.Add(c.ToString());
+
+            var cur = _apLast is { Ok: true } a && (a.Band == "5G") == is5 ? a.Ch : "";
+            var idx = 0;
+            if (!string.IsNullOrEmpty(cur) && int.TryParse(cur, out var cc))
+            {
+                var at = Array.IndexOf(list, cc);
+                if (at >= 0) idx = at + 1;
+            }
+            CmbApCh.SelectedIndex = idx;
+        }
+        finally { _apSelUpdating = false; }
+    }
+
+    private (bool Is5, int Ch) ApTarget()
+    {
+        var is5 = CmbApBand.SelectedIndex == 1;
+        var auto = is5 ? 36 : 6;
+        var list = is5 ? Ch5 : Ch24;
+        if (CmbApCh.SelectedIndex <= 0) return (is5, auto);
+        var i = CmbApCh.SelectedIndex - 1;
+        return (is5, i < list.Length ? list[i] : auto);
+    }
+
+    private void UpdateApplyState()
+    {
+        if (_apSwitchBusy) { BtnApApply.IsEnabled = false; return; }
+        if (CmbApBand.SelectedIndex < 0) { BtnApApply.IsEnabled = false; return; }
+        var (is5, ch) = ApTarget();
+        var same = _apLast is { Ok: true } a && (a.Band == "5G") == is5 && a.Ch == ch.ToString();
+        BtnApApply.IsEnabled = !same;
+    }
+
+    private void PopulateApSelectors(ApInfo ap)
+    {
+        _apSelUpdating = true;
+        try
+        {
+            CmbApBand.Items.Clear();
+            CmbApBand.Items.Add("2.4 GHz");
+            CmbApBand.Items.Add("5 GHz");
+            CmbApBand.SelectedIndex = ap.Band == "5G" ? 1 : 0;
+        }
+        finally { _apSelUpdating = false; }
+
+        RebuildChannelItems();
+        UpdateApplyState();
+    }
+
+    private async void OnApApply(object sender, RoutedEventArgs e)
+    {
+        if (_apSwitchBusy) return;
+
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { MessageBox.Show("先在「连接」页填远端地址。", "无线频段"); return; }
+
+        var (is5, ch) = ApTarget();
+        var target = is5 ? $"5 GHz / 信道 {ch}" : $"2.4 GHz / 信道 {ch}";
+        var ask = MessageBox.Show(
+            $"切换到 {target}？\n\n" +
+            "过程：先上 150 秒死手保险 → 改参数 → 重启 AP。WiFi 会断 15~25 秒，本面板也会短暂失去连接。\n" +
+            "5 GHz 起不来时，远端会自动回滚到备份的原设置。",
+            "无线频段", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+        if (ask != MessageBoxResult.OK) return;
+
+        _apSwitchBusy = true;
+        BtnApApply.IsEnabled = false;
+        try
+        {
+            TxtApProgress.Text = "检查远端助手…";
+            if (!await RouterCtl.IsInstalledAsync(cfg))
+            {
+                var yes = MessageBox.Show(
+                    "这个按钮需要在远端装一个权限助手（一次 sudo 密码，之后就不用再输）。\n现在就装吗？",
+                    "需要安装", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (yes != MessageBoxResult.Yes) { TxtApProgress.Text = "已取消（没装助手）"; return; }
+
+                var inst = await RouterCtl.InstallAsync(cfg);
+                TxtApProgress.Text = inst.Detail;
+                if (inst.Ok)
+                    MessageBox.Show("文件已传到远端，终端窗口里输一次密码。\n装完看到 ✅ 之后，再点一次「应用」。", "无线频段");
+                return;
+            }
+
+            TxtApProgress.Text = "正在切换…";
+            var (ok, detail) = is5
+                ? await RouterCtl.Set5GAsync(cfg, ch, m => TxtApProgress.Text = m)
+                : await RouterCtl.Set2GAsync(cfg, ch, m => TxtApProgress.Text = m);
+
+            TxtApProgress.Text = (ok ? "✅ " : "❌ ") + detail;
+            await Task.Delay(4000);
+
+            CmbApBand.Items.Clear();
+            CmbApCh.Items.Clear();
+            _apLast = null;
+            StopApWatch();
+            StartApWatch();
+        }
+        catch (Exception ex)
+        {
+            TxtApProgress.Text = "❌ " + ex.Message;
+            AppPaths.Log("[无线频段] 切换失败: " + ex.Message);
+        }
+        finally
+        {
+            _apSwitchBusy = false;
+            UpdateApplyState();
+        }
+    }
+
+    // ---------------- 版本更新 ----------------
+
+    private Updater.ReleaseInfo? _upd;
+
+    private void InitUpd()
+    {
+        TxtUpdCur.Text = "v" + Updater.CurrentVersion();
+    }
+
+    private async void OnCheckUpdate(object sender, RoutedEventArgs e)
+    {
+        BtnUpdCheck.IsEnabled = false;
+        TxtUpdTip.Text = "正在查询 GitHub…";
+        try
+        {
+            var (info, err) = await Updater.CheckAsync();
+            if (info == null)
+            {
+                TxtUpdLatest.Text = "—";
+                BtnUpdGo.IsEnabled = false;
+                _upd = null;
+                TxtUpdTip.Text = "❌ " + err;
+                return;
+            }
+
+            TxtUpdLatest.Text = info.Tag;
+            if (Updater.IsNewer(info.Tag))
+            {
+                _upd = info;
+                BtnUpdGo.IsEnabled = true;
+                TxtUpdTip.Text = $"发现新版本，大小 {info.Size / 1024.0 / 1024.0:F1} MB。点「立即更新」下载并重启面板。";
+            }
+            else
+            {
+                _upd = null;
+                BtnUpdGo.IsEnabled = false;
+                TxtUpdTip.Text = "✅ 已经是最新版本。";
+            }
+        }
+        catch (Exception ex)
+        {
+            TxtUpdTip.Text = "❌ " + ex.Message;
+        }
+        finally { BtnUpdCheck.IsEnabled = true; }
+    }
+
+    private async void OnDoUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_upd == null) return;
+        var ask = MessageBox.Show(
+            $"下载 {_upd.Tag} 并替换当前程序？\n\n下载完面板会自己退出、替换 exe、再重新打开（约 5 秒）。",
+            "版本更新", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
+        if (ask != MessageBoxResult.OK) return;
+
+        BtnUpdGo.IsEnabled = false;
+        BtnUpdCheck.IsEnabled = false;
+        try
+        {
+            var (ok, msg, path) = await Updater.DownloadAsync(_upd, (got, total) =>
+            {
+                TxtUpdTip.Text = total > 0
+                    ? $"下载中 {got * 100.0 / total:F0}%（{got / 1024.0 / 1024.0:F1} MB）"
+                    : $"下载中 {got / 1024.0 / 1024.0:F1} MB";
+            });
+
+            if (!ok)
+            {
+                TxtUpdTip.Text = "❌ " + msg;
+                BtnUpdGo.IsEnabled = true;
+                BtnUpdCheck.IsEnabled = true;
+                return;
+            }
+
+            var target = Updater.CurrentExePath();
+            if (!Updater.LaunchUpdater(path, target, out var err))
+            {
+                TxtUpdTip.Text = "❌ 起更新器失败：" + err;
+                BtnUpdGo.IsEnabled = true;
+                BtnUpdCheck.IsEnabled = true;
+                return;
+            }
+
+            TxtUpdTip.Text = "✅ 下载完成，面板即将退出并替换…";
+            await Task.Delay(900);
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            TxtUpdTip.Text = "❌ " + ex.Message;
+            BtnUpdGo.IsEnabled = true;
+            BtnUpdCheck.IsEnabled = true;
+        }
+    }
+
+    private Border BuildApStaRow(ApSta st)
+    {
+        var box = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0xF7, 0xF9, 0xFC)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xE7, 0xEA, 0xF0)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        var sp = new StackPanel();
+        sp.Children.Add(new TextBlock
+        {
+            Text = st.Mac,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 12,
+            Foreground = ApInk
+        });
+        var tail = $"信号 {st.Signal} · 上行 {st.Tx} Mbit/s";
+        if (!string.IsNullOrEmpty(st.Rx)) tail += $" · 下行 {st.Rx} Mbit/s";
+        if (int.TryParse(st.Inactive, out var sec) && sec >= 120)
+            tail += $" · 空闲 {sec / 60} 分钟";
+        sp.Children.Add(new TextBlock
+        {
+            Text = tail,
+            FontSize = 12,
+            Foreground = ApSub,
+            Margin = new Thickness(0, 3, 0, 0)
+        });
+        box.Child = sp;
+        return box;
+    }
 
     private void InitProxyTab()
     {
