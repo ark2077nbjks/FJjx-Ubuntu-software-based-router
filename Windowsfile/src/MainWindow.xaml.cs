@@ -312,6 +312,7 @@ public partial class MainWindow : Window
     public sealed class DevTrafficRow
     {
         public string Name { get; set; } = "";
+        public string Mac { get; set; } = "";
         public string Ip { get; set; } = "";
         public string State { get; set; } = "";
         public string Share { get; set; } = "";
@@ -323,11 +324,71 @@ public partial class MainWindow : Window
         public long _todayBytes { get; set; }
     }
 
+    private static readonly Dictionary<string, string> _devNames = new(StringComparer.OrdinalIgnoreCase);
+    private static bool _devNamesLoaded;
+
     private readonly long[] _devHourDown = new long[24];
     private readonly long[] _devHourUp = new long[24];
     private bool _devHourHasData;
 
     private DateTime _devTrafficStamp = DateTime.MinValue;
+
+    private string DevNamesFile => System.IO.Path.Combine(AppPaths.DataDir, "devnames.json");
+
+    private void LoadDevNames()
+    {
+        if (_devNamesLoaded) return;
+        _devNamesLoaded = true;
+        try
+        {
+            var f = DevNamesFile;
+            if (!File.Exists(f)) return;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(f));
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                var v = p.Value.GetString();
+                if (!string.IsNullOrWhiteSpace(v)) _devNames[p.Name] = v!;
+            }
+        }
+        catch { }
+    }
+
+    private void SaveDevNames()
+    {
+        try
+        {
+            var dict = _devNames.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                                .ToDictionary(x => x.Key, x => x.Value);
+            File.WriteAllText(DevNamesFile, System.Text.Json.JsonSerializer.Serialize(dict,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
+    }
+
+    /// <summary>给没名字的设备做 PTR 反查（最多 8 台，1.2 秒超时），结果缓存到 data\devnames.json</summary>
+    private async Task FillDevNamesAsync(List<(string Mac, string Ip)> need, string gateway)
+    {
+        if (need.Count == 0) return;
+        var gate = new SemaphoreSlim(4);
+        var got = 0;
+        var tasks = need.Take(8).Select(async item =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                var nm = await LanScan.PtrNameAsync(gateway, item.Ip);
+                if (!string.IsNullOrWhiteSpace(nm) && !_devNames.ContainsKey(item.Mac))
+                {
+                    _devNames[item.Mac] = nm;
+                    Interlocked.Increment(ref got);
+                }
+            }
+            catch { }
+            finally { gate.Release(); }
+        }).ToList();
+        try { await Task.WhenAll(tasks); } catch { }
+        if (got > 0) { SaveDevNames(); AppPaths.Log($"[流量] 设备名补到 {got} 个"); }
+    }
 
     /// <summary>设备流量：sample=true 时先让远端立刻采一次，再取汇总</summary>
     private async Task LoadDevTrafficAsync(bool sample)
@@ -337,6 +398,7 @@ public partial class MainWindow : Window
 
         TxtDevTrafficInfo.Text = sample ? "正在采样…" : "读取中…";
         var detail = "";
+        LoadDevNames();
         try
         {
             var (ok, d) = await RouterCtl.RunAsync(cfg, sample ? "traffic-now 30" : "traffic-summary 30");
@@ -345,6 +407,7 @@ public partial class MainWindow : Window
 
             using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
             var rows = new List<DevTrafficRow>();
+            var pending = new List<(string Mac, string Ip)>();
             foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
             {
                 var mac = el.GetProperty("mac").GetString() ?? "";
@@ -352,11 +415,15 @@ public partial class MainWindow : Window
                 if (name.Length == 0)
                     name = (_devices.FirstOrDefault(x => string.Equals(x.Mac, mac,
                         StringComparison.OrdinalIgnoreCase))?.Name ?? "").Trim();
+                if (name.Length == 0 && _devNames.TryGetValue(mac, out var cachedName)) name = cachedName;
+                var ipv = el.GetProperty("ip").GetString() ?? "";
+                if (name.Length == 0 && ipv.Length > 0) pending.Add((mac, ipv));
                 var online = el.GetProperty("online").GetInt32() == 1;
                 rows.Add(new DevTrafficRow
                 {
                     Name = name.Length > 0 ? name : mac,
-                    Ip = el.GetProperty("ip").GetString() ?? "",
+                    Mac = mac,
+                    Ip = ipv,
                     State = online ? "在线" : "离线",
                     TodayUp = FmtShort(el.GetProperty("today_up").GetInt64()),
                     TodayDown = FmtShort(el.GetProperty("today_down").GetInt64()),
@@ -366,7 +433,29 @@ public partial class MainWindow : Window
                     _todayBytes = el.GetProperty("today_down").GetInt64() + el.GetProperty("today_up").GetInt64(),
                 });
             }
-            var grand = rows.Count == 0 ? 0 : 0;
+            if (pending.Count > 0)
+            {
+                // ① 先问远端 DHCP 租约（最准：手机=机型名，电脑=计算机名）
+                var (nok, ndetail) = await RouterCtl.RunAsync(cfg, "dev-names");
+                if (nok)
+                {
+                    var added = 0;
+                    foreach (var line in ndetail.Split('\n'))
+                    {
+                        var parts = line.Trim().Split('\t');
+                        if (parts.Length < 3) continue;
+                        var m2 = parts[0].Trim().ToLowerInvariant();
+                        var n2 = parts[2].Trim();
+                        if (m2.Length == 0 || n2.Length == 0 || n2 == "*") continue;
+                        if (!_devNames.ContainsKey(m2)) { _devNames[m2] = n2; added++; }
+                    }
+                    if (added > 0) { SaveDevNames(); AppPaths.Log($"[流量] 租约里读到 {added} 个设备名"); }
+                }
+                // ② 还没名字的再 PTR 兜底
+                await FillDevNamesAsync(pending.Where(x => !_devNames.ContainsKey(x.Mac)).ToList(), cfg.Host);
+                foreach (var r in rows)
+                    if (_devNames.TryGetValue(r.Mac, out var nm2) && nm2.Length > 0) r.Name = nm2;
+            }
             DgDevTraffic.ItemsSource = rows;
 
             Array.Clear(_devHourDown);

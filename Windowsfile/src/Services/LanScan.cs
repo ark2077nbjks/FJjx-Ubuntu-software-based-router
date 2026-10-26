@@ -563,6 +563,19 @@ public static class LanScan
         progress(got > 0 ? $"名字查到 {got} 个" : "没查到名字（路由器没有这些设备的反向记录）");
     }
 
+    /// <summary>查单台设备的 PTR 名字（给「设备流量」用；查不到就返回空串，不抛异常）</summary>
+    public static async Task<string> PtrNameAsync(string gateway, string ip, int timeoutMs = 1200)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(gateway) || string.IsNullOrWhiteSpace(ip)) return "";
+            using var cts = new CancellationTokenSource(timeoutMs + 500);
+            var name = await PtrLookupAsync(gateway, ip, timeoutMs, cts.Token);
+            return IsUsableName(name, ip) ? CleanName(name) : "";
+        }
+        catch { return ""; }
+    }
+
     /// <summary>dnsmasq 对查不到的地址会回 bogon / localhost 这类占位名，不能当设备名用</summary>
     private static bool IsUsableName(string name, string ip)
     {

@@ -194,11 +194,21 @@ PY
 }
 
 ensure_json
+# ---------- 名字：从 DHCP 租约里挖（MAC -> 主机名）----------
+do_names() {
+  # NetworkManager 共享模式下 dnsmasq 的租约：过期时间 MAC IP 主机名 客户端ID
+  for f in /var/lib/NetworkManager/dnsmasq-*.leases /var/lib/misc/dnsmasq.leases; do
+    [ -f "$f" ] || continue
+    awk -v OFS='\t' 'NF>=4 && $4!="*" { mac=tolower($2); sub(/^\*$/, "", mac); print mac, $3, $4 }' "$f" 2>/dev/null
+  done | sort -u
+}
+
 case "${1:-}" in
   apply)       do_apply ;;
   block)       do_block "${2:-}" ;;
   unblock)     do_unblock "${2:-}" ;;
   unblock-all) do_unblock_all ;;
   list)        do_list ;;
-  *) echo "用法: $0 apply|block <mac>|unblock <mac>|unblock-all|list"; exit 1 ;;
+  names)       do_names ;;
+  *) echo "用法: $0 apply|block <mac>|unblock <mac>|unblock-all|list|names"; exit 1 ;;
 esac
