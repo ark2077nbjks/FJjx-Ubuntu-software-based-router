@@ -18,6 +18,7 @@ public partial class MainWindow : Window
 {
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(60) };
     // 网卡热插拔轮询（8 秒一次，只查名字，很轻）
+    // 网卡页改成纯手动：不再 8 秒轮询，进页查一次 + 点「刷新」才查
     private readonly DispatcherTimer _nicPoll = new() { Interval = TimeSpan.FromSeconds(8) };
     private HashSet<string>? _knownNics;
 
@@ -31,8 +32,14 @@ public partial class MainWindow : Window
     private bool _busy;
 
     // ---- 流量（每 15 秒读一次网卡计数器，只在本机内存里算，不发包）----
-    private readonly DispatcherTimer _trafficTick = new() { Interval = TimeSpan.FromSeconds(15) };
+    private readonly DispatcherTimer _trafficTick = new() { Interval = TimeSpan.FromSeconds(60) };
     // 无线频段页：2 秒一次 iw 读取（只读，离页即停）
+    // 页面级自动刷新节拍：设备 3 分钟、连接 3 分钟、日志 10 分钟（只对当前页生效）
+    private readonly DispatcherTimer _pageTick = new() { Interval = TimeSpan.FromSeconds(30) };
+    private DateTime _devAutoStamp = DateTime.MinValue;
+    private DateTime _connAutoStamp = DateTime.MinValue;
+    private DateTime _logAutoStamp = DateTime.MinValue;
+
     private readonly DispatcherTimer _apTick = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool _apBusy;
     private static readonly SolidColorBrush ApGray = new(Color.FromRgb(0x9A, 0xA3, 0xB2));
@@ -85,7 +92,7 @@ public partial class MainWindow : Window
         };
         _timer.Tick += async (_, _) => await RefreshAsync();
 
-        _nicPoll.Tick += async (_, _) => await PollAdaptersAsync();   // 只在「网卡」页可见时启动
+        _nicPoll.Tick += async (_, _) => await PollAdaptersAsync();   // 已停用（网卡页改手动），保留以免空引用
         InitSpeedTab();
         Activated += (_, _) =>
         {
@@ -260,9 +267,39 @@ public partial class MainWindow : Window
         try { Traffic.Prune(30); } catch { }
         CvTraffic.SizeChanged += (_, _) => RenderTrafficChart();
         _trafficTick.Tick += async (_, _) => await TrafficTickAsync();
+        _pageTick.Tick += async (_, _) => await PageTickAsync();
+        _pageTick.Start();
         _trafficTick.Start();
         Traffic.Sample();                 // 第一次只记基线
         RefreshTrafficView();
+    }
+
+    /// <summary>按页面给自动刷新节拍：设备 3 分钟、连接 3 分钟、日志 10 分钟；其它页不动</summary>
+    private async Task PageTickAsync()
+    {
+        try
+        {
+            var page = CurrentPage;
+            var now = DateTime.Now;
+
+            if (page == "设备" && (now - _devAutoStamp).TotalSeconds >= 180)
+            {
+                _devAutoStamp = now;
+                await RefreshDevStateAsync();          // 先拉黑名单/流量（轻）
+                await ScanDevicesAsync(false, true);   // 再快速扫一遍（温和，不发大包）
+            }
+            else if (page == "连接" && (now - _connAutoStamp).TotalSeconds >= 180)
+            {
+                _connAutoStamp = now;
+                OnConnRefresh(this, new RoutedEventArgs());
+            }
+            else if (page == "日志" && (now - _logAutoStamp).TotalSeconds >= 600)
+            {
+                _logAutoStamp = now;
+                LoadLog();
+            }
+        }
+        catch (Exception ex) { AppPaths.Log("[自动刷新] " + ex.Message); }
     }
 
     private async Task TrafficTickAsync()
@@ -527,7 +564,12 @@ public partial class MainWindow : Window
     }
 
     private async void OnScanDevices(object sender, RoutedEventArgs e)
+        => await ScanDevicesAsync(ChkDeep.IsChecked == true, false);
+
+    /// <summary>扫描设备（deep=深度扫描；quiet=true 时用于后台自动刷新）</summary>
+    private async Task ScanDevicesAsync(bool deep, bool quiet)
     {
+        if (_scanCts != null) return;                 // 已经在扫，别叠加
         var cidr = TxtScanCidr.Text.Trim();
         if (!System.Text.RegularExpressions.Regex.IsMatch(cidr, @"^\d+\.\d+\.\d+\.\d+/\d+$"))
         {
@@ -552,7 +594,6 @@ public partial class MainWindow : Window
 
         try
         {
-            var deep = ChkDeep.IsChecked == true;
             var list = await LanScan.ScanAsync(cidr, cfg, deep, msg =>
             {
                 Dispatcher.Invoke(() => TxtScanInfo.Text = msg);
@@ -799,8 +840,8 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         if (page == "设备") _ = RefreshScanCidrAsync(false);
 
         // 网卡页：只在看得见时做热插拔轮询（8 秒一次本地查询），切走立刻停
-        if (page == "网卡") { _nicPoll.Start(); _ = PollAdaptersAsync(); }
-        else _nicPoll.Stop();
+        _nicPoll.Stop();                       // 网卡页：只进页查一次，手动刷新
+        if (page == "网卡") _ = PollAdaptersAsync();
 
         // 校园网页：第一次进来，账号空着就从 minipc 的 Config.yaml 读一份（只读，不动配置）
         if (page == "校园网" && TxtCampusUser.Text.Trim().Length == 0 && !_campusPrefilled)
