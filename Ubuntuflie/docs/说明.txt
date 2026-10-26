@@ -1,4 +1,4 @@
-GrayRouter 1.0 · 一键把 Ubuntu 变成软路由
+GrayRouter 1.35 · 一键把 Ubuntu 变成软路由
 ================================================
 
 【这是什么】
@@ -98,3 +98,23 @@ Windows「网络面板」靠它读这台机器的状态。
   sudo systemctl stop ua3f
 
 明确不做的事：不开 MitM、不解密 HTTPS、不发任何证书给客户端。
+
+【设备管理（拉黑 / 流量）】
+面板「设备」页扫出设备后，每行右边有「拉黑」，顶部有「全部解除」。
+
+  · 按 MAC 拉黑，规则写进 nft 表 inet gray_dev（forward + input 双链丢包）
+    → 设备照样连着 WiFi，但完全上不了网；换 IP、重连都逃不掉
+  · 流量读内核 iw dev <AP接口> station dump 的 rx/tx bytes（和 OpenWrt 同一个数据源）
+  · 黑名单存 /etc/grayrouter/devices.json，grayrouter-devices.service 开机恢复
+
+首次启用要装一次（要 sudo）：
+    sudo bash install-devmgr.sh
+
+它会装 /usr/local/bin/grayrouter-devices.sh、装开机恢复单元、
+给遥控助手 grayrouter-ctl.sh 的白名单加 5 条设备命令（原文件会先备份）。
+
+看状态 / 手动操作：
+    sudo bash /usr/local/bin/grayrouter-devices.sh list
+    sudo bash /usr/local/bin/grayrouter-devices.sh apply
+    sudo bash /usr/local/bin/grayrouter-devices.sh unblock-all
+
