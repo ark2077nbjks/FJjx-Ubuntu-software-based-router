@@ -221,6 +221,7 @@ case "${1:-get}" in
     done
     echo "COUNT=$n"
     echo "LAST_SWITCH=${LAST_SWITCH:-}"; echo "LAST_REASON=${LAST_REASON:-}"
+    echo "STATIC_IP=$STATIC_IP"; echo "STATIC_GW=$STATIC_GW"
     echo "FAIL_N=$FAIL_N"; echo "OK_N=$OK_N"; echo "CHECK_IP=$CHECK_IP"
     ;;
   tick) tick ;;

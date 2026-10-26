@@ -519,8 +519,8 @@ public partial class MainWindow : Window
         }
 
         BtnWanFailToggle.Content = _wanFailEnabled ? "关闭自动切换" : "开启自动切换";
-        if (TxtStaticIp.Text.Length == 0 && staticIp.Length > 0) TxtStaticIp.Text = staticIp;
-        if (TxtStaticGw.Text.Length == 0 && staticGw.Length > 0) TxtStaticGw.Text = staticGw;
+        if (TxtStaticIp.Text.Length == 0) TxtStaticIp.Text = staticIp.Length > 0 ? staticIp : "192.168.42.100";
+        if (TxtStaticGw.Text.Length == 0) TxtStaticGw.Text = staticGw.Length > 0 ? staticGw : "192.168.42.129";
 
         // 优先网口下拉：auto + 所有候选
         var keep = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? prefer;
