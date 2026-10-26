@@ -11,7 +11,15 @@ set -uo pipefail
 TBL=gray_dev
 JSON=/etc/grayrouter/devices.json
 LOG=/var/log/grayrouter-devices.log
-IFACE=${GR_LAN_IF:-wlp2s0}
+# LAN 口自动探测：优先 AP 模式网口，其次 192.168.x 地址的口，最后兜底 wlp2s0
+IFACE=${GR_LAN_IF:-}
+if [ -z "$IFACE" ]; then
+  for i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
+    [ "$(iw dev "$i" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && { IFACE=$i; break; }
+  done
+fi
+[ -z "$IFACE" ] && IFACE=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\./ {print $2; exit}')
+[ -z "$IFACE" ] && IFACE=wlp2s0
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG" 2>/dev/null; }
 norm_mac() { printf '%s' "${1:-}" | tr 'A-Z' 'a-z' | tr -d ' '; }

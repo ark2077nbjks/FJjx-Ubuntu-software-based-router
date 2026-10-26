@@ -3,7 +3,14 @@
 # MODE=observe 只记录；MODE=act 才真的重启 AP 连接
 # 模式开关：面板写 /run/grayrouter/mode.request（act/observe），每轮读一次并清空
 set -u
-IFACE="${IFACE:-wlp2s0}"
+# LAN 口自动探测（优先 AP 模式网口，其次 192.168.x，最后兜底 wlp2s0）
+if [ -z "${IFACE:-}" ]; then
+  for _i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
+    [ "$(iw dev "$_i" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && { IFACE=$_i; break; }
+  done
+fi
+[ -z "${IFACE:-}" ] && IFACE=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\./ {print $2; exit}')
+[ -z "${IFACE:-}" ] && IFACE=wlp2s0
 EXPECT_IP="${EXPECT_IP:-192.168.50.1}"
 MODE="${MODE:-observe}"
 STATE_DIR="${STATE_DIR:-/run/grayrouter}"

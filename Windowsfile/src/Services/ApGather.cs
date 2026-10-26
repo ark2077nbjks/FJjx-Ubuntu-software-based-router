@@ -40,7 +40,9 @@ public static class ApGather
             if (host == null) { info.Err = "远端连不上"; return info; }
 
             var remote =
-                "\"IF=$(iw dev 2>/dev/null | sed -n 's/^Interface //p' | head -1); " +
+                "\"IF=$(for i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do " +
+                "[ \\\"$(iw dev $i info 2>/dev/null | awk '/type/{print $2}')\\\" = AP ] && { echo $i; break; }; done); " +
+                "[ -z \\\"$IF\\\" ] && IF=$(iw dev 2>/dev/null | sed -n 's/^Interface //p' | head -1); " +
                 "[ -z \\\"$IF\\\" ] && IF=wlp2s0; " +
                 "iw dev $IF info 2>/dev/null; echo ===STA===; iw dev $IF station dump 2>/dev/null\"";
             var args = Remote.BaseArgs(cfg, true) + cfg.Target + " " + remote;
