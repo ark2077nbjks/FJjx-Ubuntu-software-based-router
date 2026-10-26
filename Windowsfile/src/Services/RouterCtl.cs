@@ -233,6 +233,7 @@ echo "   日志：/var/log/grayrouter-ctl.log"
         if (rc != 0 || !txt.Contains("CTL_OK"))
             return (false, "远端没接受命令——遥控助手可能还没装（先点「安装遥控」）");
 
+        var miss = 0;
         for (int i = 0; i < 80; i++)
         {
             await Task.Delay(3000);
@@ -240,7 +241,16 @@ echo "   日志：/var/log/grayrouter-ctl.log"
 
             var (rc2, out2, _) = await Remote.RunAsync("ssh.exe",
                 Remote.BaseArgs(cfg, true) + cfg.Target + " \"cat /run/grayrouter/result.json 2>/dev/null\"");
-            if (rc2 != 0 || string.IsNullOrWhiteSpace(out2)) continue;
+            if (rc2 != 0 || string.IsNullOrWhiteSpace(out2))
+            {
+                // 切模式/切频段时远端会断开几十秒，连不上是正常的；但别死等到 4 分钟
+                miss++;
+                if (miss >= 16)
+                    return (false, "远端连不上了（切换时正常现象）。等 Wi-Fi 回来点「刷新」看结果；" +
+                                   "要确认就去看远端的 /var/log/grayrouter-ctl.log");
+                continue;
+            }
+            miss = 0;
 
             try
             {

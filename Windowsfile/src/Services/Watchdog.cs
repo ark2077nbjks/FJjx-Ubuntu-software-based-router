@@ -222,7 +222,7 @@ cat /run/grayrouter/watch.json 2>/dev/null
             Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + cmd + "\"");
         var txt = (o + e).Trim();
         if (rc != 0 || !txt.Contains("WATCH_OK"))
-            return (false, "远端没接受——看门狗可能还没装（先点「安装看门狗」）");
+            return (false, "远端没接受：看门狗可能没装，或版本旧（缺 /run/grayrouter/mode.request）。重装一次看门狗即可。");
         return (true, mode == "act" ? "已开启自动执行（60 秒内生效）" : "已切回观察模式（60 秒内生效）");
     }
 }

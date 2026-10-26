@@ -114,29 +114,37 @@ public static class Updater
         {
             var ps1 = System.IO.Path.Combine(AppPaths.TmpDir, "netpanel-update.ps1");
             var script = """
-param([string]$src,[string]$dst,[int]$procId)
+param([string]$src,[string]$dst,[int]$procId,[string]$log)
 $ErrorActionPreference = 'SilentlyContinue'
+function Note($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $m) }
+Note ("等待面板退出 pid=" + $procId)
 for ($i = 0; $i -lt 120; $i++) {
     if (-not (Get-Process -Id $procId)) { break }
     Start-Sleep -Milliseconds 500
 }
 Start-Sleep -Milliseconds 700
-for ($k = 0; $k -lt 30; $k++) {
+for ($k = 1; $k -le 30; $k++) {
     try {
         Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+        Note ("第 " + $k + " 次替换成功，启动新版")
         Start-Process -FilePath $dst
         exit 0
     } catch {
+        Note ("第 " + $k + " 次失败：" + $_.Exception.Message)
         Start-Sleep -Milliseconds 700
     }
 }
+Note '替换彻底失败，尝试拉起旧版'
+Start-Process -FilePath $dst
 exit 1
 """;
+
             File.WriteAllText(ps1, script.Replace("\r\n", "\n"), new UTF8Encoding(false));
 
             var psi = new ProcessStartInfo("powershell.exe",
                 $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{ps1}\" " +
-                $"-src \"{newExe}\" -dst \"{targetExe}\" -procId {Environment.ProcessId}")
+                $"-src \"{newExe}\" -dst \"{targetExe}\" -procId {Environment.ProcessId} " +
+                $"-log \"{System.IO.Path.Combine(AppPaths.LogDir, "update.log")}\"")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
