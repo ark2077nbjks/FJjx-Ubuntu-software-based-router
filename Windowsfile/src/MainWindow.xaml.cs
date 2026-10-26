@@ -487,6 +487,7 @@ public partial class MainWindow : Window
 
     private bool _wanFailEnabled;
     private bool _wanFailBusy;
+    private readonly Dictionary<string, string> _wanCidr = new();
 
     private async Task LoadWanFailAsync()
     {
@@ -496,7 +497,7 @@ public partial class MainWindow : Window
         if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
 
         _wanFailEnabled = false; var prefer = "auto"; var active = "";
-        var rows = new List<(string Iface, bool Up, string Lat)>();
+        var rows = new List<(string Iface, bool Up, string Lat, string Cidr)>();
         var last = ""; var reason = ""; var staticIp = ""; var staticGw = "";
         foreach (var raw in detail.Split('\n'))
         {
@@ -514,7 +515,7 @@ public partial class MainWindow : Window
             else if (k.StartsWith("WAN"))
             {
                 var f = v.Split('|');
-                if (f.Length >= 3) rows.Add((f[0], f[1] == "1", f[2]));
+                if (f.Length >= 3) rows.Add((f[0], f[1] == "1", f[2], f.Length > 3 ? f[3] : ""));
             }
         }
 
@@ -531,6 +532,8 @@ public partial class MainWindow : Window
             if ((string?)it.Tag == keep) { CmbWanPrefer.SelectedItem = it; break; }
         if (CmbWanPrefer.SelectedItem == null && CmbWanPrefer.Items.Count > 0) CmbWanPrefer.SelectedIndex = 0;
 
+        _wanCidr.Clear();
+        foreach (var r in rows) _wanCidr[r.Iface] = r.Cidr;
         var parts = rows.Select(r => $"{r.Iface} {(r.Up ? "√ " + r.Lat + " ms" : "×")}").ToList();
         var list = parts.Count == 0 ? "没发现能上网的网口" : string.Join("  ·  ", parts);
         var cur = string.IsNullOrEmpty(active) ? "跟随系统" : active;
@@ -588,8 +591,22 @@ public partial class MainWindow : Window
         var sel = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? "auto";
         _wanFailBusy = true; BtnWanToBackup.IsEnabled = false;
         var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch " + sel);
+        var msg = ok ? "√ " + detail.Trim() : "× " + detail;
+
+        // 切到校园网那条（10.149.x）时自动重新认证一次，免得切回去没网
+        if (ok && sel != "auto")
+        {
+            var cidr = _wanCidr.TryGetValue(sel, out var cv) ? cv : "";
+            if (cidr.StartsWith("10.149."))
+            {
+                TxtWanFailInfo.Text = msg + "   正在认证校园网…";
+                var (aok, adetail) = await RouterCtl.RunAsync(cfg, "auth-now");
+                msg += aok ? "   认证：" + adetail.Trim().Replace("\n", " ") : "   认证失败：" + adetail;
+                AppPaths.Log($"[多WAN] 切换后认证 → {(aok ? "成功" : adetail)}");
+            }
+        }
         BtnWanToBackup.IsEnabled = true; _wanFailBusy = false;
-        TxtWanFailInfo.Text = ok ? "√ " + detail.Trim() : "× " + detail;
+        TxtWanFailInfo.Text = msg;
         AppPaths.Log($"[多WAN] 切到 {sel} → {(ok ? "成功" : detail)}");
         await LoadWanFailAsync();
     }

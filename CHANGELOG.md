@@ -6,6 +6,13 @@
 
 ---
 
+## 1.48 · 2026-10-27
+
+- 「切到所选」切到**校园网那条**（地址属于 `10.149.x`）时自动跑一次认证；切手机 USB / 其他 WAN 不认证
+- 多 WAN 候选列表带地址段（`wanfail get` 第 4 字段），面板据此判断线路类型
+- 新增 `grayrouter-auth.sh` + 白名单 `auth-now`
+- 安装包内不再包含任何个人路径（`grayrouter-ctl.sh` 全用 `$HOMEDIR`）
+
 ## 1.47.1 · 2026-10-27
 
 - `wanfail get` 补输出 `STATIC_IP` / `STATIC_GW`（面板回填）
