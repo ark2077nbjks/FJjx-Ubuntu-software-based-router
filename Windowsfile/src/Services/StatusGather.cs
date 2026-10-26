@@ -13,6 +13,7 @@ public sealed class StatusRow
     public string Value = "";
     public bool Sub;           // 附属说明行（型号、提示），灰色小字、不占标签列
     public string Icon = "";   // 复用图标库里的 png 名（不含 /icons/ 前缀）
+    public List<StatusRow>? Children;   // 非空 = 可折叠的组（默认收起）
 }
 
 public sealed class RemoteNic
@@ -25,6 +26,11 @@ public sealed class RemoteNic
     public string Model = "";
     public string Ip = "";
     public string Role = "";
+}
+
+public sealed class RemoteVnic
+{
+    public string Name = "", State = "", Ip = "";
 }
 
 public sealed class StatusSection
@@ -47,6 +53,7 @@ public sealed class Snapshot
     public List<StatusSection> MiniSections = new();
     public List<RemoteNic> RemoteNics = new();
     public int RemoteVirtualNics;
+    public List<RemoteVnic> RemoteVnics = new();
 }
 
 public static class StatusGather
@@ -68,6 +75,32 @@ public static class StatusGather
 
 
     /// <summary>uptime 英文（2 days, 21 hours）→ 中文</summary>
+    /// <summary>看门狗状态：observe=只看不动，act=会自动重启 AP</summary>
+    /// <summary>远端看门狗当前模式：observe / act（面板开关用）</summary>
+    public static string LastWatchMode = "observe";
+
+    /// <summary>远端当前模式：router / hotspot（空 = 还没读到）</summary>
+    public static string LastMode = "";
+
+    private static string WatchText(Dictionary<string, string> d)
+    {
+        var st = d.GetValueOrDefault("WATCH_STATE", "");
+        if (string.IsNullOrWhiteSpace(st) || st == "none")
+            return "— 没装看门狗";
+
+        var mode = d.GetValueOrDefault("WATCH_MODE", "");
+        LastWatchMode = string.IsNullOrWhiteSpace(mode) ? "observe" : mode;
+        var ts = d.GetValueOrDefault("WATCH_TS", "");
+        var hm = ts.Length >= 16 ? ts.Substring(11, 5) : ts;
+        var obs = mode == "observe";
+
+        if (d.GetValueOrDefault("WATCH_ACTED", "false") == "true")
+            return $"√ {hm} 已自动重启 AP";
+        if (st == "suspect")
+            return obs ? $"⚠ {hm} 检测到假在线（观察模式，没动手）" : $"⚠ {hm} 假在线";
+        return obs ? $"√ {hm} 正常（观察模式）" : $"√ {hm} 正常";
+    }
+
     private static string CnUptime(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return s;
@@ -139,6 +172,41 @@ public static class StatusGather
             secNic.Rows.Add(new StatusRow { Label = "IP", Value = v4.Count > 0 ? string.Join(", ", v4) : "无" });
             secNic.Rows.Add(new StatusRow { Label = "网关", Value = gw });
             secNic.Rows.Add(new StatusRow { Label = "型号", Value = a.Description, Sub = true });
+        }
+
+        // ---- 虚拟网卡 / 系统虚拟口（Hyper-V、VMware、WSL、Docker、Wi-Fi Direct、WAN Miniport…） ----
+        var physNames = new HashSet<string>(adapters.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
+        var virt = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback && !physNames.Contains(n.Name))
+            .Where(n => !new[] { "filter", "scheduler", "qos", "packet" }.Any(k => n.Name.ToLowerInvariant().Contains(k)))
+            .Select(n =>
+            {
+                var v4 = n.GetIPProperties().UnicastAddresses
+                    .Where(x => x.Address.AddressFamily == AddressFamily.InterNetwork)
+                    .Select(x => x.Address.ToString()).ToList();
+                return new { n.Name, n.OperationalStatus, n.NetworkInterfaceType, Ip = v4.FirstOrDefault() ?? "" };
+            })
+            .OrderByDescending(v => v.Ip != "")
+            .ThenByDescending(v => v.OperationalStatus == OperationalStatus.Up)
+            .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (virt.Count > 0)
+        {
+            var up = virt.Count(v => v.OperationalStatus == OperationalStatus.Up);
+            local.AppendLine();
+            local.AppendLine($"【虚拟网卡】{virt.Count} 个（在线 {up}）");
+            var kids = new List<StatusRow>();
+            foreach (var v in virt)
+            {
+                var st = v.OperationalStatus == OperationalStatus.Up ? "已连接" : "未连接";
+                var ip = string.IsNullOrEmpty(v.Ip) ? "无 IP" : v.Ip;
+                var line = $"{v.Name} · {st} · {ip}";
+                local.AppendLine("  " + line);
+                kids.Add(new StatusRow { Label = "", Value = line });
+            }
+            secNic.Rows.Add(new StatusRow { Label = "", Value = "" });
+            secNic.Rows.Add(new StatusRow { Label = "虚拟网卡", Value = $"{virt.Count} 个（在线 {up}）", Children = kids });
         }
 
         snap.LocalSections.Add(secNic);
@@ -272,6 +340,12 @@ public static class StatusGather
                     }
                     else if (t.StartsWith("VIRTUAL|") && int.TryParse(t.Split('|')[1], out var vc))
                         snap.RemoteVirtualNics = vc;
+                    else if (t.StartsWith("VNIC|"))
+                    {
+                        var vf = t.Split('|');
+                        if (vf.Length >= 4)
+                            snap.RemoteVnics.Add(new RemoteVnic { Name = vf[1], State = vf[2], Ip = vf[3] });
+                    }
                 }
             }
             snap.RemoteNics = nics;
@@ -315,6 +389,9 @@ public static class StatusGather
                             : "× 未运行");
                     mini.AppendLine($"  伪装 {ua3fCn}");
                     secMini.Rows.Add(new StatusRow { Label = "伪装", Value = ua3fCn });
+                    var watchCn = WatchText(d);
+                    mini.AppendLine($"  守护 {watchCn}");
+                    secMini.Rows.Add(new StatusRow { Label = "守护", Value = watchCn });
                     secMini.Rows.Add(new StatusRow { Label = "采集", Value = d.GetValueOrDefault("TS"), Sub = true });
                 }
                 else
@@ -328,6 +405,7 @@ public static class StatusGather
                     mini.AppendLine($"  客户端 {d.GetValueOrDefault("CLIENTS")}   转发 ip_forward={d.GetValueOrDefault("FWD")}");
                     mini.AppendLine($"  出网 HTTPS {d.GetValueOrDefault("HTTPS")}   出口 {d.GetValueOrDefault("EGRESS")}");
 
+                    LastMode = isAp ? "router" : "hotspot";
                     secMini.Rows.Add(new StatusRow { Label = "模式", Value = isAp ? "软路由（AP）" : "热点模式（客户端）" });
                     secMini.Rows.Add(new StatusRow { Label = "已运行", Value = CnUptime(d.GetValueOrDefault("UPTIME")) });
                     secMini.Rows.Add(new StatusRow { Label = "有线", Value = $"{d.GetValueOrDefault("WAN_IP")}  "
@@ -342,6 +420,9 @@ public static class StatusGather
                         : (d.GetValueOrDefault("UA3F") == "1" || d.GetValueOrDefault("UA3F") == "active" ? "√ 运行中" : "× 未运行");
                     mini.AppendLine($"  伪装 {ua3fCn2}");
                     secMini.Rows.Add(new StatusRow { Label = "伪装", Value = ua3fCn2 });
+                    var watchCn2 = WatchText(d);
+                    mini.AppendLine($"  守护 {watchCn2}");
+                    secMini.Rows.Add(new StatusRow { Label = "守护", Value = watchCn2 });
                 }
             }
             else if (out2.Contains("NOINFO"))
@@ -395,7 +476,22 @@ public static class StatusGather
                 if (!string.IsNullOrWhiteSpace(meta))
                     secRnic.Rows.Add(new StatusRow { Label = "", Value = meta, Sub = true });
             }
-            if (snap.RemoteVirtualNics > 0)
+            // 远端虚拟网卡：集中成一个可折叠组，默认收起
+            if (snap.RemoteVnics.Count > 0)
+            {
+                var kids = snap.RemoteVnics
+                    .OrderByDescending(v => v.Ip != "-" && v.Ip != "")
+                    .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(v => new StatusRow
+                    {
+                        Label = "",
+                        Value = $"{v.Name} · {(v.State == "up" ? "已连接" : "未连接")} · {(v.Ip == "-" || v.Ip == "" ? "无 IP" : v.Ip)}",
+                    })
+                    .ToList();
+                var upN = snap.RemoteVnics.Count(v => v.State == "up");
+                secRnic.Rows.Add(new StatusRow { Label = "虚拟网卡", Value = $"{snap.RemoteVnics.Count} 个（在线 {upN}）", Children = kids });
+            }
+            else if (snap.RemoteVirtualNics > 0)
                 secRnic.Rows.Add(new StatusRow { Label = "", Value = $"另有 {snap.RemoteVirtualNics} 个虚拟网卡（docker / veth，未列出）", Sub = true });
 
             snap.MiniSections.Add(secRnic);

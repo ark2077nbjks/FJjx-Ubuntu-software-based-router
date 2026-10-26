@@ -43,3 +43,16 @@ vc=$(ls -d /sys/class/net/* 2>/dev/null | wc -l)
 pc=$(( vc - 1 ))
 vcount=$(ls /sys/class/net 2>/dev/null | grep -cE '^(docker|veth|br-|virbr|tun|tap)' || true)
 printf 'VIRTUAL|%s\n' "$vcount"
+
+# ---- 虚拟网卡（docker / veth / bridge / tun / tap / wg）→ 面板折叠显示 ----
+for d in /sys/class/net/*; do
+    n=$(basename "$d")
+    case "$n" in
+        docker*|veth*|br-*|virbr*|tun*|tap*|wg*|zt*|tailscale*) ;;
+        *) continue ;;
+    esac
+    st=$(cat "$d/operstate" 2>/dev/null || echo unknown)
+    ip4=$(ip -4 -o addr show dev "$n" 2>/dev/null | awk '{print $4}' | paste -sd, -)
+    [ -z "$ip4" ] && ip4="-"
+    printf 'VNIC|%s|%s|%s\n' "$n" "$st" "$ip4"
+done
