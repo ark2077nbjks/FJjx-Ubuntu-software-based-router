@@ -567,6 +567,7 @@ public partial class MainWindow : Window
                                (cfg.IsConfigured ? " + 软路由邻居表" : "（软路由未连接，只看本机 ARP）");
             if (list.Count == 0 && cidrMismatch)
                 TxtScanInfo.Text += $"　← 本机在 {string.Join("、", locals)}，网段是不是填错了";
+            await RefreshDevStateAsync();
             TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
             AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
         }
@@ -594,7 +595,114 @@ public partial class MainWindow : Window
         TxtScanInfo.Text = "正在停止 …";
     }
 
-    private void OnExportDevices(object sender, RoutedEventArgs e)
+    private async void OnDevAction(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not LanDevice d || string.IsNullOrWhiteSpace(d.Mac)) return;
+
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtScanInfo.Text = "× 「连接」页还没配远端地址"; return; }
+
+        var blocking = !d.Blocked;
+        if (blocking)
+        {
+            var r = MessageBox.Show(
+                $"拉黑这台设备？\n\n{d.Name}  {d.Ip}\n{d.Mac}\n\n" +
+                "拉黑后它照样连着 WiFi，但完全上不了网。随时可以点「解除」。",
+                "拉黑设备", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (r != MessageBoxResult.Yes) return;
+        }
+
+        TxtScanInfo.Text = (blocking ? "正在拉黑 " : "正在解除 ") + d.Mac + " …";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, (blocking ? "dev-block " : "dev-unblock ") + d.Mac);
+        TxtScanInfo.Text = (ok ? "√ " : "× ") + detail;
+        AppPaths.Log($"[设备] {(blocking ? "拉黑" : "解除")} {d.Mac} → {detail}");
+
+        if (ok) await RefreshDevStateAsync();
+    }
+
+    private async void OnDevUnblockAll(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtScanInfo.Text = "× 「连接」页还没配远端地址"; return; }
+
+        var r = MessageBox.Show("把所有拉黑的设备全部解除？", "全部解除",
+            MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes) return;
+
+        TxtScanInfo.Text = "正在全部解除 …";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "dev-unblock-all");
+        TxtScanInfo.Text = (ok ? "√ " : "× ") + detail;
+        AppPaths.Log("[设备] 全部解除 → " + detail);
+        if (ok) await RefreshDevStateAsync();
+    }
+
+    /// <summary>拉一次远端的黑名单/流量计数，刷进表格（不重新扫描）</summary>
+    private async Task RefreshDevStateAsync()
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured || _devices.Count == 0) return;
+
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "dev-list");
+        if (!ok)
+        {
+            if (detail.Contains("不认识") || detail.Contains("没接受"))
+                TxtScanInfo.Text += "　（设备管理助手还没装到软路由）";
+            AppPaths.Log("[设备] dev-list 失败：" + detail);
+            return;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            var map = new Dictionary<string, (bool Blocked, long Up, long Down)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
+            {
+                var mac = (el.GetProperty("mac").GetString() ?? "").ToLowerInvariant();
+                map[mac] = (el.GetProperty("blocked").GetBoolean(),
+                            el.GetProperty("up").GetInt64(),
+                            el.GetProperty("down").GetInt64());
+            }
+
+            foreach (var d in _devices)
+            {
+                if (map.TryGetValue((d.Mac ?? "").ToLowerInvariant(), out var v))
+                {
+                    d.Blocked = v.Blocked;
+                    d.Traffic = FmtShort(v.Up) + " / " + FmtShort(v.Down);
+                }
+            }
+
+            DgDevices.ItemsSource = null;
+            DgDevices.ItemsSource = _devices;
+
+            var blocked = _devices.Count(x => x.Blocked);
+            if (blocked > 0) TxtScanInfo.Text += $"　（已拉黑 {blocked} 台）";
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[设备] 解析 dev-list 失败：" + ex.Message + " 原文=" + detail);
+            TxtScanInfo.Text += "　（流量/黑名单读取失败，看日志）";
+        }
+    }
+
+    private static string FmtShort(long b)
+    {
+        const long G = 1024L * 1024 * 1024, M = 1024L * 1024, K = 1024;
+        if (b >= G) return (b / (double)G).ToString("F1") + "G";
+        if (b >= M) return (b / (double)M).ToString("F0") + "M";
+        if (b >= K) return (b / (double)K).ToString("F0") + "K";
+        return b + "B";
+    }
+
+    private static string FmtBytes(long b)
+    {
+        if (b < 1024) return b + " B";
+        if (b < 1024L * 1024) return (b / 1024.0).ToString("F0") + " KB";
+        if (b < 1024L * 1024 * 1024) return (b / 1024.0 / 1024).ToString("F1") + " MB";
+        return (b / 1024.0 / 1024 / 1024).ToString("F2") + " GB";
+    }
+
+private void OnExportDevices(object sender, RoutedEventArgs e)
     {
         if (_devices.Count == 0) { TxtScanInfo.Text = "× 先扫描一次再导出"; return; }
 
