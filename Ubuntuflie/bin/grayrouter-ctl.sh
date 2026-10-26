@@ -76,6 +76,7 @@ case "$cmd" in
   roles-get)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="get"; DEVCAP=1 ;;
   roles-set)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="set ${rest:-auto}"; DEVCAP=1 ;;
   rescue)        SCRIPT=/usr/local/bin/grayrouter-rescue.sh; ARGS=""; DEVCAP=1 ;;
+  auth-now)      SCRIPT=/usr/local/bin/grayrouter-auth.sh; ARGS=""; DEVCAP=1 ;;
   usbnet-now)    SCRIPT=/usr/local/bin/grayrouter-usbnet-now.sh; ARGS=""; DEVCAP=1 ;;
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
   wanfail-set)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="set ${rest:-}"; DEVCAP=1 ;;

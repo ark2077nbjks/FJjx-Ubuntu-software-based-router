@@ -217,7 +217,8 @@ case "${1:-get}" in
     for ifc in $ALL; do
       n=$((n+1)); [ "$n" -gt 4 ] && break
       res=$(probe "$ifc")
-      echo "WAN$n=$ifc|${res%% *}|${res##* }"
+      cidr=$(ip -4 -o addr show dev "$ifc" 2>/dev/null | awk '{print $4}' | head -1)
+      echo "WAN$n=$ifc|${res%% *}|${res##* }|$cidr"
     done
     echo "COUNT=$n"
     echo "LAST_SWITCH=${LAST_SWITCH:-}"; echo "LAST_REASON=${LAST_REASON:-}"
