@@ -22,6 +22,9 @@ public partial class App : Application
     /// <summary>--page=名字：启动后直接切到指定页（截图/自检用）</summary>
     public static string? StartPage;
 
+    /// <summary>--deploywin=主机：启动后直接打开一键部署窗口（截图/自测用）</summary>
+    public static string? DeployWin;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -45,6 +48,9 @@ public partial class App : Application
         // 隐藏参数：--page=无线频段 启动后直接切到那一页（截图核对用）
         var pageArg = e.Args.FirstOrDefault(x => x.StartsWith("--page="));
         if (pageArg != null) StartPage = pageArg.Substring("--page=".Length);
+
+        var depArg = e.Args.FirstOrDefault(x => x.StartsWith("--deploywin"));
+        if (depArg != null) DeployWin = depArg.Contains('=') ? depArg.Split('=', 2)[1] : "";
 
         // 隐藏自检：NetPanel.exe --memtest 跑一次内存优化，把结果写日志后退出（用于验证权限/命令是否正常）
         if (e.Args.Contains("--memtest"))
