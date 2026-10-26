@@ -214,6 +214,23 @@
                                                     </StackPanel>
                                                 </Button>
                                                 <Button
+                                                    x:Name="BtnRescue"
+                                                    Width="104"
+                                                    Height="32"
+                                                    Margin="8,0,0,0"
+                                                    AutomationProperties.Name="恢复上网"
+                                                    Background="#FFE5484D"
+                                                    BorderThickness="0"
+                                                    Click="OnRescue"
+                                                    Cursor="Hand"
+                                                    FontSize="13.5"
+                                                    Foreground="#FFFFFFFF">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Foreground="#FFFFFFFF"
+                                                        Text="恢复上网" />
+                                                </Button>
+                                                <Button
                                                     x:Name="BtnRefresh"
                                                     Width="92"
                                                     Height="32"

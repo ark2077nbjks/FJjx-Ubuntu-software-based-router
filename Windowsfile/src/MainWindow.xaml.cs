@@ -444,6 +444,45 @@ public partial class MainWindow : Window
         finally { _rolesLoading = false; }
     }
 
+    // ---------------- 兜底恢复 ----------------
+
+    private bool _rescuing;
+
+    private async void OnRescue(object sender, RoutedEventArgs e)
+    {
+        if (_rescuing) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { MessageBox.Show("还没配置软路由地址。", "恢复上网"); return; }
+
+        var r = MessageBox.Show(
+            "会做这些事：\n\n" +
+            "① 关掉「自动切换」（免得边修边被切走）\n" +
+            "② 删掉面板加的临时默认路由，交回系统\n" +
+            "③ 主网口没路由就重连一次\n" +
+            "④ 校园网重新认证一次\n\n" +
+            "不会重启、不会断 Wi-Fi 热点，随时可以再开自动切换。\n\n继续？",
+            "恢复上网（兜底重置）", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes);
+        if (r != MessageBoxResult.Yes) return;
+
+        _rescuing = true; BtnRescue.IsEnabled = false;
+        BtnRescue.Content = "恢复中…";
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "rescue",
+                msg => AppPaths.Log("[恢复] " + msg));
+            AppPaths.Log($"[恢复] 结果：{(ok ? "成功" : "失败")} · {detail}");
+            MessageBox.Show(detail, ok ? "恢复完成" : "恢复没完全成功",
+                            MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            if (ok) { await RefreshAsync(true); }
+        }
+        finally
+        {
+            BtnRescue.Content = "恢复上网";
+            BtnRescue.IsEnabled = true;
+            _rescuing = false;
+        }
+    }
+
     // ---------------- 多 WAN 故障转移 ----------------
 
     private bool _wanFailEnabled;

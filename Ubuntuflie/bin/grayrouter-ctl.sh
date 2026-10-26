@@ -75,6 +75,7 @@ case "$cmd" in
   dev-names)     SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="names"; DEVCAP=1 ;;
   roles-get)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="get"; DEVCAP=1 ;;
   roles-set)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="set ${rest:-auto}"; DEVCAP=1 ;;
+  rescue)        SCRIPT=/usr/local/bin/grayrouter-rescue.sh; ARGS=""; DEVCAP=1 ;;
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
   wanfail-set)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="set ${rest:-}"; DEVCAP=1 ;;
   wanfail-switch) SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="switch ${rest:-primary}"; DEVCAP=1 ;;
