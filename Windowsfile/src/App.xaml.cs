@@ -10,7 +10,9 @@ static class Ver
     public static string Text()
     {
         var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        return v == null ? "?" : $"v{v.Major}.{v.Minor}.{v.Build}";
+        if (v == null) return "?";
+        // MC 式：没有补丁号就只显示 主.次（v1.35），有补丁才 v1.35.1
+        return v.Build > 0 ? $"v{v.Major}.{v.Minor}.{v.Build}" : $"v{v.Major}.{v.Minor}";
     }
 }
 
