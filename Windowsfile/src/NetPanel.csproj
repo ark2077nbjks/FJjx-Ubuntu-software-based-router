@@ -10,7 +10,7 @@
     <AssemblyName>NetPanel</AssemblyName>
     <RootNamespace>NetPanel</RootNamespace>
     <ApplicationManifest Condition="'$(NoAdmin)' != 'true'">app.manifest</ApplicationManifest>
-    <Version>1.48</Version>
+    <Version>1.48.1</Version>
     <ApplicationIcon>icons\NetPanel.ico</ApplicationIcon>
     <Product>网络面板</Product>
     <AssemblyTitle>网络面板 NetPanel</AssemblyTitle>

@@ -860,12 +860,12 @@
                         </TabItem.Header>
                         <Grid>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
                             <Grid.Children>
                                 <StackPanel
                                     Grid.Row="0"
@@ -934,9 +934,9 @@
                                                         <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Foreground="#FF374151" Text="网口角色" />
                                                         <TextBlock x:Name="TxtRoleInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF7C8798" Text="" />
                                                         <TextBlock VerticalAlignment="Center" Margin="18,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="出口 WAN" />
-                                                        <ComboBox x:Name="CmbRoleWan" Width="130" Height="26" VerticalContentAlignment="Center" />
+                                                        <ComboBox x:Name="CmbRoleWan" Width="200" Height="26" VerticalContentAlignment="Center" />
                                                         <TextBlock VerticalAlignment="Center" Margin="14,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="热点 LAN" />
-                                                        <ComboBox x:Name="CmbRoleLan" Width="130" Height="26" VerticalContentAlignment="Center" />
+                                                        <ComboBox x:Name="CmbRoleLan" Width="200" Height="26" VerticalContentAlignment="Center" />
                                                         <Button x:Name="BtnRoleSave" Height="26" Margin="14,0,0,0" Padding="12,0" Click="OnRoleSave">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
@@ -985,7 +985,7 @@
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
-                                                        <ComboBox x:Name="CmbWanPrefer" Width="150" Height="26" Margin="12,0,0,0" VerticalContentAlignment="Center" />
+                                                        <ComboBox x:Name="CmbWanPrefer" Width="200" Height="26" Margin="12,0,0,0" VerticalContentAlignment="Center" />
                                                         <Button x:Name="BtnWanToBackup" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFFDF6E3" BorderBrush="#FFEEDFB0" Click="OnWanToBackup">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
