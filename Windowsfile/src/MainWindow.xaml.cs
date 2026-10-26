@@ -119,6 +119,9 @@ public partial class MainWindow : Window
                 "log" or "logs" => "日志",
                 "nic" => "网卡",
                 "device" => "设备",
+                "traffic" => "流量",
+                "conn" => "连接",
+                "campus" => "校园网",
                 _ => sp,
             };
             var matched = false;
@@ -318,6 +321,10 @@ public partial class MainWindow : Window
         public string Last { get; set; } = "";
     }
 
+    private readonly long[] _devHourDown = new long[24];
+    private readonly long[] _devHourUp = new long[24];
+    private bool _devHourHasData;
+
     private DateTime _devTrafficStamp = DateTime.MinValue;
 
     private async void OnDevTrafficRefresh(object sender, RoutedEventArgs e) => await LoadDevTrafficAsync(true);
@@ -357,6 +364,35 @@ public partial class MainWindow : Window
                 });
             }
             DgDevTraffic.ItemsSource = rows;
+
+            Array.Clear(_devHourDown);
+            Array.Clear(_devHourUp);
+            _devHourHasData = false;
+            long todayD = 0, todayU = 0, spanD = 0, spanU = 0;
+            foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
+            {
+                todayD += el.GetProperty("today_down").GetInt64();
+                todayU += el.GetProperty("today_up").GetInt64();
+                spanD += el.GetProperty("span_down").GetInt64();
+                spanU += el.GetProperty("span_up").GetInt64();
+            }
+            if (doc.RootElement.TryGetProperty("hours", out var hrs))
+            {
+                foreach (var h in hrs.EnumerateArray())
+                {
+                    var idx = h.GetProperty("h").GetInt32();
+                    if (idx < 0 || idx > 23) continue;
+                    _devHourDown[idx] = h.GetProperty("down").GetInt64();
+                    _devHourUp[idx] = h.GetProperty("up").GetInt64();
+                    if (_devHourDown[idx] > 0 || _devHourUp[idx] > 0) _devHourHasData = true;
+                }
+            }
+            TxtTrafficInfo.Text =
+                $"今天 ↓{Traffic.SizeText(todayD / 1048576.0)} ↑{Traffic.SizeText(todayU / 1048576.0)}" +
+                $"   近 30 天 ↓{Traffic.SizeText(spanD / 1048576.0)} ↑{Traffic.SizeText(spanU / 1048576.0)}" +
+                $"   ·   每小时自动采一次 · 保留 32 天";
+            RenderTrafficChart();
+
             TxtDevTrafficInfo.Text = $"√ {rows.Count} 台 · {DateTime.Now:HH:mm:ss} 更新";
             _devTrafficStamp = DateTime.Now;
         }
@@ -398,22 +434,7 @@ public partial class MainWindow : Window
                 $"今天 ↓{Traffic.SizeText(today.downMb)} ↑{Traffic.SizeText(today.upMb)}" +
                 $"   昨天 ↓{Traffic.SizeText(yest.downMb)} ↑{Traffic.SizeText(yest.upMb)}" +
                 $"   近 7 天 ↓{Traffic.SizeText(week.downMb)} ↑{Traffic.SizeText(week.upMb)}" +
-                $"   ·  每 15 秒采样 · 保留 30 天 · 数据在 data\\{System.IO.Path.GetFileName(Traffic.TodayFile)}";
-
-            var per = Traffic.PerAdapter(DateTime.Today);
-            var sum = per.Sum(x => x.downMb + x.upMb);
-            DgTraffic.ItemsSource = per.Select(x =>
-            {
-                var total = x.downMb + x.upMb;
-                return new TrafficRow
-                {
-                    Adapter = x.adapter,
-                    Down = Traffic.SizeText(x.downMb),
-                    Up = Traffic.SizeText(x.upMb),
-                    Total = Traffic.SizeText(total),
-                    Share = sum <= 0 ? "—" : $"{total / sum * 100:F1}%",
-                };
-            }).ToList();
+                "   ·   软路由没连上，图上暂时是本机网卡数据";
 
             RenderTrafficChart();
         }
@@ -429,7 +450,14 @@ public partial class MainWindow : Window
         double w = CvTraffic.ActualWidth, h = CvTraffic.ActualHeight;
         if (w < 120 || h < 80) return;
 
-        var buckets = Traffic.HourlyBuckets(DateTime.Today);
+        double[][] buckets;
+        if (_devHourHasData)
+        {
+            buckets = new double[24][];
+            for (int i = 0; i < 24; i++)
+                buckets[i] = new[] { _devHourDown[i] / 1048576.0, _devHourUp[i] / 1048576.0 };
+        }
+        else buckets = Traffic.HourlyBuckets(DateTime.Today);
         double max = 0;
         foreach (var b in buckets) max = Math.Max(max, Math.Max(b[0], b[1]));
         if (max <= 0) max = 0.1;

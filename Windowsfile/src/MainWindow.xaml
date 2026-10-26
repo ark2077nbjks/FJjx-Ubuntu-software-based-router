@@ -1986,7 +1986,7 @@
                                                         <TextBlock
                                                             FontSize="12"
                                                             Foreground="#FF4B5563"
-                                                            Text="今天每小时用量" />
+                                                            Text="今天每小时用量（所有设备合计）" />
                                                         <Rectangle
                                                             Width="10"
                                                             Height="10"
@@ -2024,55 +2024,8 @@
                                         </Grid>
                                     </Border.Child>
                                 </Border>
-                                <Border
-                                    Grid.Row="3"
-                                    Height="150"
-                                    Margin="0,10,0,0"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
-                                    BorderThickness="1"
-                                    CornerRadius="4">
-                                    <Border.Child>
-                                        <DataGrid
-                                            x:Name="DgTraffic"
-                                            AutoGenerateColumns="False"
-                                            Background="#00FFFFFF"
-                                            BorderThickness="0"
-                                            CanUserReorderColumns="False"
-                                            CanUserSortColumns="False"
-                                            FontSize="12"
-                                            GridLinesVisibility="Horizontal"
-                                            HeadersVisibility="Column"
-                                            HorizontalGridLinesBrush="#FFEDF0F5"
-                                            IsReadOnly="True"
-                                            RowHeight="28">
-                                            <DataGrid.Columns>
-                                                <DataGridTextColumn
-                                                    Width="200"
-                                                    Binding="{Binding Adapter}"
-                                                    Header="网卡" />
-                                                <DataGridTextColumn
-                                                    Width="130"
-                                                    Binding="{Binding Down}"
-                                                    Header="下行" />
-                                                <DataGridTextColumn
-                                                    Width="130"
-                                                    Binding="{Binding Up}"
-                                                    Header="上行" />
-                                                <DataGridTextColumn
-                                                    Width="130"
-                                                    Binding="{Binding Total}"
-                                                    Header="合计" />
-                                                <DataGridTextColumn
-                                                    Width="*"
-                                                    Binding="{Binding Share}"
-                                                    Header="占比" />
-                                            </DataGrid.Columns>
-                                        </DataGrid>
-                                    </Border.Child>
-                                </Border>
                                                             <Border
-                                    Grid.Row="4"
+                                    Grid.Row="3"
                                     Margin="0,10,0,0"
                                     Padding="12,10,12,8"
                                     Background="#FFFFFFFF"
@@ -2169,7 +2122,7 @@
                                         </Grid>
                                     </Border.Child>
                                 </Border>
-</Grid.Children>
+                            </Grid.Children>
                         </Grid>
                     </TabItem>
                     <TabItem AutomationProperties.Name="连接">
