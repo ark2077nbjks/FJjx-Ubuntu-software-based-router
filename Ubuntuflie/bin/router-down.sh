@@ -16,6 +16,14 @@ LAN_IP=${LAN_IP:-192.168.50.1}
 SSID=${SSID:-Gray-Router}
 LAN_CON=${LAN_CON:-GrayRouter-LAN}
 
+# 网口角色：config.env 里没写就按自动探测（roles.sh），再兜底常见名字
+if [ -z "${WAN_IF:-}" ] || [ -z "${LAN_IF:-}" ]; then
+  _roles=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null || true)
+  [ -z "${WAN_IF:-}" ] && WAN_IF=$(printf '%s\n' "$_roles" | sed -n 's/^WAN_IF=//p')
+  [ -z "${LAN_IF:-}" ] && LAN_IF=$(printf '%s\n' "$_roles" | sed -n 's/^LAN_IF=//p')
+fi
+WAN_IF=${WAN_IF:-eno1}; LAN_IF=${LAN_IF:-wlp2s0}
+
 C_Y=$'\033[33m'; C_N=$'\033[0m'
 [ "$(id -u)" -ne 0 ] && { echo "需要 root：sudo $0"; exit 2; }
 echo "停止 $LAN_CON ..."
