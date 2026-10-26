@@ -971,6 +971,7 @@
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
                                             <Grid.Children>
                                                 <StackPanel Grid.Row="0" Orientation="Horizontal">
@@ -996,6 +997,28 @@
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
                                                                     <TextBlock VerticalAlignment="Center" Text="恢复自动" />
+                                                                </StackPanel.Children>
+                                                            </StackPanel>
+                                                        </Button>
+                                                    </StackPanel.Children>
+                                                </StackPanel>
+                                                <StackPanel Grid.Row="2" Margin="0,8,0,0" Orientation="Horizontal">
+                                                    <StackPanel.Children>
+                                                        <Button x:Name="BtnUsbNow" Height="26" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnUsbNow">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <StackPanel.Children>
+                                                                    <TextBlock VerticalAlignment="Center" Text="立即激活 USB 网卡" />
+                                                                </StackPanel.Children>
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <TextBlock VerticalAlignment="Center" Margin="16,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="静态兜底 IP" />
+                                                        <TextBox x:Name="TxtStaticIp" Width="120" Height="24" VerticalContentAlignment="Center" FontSize="12" />
+                                                        <TextBlock VerticalAlignment="Center" Margin="8,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="网关" />
+                                                        <TextBox x:Name="TxtStaticGw" Width="120" Height="24" VerticalContentAlignment="Center" FontSize="12" />
+                                                        <Button x:Name="BtnStaticSave" Height="26" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <StackPanel.Children>
+                                                                    <TextBlock VerticalAlignment="Center" Text="保存" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>

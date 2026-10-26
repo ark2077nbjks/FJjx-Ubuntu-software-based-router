@@ -45,6 +45,7 @@ systemctl enable --now grayrouter-wanfail.timer >/dev/null 2>&1 || true
 
 echo "③.8 手机 USB 共享插上自动要 IP（udev + 模板服务）"
 install -m 755 "$DIR/grayrouter-usbnet-up.sh" /usr/local/bin/grayrouter-usbnet-up.sh || exit 1
+install -m 755 "$DIR/grayrouter-usbnet-now.sh" /usr/local/bin/grayrouter-usbnet-now.sh || exit 1
 install -m 644 "$DIR/grayrouter-usbnet@.service" /etc/systemd/system/grayrouter-usbnet@.service || exit 1
 install -m 644 "$DIR/70-grayrouter-usbnet.rules" /etc/udev/rules.d/70-grayrouter-usbnet.rules || exit 1
 udevadm control --reload-rules 2>/dev/null || true

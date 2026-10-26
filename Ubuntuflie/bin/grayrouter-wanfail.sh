@@ -21,6 +21,8 @@ ENABLE=0
 WANS=""             # 空 = 自动发现（空格分隔，顺序即优先级）
 PREFER=""           # 空/auto = 自动选；填网口 = 钉死这条
 CHECK_IP=223.5.5.5
+STATIC_IP=192.168.42.100
+STATIC_GW=192.168.42.129
 FAIL_N=3
 OK_N=2
 [ -f "$CONF" ] && . "$CONF" 2>/dev/null
@@ -161,9 +163,9 @@ ensure_usb_net() {
       continue
     fi
     if ! ip -4 addr show dev "$n" 2>/dev/null | grep -q '192.168.42.100'; then
-      ip addr add 192.168.42.100/24 dev "$n" 2>/dev/null
-      ip route replace default via 192.168.42.129 dev "$n" metric 700 2>/dev/null
-      log "$n DHCP 连续 $cnt 次失败 → 试静态 192.168.42.100/24 网关 .129（metric 700，不会抢主线路）"
+      ip addr add "${STATIC_IP}/24" dev "$n" 2>/dev/null
+      ip route replace default via "$STATIC_GW" dev "$n" metric 700 2>/dev/null
+      log "$n DHCP 连续 $cnt 次失败 → 试静态 ${STATIC_IP}/24 网关 $STATIC_GW（metric 700，不会抢主线路）"
     fi
   done
 }
@@ -246,6 +248,8 @@ case "${1:-get}" in
     case "$k" in
       enable) ENABLE=1 ;; disable) ENABLE=0 ;;
       prefer) PREFER="${v:-auto}" ;;
+      staticip) STATIC_IP="${v:-192.168.42.100}" ;;
+      staticgw) STATIC_GW="${v:-192.168.42.129}" ;;
       wans)   WANS="$v" ;;
       failn)  FAIL_N="${v:-3}" ;; okn) OK_N="${v:-2}" ;;
       checkip) CHECK_IP="${v:-223.5.5.5}" ;;
@@ -256,6 +260,8 @@ case "${1:-get}" in
       echo "WANS=\"$WANS\""
       echo "PREFER=\"$PREFER\""
       echo "CHECK_IP=$CHECK_IP"
+      echo "STATIC_IP=$STATIC_IP"
+      echo "STATIC_GW=$STATIC_GW"
       echo "FAIL_N=$FAIL_N"
       echo "OK_N=$OK_N"
     } > "$CONF"
