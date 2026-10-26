@@ -497,7 +497,7 @@ public partial class MainWindow : Window
 
         _wanFailEnabled = false; var prefer = "auto"; var active = "";
         var rows = new List<(string Iface, bool Up, string Lat)>();
-        var last = ""; var reason = "";
+        var last = ""; var reason = ""; var staticIp = ""; var staticGw = "";
         foreach (var raw in detail.Split('\n'))
         {
             var line = raw.Trim();
@@ -507,6 +507,8 @@ public partial class MainWindow : Window
             if (k == "ENABLE") _wanFailEnabled = v == "1";
             else if (k == "PREFER") prefer = v;
             else if (k == "ACTIVE") active = v;
+            else if (k == "STATIC_IP") staticIp = v;
+            else if (k == "STATIC_GW") staticGw = v;
             else if (k == "LAST_SWITCH") last = v;
             else if (k == "LAST_REASON") reason = v;
             else if (k.StartsWith("WAN"))
@@ -517,6 +519,8 @@ public partial class MainWindow : Window
         }
 
         BtnWanFailToggle.Content = _wanFailEnabled ? "关闭自动切换" : "开启自动切换";
+        if (TxtStaticIp.Text.Length == 0 && staticIp.Length > 0) TxtStaticIp.Text = staticIp;
+        if (TxtStaticGw.Text.Length == 0 && staticGw.Length > 0) TxtStaticGw.Text = staticGw;
 
         // 优先网口下拉：auto + 所有候选
         var keep = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? prefer;
@@ -533,6 +537,34 @@ public partial class MainWindow : Window
         TxtWanFailInfo.Text = $"候选：{list}    当前出口：{cur}"
             + (_wanFailEnabled ? "" : "（自动切换未开）")
             + (string.IsNullOrEmpty(last) ? "" : $"    最近切换 {last}（{reason}）");
+    }
+
+    private async void OnUsbNow(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtWanFailInfo.Text = "软路由没连上"; return; }
+        BtnUsbNow.IsEnabled = false; TxtWanFailInfo.Text = "正在激活 USB 网卡…";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "usbnet-now");
+        BtnUsbNow.IsEnabled = true;
+        AppPaths.Log("[多WAN] 立即激活 USB：\n" + detail);
+        MessageBox.Show(detail, ok ? "激活结果" : "激活失败", MessageBoxButton.OK,
+                        ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        await LoadWanFailAsync();
+    }
+
+    private async void OnStaticSave(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) return;
+        var ip = TxtStaticIp.Text.Trim(); var gw = TxtStaticGw.Text.Trim();
+        if (ip.Length == 0 || gw.Length == 0) { MessageBox.Show("IP 和网关都要填。", "静态兜底"); return; }
+        BtnStaticSave.IsEnabled = false;
+        var (ok1, d1) = await RouterCtl.RunAsync(cfg, "wanfail-set staticip " + ip);
+        var (ok2, d2) = await RouterCtl.RunAsync(cfg, "wanfail-set staticgw " + gw);
+        BtnStaticSave.IsEnabled = true;
+        AppPaths.Log($"[多WAN] 静态兜底 {ip} / {gw} → {ok1 && ok2}");
+        TxtWanFailInfo.Text = ok1 && ok2 ? $"√ 已保存：{ip} / {gw}" : "× " + d1 + " " + d2;
+        await LoadWanFailAsync();
     }
 
     private async void OnWanFailToggle(object sender, RoutedEventArgs e)
