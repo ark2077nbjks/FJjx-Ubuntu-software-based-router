@@ -74,6 +74,14 @@ public partial class MainWindow : Window
             await LoadSavedWifiAsync();
             LoadLog();
             _timer.Start();
+
+            if (App.DeployWin != null)   // --deploywin=主机：直接开部署窗口（截图/自测）
+            {
+                var host = string.IsNullOrWhiteSpace(App.DeployWin)
+                    ? RemoteConfig.Load().Host
+                    : App.DeployWin!;
+                new DeployWindow(host, RemoteConfig.Load().User) { Owner = this }.Show();
+            }
         };
         _timer.Tick += async (_, _) => await RefreshAsync();
 
@@ -865,33 +873,31 @@ public partial class MainWindow : Window
 
     private bool _deployBusy;
 
-    private async void OnDeploy(object sender, RoutedEventArgs e)
+    private void OnDeploy(object sender, RoutedEventArgs e)
     {
-        if (_deployBusy) { ConnLog("× 已经在部署了，别连点（会开两个安装窗口）"); return; }
+        if (_deployBusy) { ConnLog("× 部署窗口已经开着，别连点"); return; }
+        var cfg = CollectRemote();
+        if (!cfg.IsConfigured) { ConnLog("× 先把地址和用户名填上"); return; }
+
         _deployBusy = true;
         BtnDeploy.IsEnabled = false;
         try
         {
-            var cfg = CollectRemote();
-            if (!cfg.IsConfigured) { ConnLog("× 先把地址和用户名填上"); return; }
-
-            ConnLog("① 上传部署包 …");
-            if (!await UploadPackageAsync()) { ConnLog("× 上传失败，部署中止"); return; }
-
-            ConnLog("② 打开终端窗口执行安装（sudo 密码在那个窗口里输）");
-            var cmd = "cd /tmp/grayrouter-upload && D=$(ls -d */ 2>/dev/null | head -1); " +
-                      "cd \"${D:-.}\" && ls install.sh >/dev/null 2>&1 && sudo bash install.sh";
-
-            Remote.RunInConsoleWindow(cfg, cmd, "GrayRouter 部署 - " + cfg.Host);
-            ConnLog("③ 终端窗口已打开；装完后回「状态」页点「刷新」");
-            TxtFoot.Text = "部署已启动，在终端窗口里完成";
+            var w = new DeployWindow(cfg.Host, cfg.User) { Owner = this };
+            w.Closed += (_, _) =>
+            {
+                _deployBusy = false;
+                BtnDeploy.IsEnabled = true;
+                ConnLog("部署窗口已关闭；要核对结果到「状态」页点刷新");
+            };
+            w.Show();
+            ConnLog("已打开一键部署窗口（密码在那里面输，只在本机内存）");
         }
-        finally
+        catch (Exception ex)
         {
-            // 窗口刚起时先锁 5 秒，防止手快点第二下
-            await Task.Delay(5000);
-            BtnDeploy.IsEnabled = true;
             _deployBusy = false;
+            BtnDeploy.IsEnabled = true;
+            ConnLog("× 打不开部署窗口：" + ex.Message);
         }
     }
 

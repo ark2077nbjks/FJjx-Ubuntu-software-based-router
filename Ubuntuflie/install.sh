@@ -7,14 +7,15 @@
 #  用法：
 #    sudo bash install.sh                 交互向导
 #    sudo bash install.sh --dry-run       只看会做什么，不改任何东西
-#    sudo bash install.sh --yes --topology=A --ssid=MyAP --password=12345678
+#    sudo bash install.sh --yes --topology=A --ssid=MyAP --password=12345678 --lan-ip=192.168.50.1
+#    sudo bash install.sh --verify        只自检，不改任何东西（输出 CHECK|名字|ok/fail|说明）
 # ============================================================
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/lib/common.sh"
 . "$HERE/lib/detect.sh"
 
-DRY=0; GR_ASSUME_YES=0
+DRY=0; GR_ASSUME_YES=0; VERIFY=0; GR_NONINT=0
 T_TOPOLOGY=""; T_SSID=""; T_PASS=""; T_LANIP=""; T_UP_SSID=""; T_UP_PASS=""; T_HARDEN="none"
 
 for a in "$@"; do
@@ -28,10 +29,18 @@ for a in "$@"; do
     --up-ssid=*)   T_UP_SSID=${a#*=} ;;
     --up-pass=*)   T_UP_PASS=${a#*=} ;;
     --harden=*)    T_HARDEN=${a#*=} ;;
+    --verify)      VERIFY=1 ;;
+    --noninteractive) GR_NONINT=1 ;;
     -h|--help)     sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "未知参数：$a"; exit 1 ;;
   esac
 done
+
+# 非交互判定：显式 --noninteractive / --yes / 没有终端（面板通过 ssh 管道调用）
+[ -t 0 ] || GR_NONINT=1
+[ "$GR_ASSUME_YES" = 1 ] && GR_NONINT=1
+# 非交互输出不带颜色码，方便面板逐行解析
+if [ "$GR_NONINT" = 1 ]; then C_B=""; C_N=""; C_G=""; C_D=""; C_R=""; fi
 
 printf "${C_B}"
 cat <<'BANNER'
@@ -43,6 +52,74 @@ printf "${C_N}"
 
 [ "$DRY" = 1 ] && warn "演练模式（--dry-run）：只检查和打印计划，不会改动任何东西"
 [ "$DRY" = 0 ] && need_root
+
+# ---------- --verify：只自检，不改东西 ----------
+if [ "$VERIFY" = 1 ]; then
+  CFG="$GR_ETC/config.env"
+  [ -f "$CFG" ] && . "$CFG"
+  LAN_CON=${LAN_CON:-GrayRouter-LAN}
+  FAILN=0
+  chk() { # 名称 状态 说明
+    printf 'CHECK|%s|%s|%s\n' "$1" "$2" "$3"
+    [ "$2" = "ok" ] || FAILN=$((FAILN+1))
+  }
+
+  if [ -f "$CFG" ]; then chk "配置文件" ok "$CFG"; else chk "配置文件" fail "缺 $CFG（没装过？）"; fi
+
+  if command -v nmcli >/dev/null 2>&1 && [ "$(systemctl is-active NetworkManager 2>/dev/null)" = "active" ]; then
+    chk "NetworkManager" ok "active"
+  else
+    chk "NetworkManager" fail "没装或没运行"
+  fi
+
+  if nmcli -t -f NAME connection show --active 2>/dev/null | grep -qx "$LAN_CON"; then
+    chk "LAN/AP 连接" ok "$LAN_CON 已激活"
+  else
+    chk "LAN/AP 连接" fail "$LAN_CON 未激活"
+  fi
+
+  if [ -z "${LAN_IF:-}" ] || [ -z "${LAN_IP:-}" ]; then
+    chk "LAN 地址" fail "配置里没有网卡信息（config.env 缺）"
+  elif ip -4 -br addr show "$LAN_IF" 2>/dev/null | grep -q "${LAN_IP%%.*}\."; then
+    chk "LAN 地址" ok "$LAN_IF 有 ${LAN_IP}/24"
+  else
+    chk "LAN 地址" fail "$LAN_IF 上没有 $LAN_IP"
+  fi
+
+  if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" = "1" ]; then
+    chk "IP 转发" ok "ip_forward=1"
+  else
+    chk "IP 转发" fail "ip_forward 没开"
+  fi
+
+  if systemctl is-active --quiet ua3f 2>/dev/null; then
+    chk "伪装层进程" ok "ua3f active"
+  else
+    chk "伪装层进程" fail "ua3f 没在跑"
+  fi
+
+  if nft list table ip gray_ua3f >/dev/null 2>&1; then
+    chk "伪装规则表" ok "ip gray_ua3f"
+  else
+    chk "伪装规则表" fail "表不存在"
+  fi
+
+  if systemctl is-enabled --quiet grayrouter 2>/dev/null; then
+    chk "开机自启" ok "grayrouter enabled"
+  else
+    chk "开机自启" fail "grayrouter 没设自启"
+  fi
+
+  CODE=$(curl -s -m 6 -o /dev/null -w '%{http_code}' http://connect.rom.miui.com/generate_204 2>/dev/null)
+  if [ "$CODE" = "204" ] || [ "$CODE" = "200" ]; then
+    chk "出口连通" ok "HTTP $CODE"
+  else
+    chk "出口连通" fail "HTTP ${CODE:-000}"
+  fi
+
+  echo "VERIFY_SUMMARY|fail=$FAILN"
+  exit "$FAILN"
+fi
 
 # ---------- 0. 依赖自检 ----------
 step "0/7 检查运行环境"
@@ -121,6 +198,7 @@ pick_topology() {
       t=$(echo "$TOPO_AVAIL" | awk '{print $1}')
       info "只有一种可用拓扑，自动选择 $t"
     else
+      [ "$GR_NONINT" = 1 ] && die "这台机器有多个可用拓扑（$TOPO_AVAIL），非交互模式必须指定 --topology="
       t=$(ask "选拓扑（$TOPO_AVAIL）" "A")
     fi
   fi
@@ -154,10 +232,13 @@ if [ "$LAN_TYPE" = "wifi-ap" ]; then
   WIFI_SSID=${T_SSID:-$(ask "给这个热点起个名字(SSID)" "Gray-Router")}
   WIFI_PASS=${T_PASS:-}
   [ "$DRY" = 1 ] && [ -z "$WIFI_PASS" ] && WIFI_PASS="dryrun-placeholder"
-  while [ ${#WIFI_PASS} -lt 8 ] && [ "$DRY" = 0 ]; do
-    [ -n "$WIFI_PASS" ] && warn "密码至少 8 位"
-    read -r -s -p "热点密码（至少 8 位）: " WIFI_PASS; echo
-  done
+  if [ ${#WIFI_PASS} -lt 8 ] && [ "$DRY" = 0 ]; then
+    [ "$GR_NONINT" = 1 ] && die "热点密码缺失或少于 8 位（非交互模式请用 --password=至少8位）"
+    while [ ${#WIFI_PASS} -lt 8 ]; do
+      [ -n "$WIFI_PASS" ] && warn "密码至少 8 位"
+      read -r -s -p "热点密码（至少 8 位）: " WIFI_PASS; echo
+    done
+  fi
 else
   info "LAN 为有线，不需要热点参数"
 fi
@@ -177,7 +258,9 @@ if ping -c1 -W1 "$DEF_LANIP" >/dev/null 2>&1; then
   warn "$DEF_LANIP 已被别的设备占用，改用 192.168.60.1"
   DEF_LANIP="192.168.60.1"
 fi
-LANIP=${T_LANIP:-$(ask "LAN 网关地址" "$DEF_LANIP")}
+if [ -n "$T_LANIP" ]; then LANIP=$T_LANIP
+elif [ "$GR_NONINT" = 1 ]; then LANIP=$DEF_LANIP
+else LANIP=$(ask "LAN 网关地址" "$DEF_LANIP"); fi
 
 echo
 info "加固选项：$T_HARDEN（none=不改 TTL；ttl=统一 TTL 为 128）"
