@@ -1,0 +1,8 @@
+[Unit]
+Description=GrayRouter 每设备流量采样（读站表计数器，不发包）
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-traffic.sh sample
+Nice=10
