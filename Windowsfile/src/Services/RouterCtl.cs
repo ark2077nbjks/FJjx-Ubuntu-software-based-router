@@ -12,7 +12,7 @@ public static class RouterCtl
     public const string Script = """
 #!/usr/bin/env bash
 # ============================================================
-#  grayrouter-ctl.sh —— 面板遥控入口（只认 3 个命令）
+#  grayrouter-ctl.sh —— 面板遥控入口（白名单 5 个命令，支持附加信道参数）
 #    请求文件：/run/grayrouter/request   内容 "<id> <命令>"
 #    结果文件：/run/grayrouter/result.json
 #  由 grayrouter-ctl.path 监听请求文件变化后触发，root 运行
@@ -39,6 +39,8 @@ raw=$(tr -d '\r\n' < "$REQ" 2>/dev/null || true)
 
 rid=$(printf '%s' "$raw" | awk '{print $1}')
 cmd=$(printf '%s' "$raw" | awk '{print $2}')
+arg=$(printf '%s' "$raw" | awk '{print $3}')
+case "${arg:-}" in ''|*[!0-9]*) arg="" ;; esac
 
 # 同一个 id 只执行一次（避免 path 重复触发）
 last=$(cat "$SEEN" 2>/dev/null || echo "")
@@ -66,6 +68,8 @@ case "$cmd" in
   mode-router)   SCRIPT=$HOMEDIR/router-up.sh ;;
   mode-hotspot)  SCRIPT=$HOMEDIR/router-down.sh ;;
   harden)        SCRIPT=/usr/local/bin/grayrouter-harden.sh ;;
+  wifi-5g)       SCRIPT=$HOMEDIR/grayrouter-wifi/set-band.sh; ARGS="5g ${arg:-36}" ;;
+  wifi-2g)       SCRIPT=$HOMEDIR/grayrouter-wifi/set-band.sh; ARGS="2g ${arg:-6}" ;;
   *)
     write_res "unknown" 64 "不认识的命令：$cmd"
     log "拒绝：$cmd"
@@ -79,10 +83,13 @@ if [ ! -f "$SCRIPT" ]; then
   exit 0
 fi
 
-write_res "running" 0 "开始执行 $cmd"
-bash "$SCRIPT" >> "$LOG" 2>&1
+write_res "running" 0 "开始执行 $cmd ${arg:-}"
+OUT=$(mktemp /tmp/grctl.XXXXXX)
+bash "$SCRIPT" ${ARGS:-} >> "$OUT" 2>&1
 code=$?
-tailmsg=$(tail -n 4 "$LOG" | tr '\n' ' ' | cut -c1-300)
+cat "$OUT" >> "$LOG"
+tailmsg=$(tail -n 3 "$OUT" | tr '\n' ' ' | cut -c1-300)
+rm -f "$OUT"
 
 if [ "$code" -eq 0 ]; then
   write_res "done" 0 "$tailmsg"
@@ -204,6 +211,14 @@ echo "   日志：/var/log/grayrouter-ctl.log"
         Remote.RunInTerminal(cfg, "安装遥控助手", "sudo bash ~/grayrouter-ctl/install-ctl.sh");
         return (true, "文件已上传，终端里输一次密码即可");
     }
+
+    /// <summary>切 5GHz（远端自带 150 秒死手回滚）</summary>
+    public static Task<(bool Ok, string Detail)> Set5GAsync(RemoteConfig cfg, int channel = 36, Action<string>? progress = null)
+        => RunAsync(cfg, "wifi-5g " + channel, progress);
+
+    /// <summary>切回 2.4GHz</summary>
+    public static Task<(bool Ok, string Detail)> Set2GAsync(RemoteConfig cfg, int channel = 6, Action<string>? progress = null)
+        => RunAsync(cfg, "wifi-2g " + channel, progress);
 
     /// <summary>发一条命令，等远端执行完（最多等 4 分钟）</summary>
     public static async Task<(bool Ok, string Detail)> RunAsync(RemoteConfig cfg, string cmd, Action<string>? progress = null)
