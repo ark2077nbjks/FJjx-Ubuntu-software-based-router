@@ -1,0 +1,5 @@
+# 手机 USB 共享 / USB 网卡一插上，就让 NM 去要地址（自动分配 IP）
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_USB_DRIVER}=="rndis_host", TAG+="systemd", ENV{SYSTEMD_WANTS}+="grayrouter-usbnet@%k.service"
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_USB_DRIVER}=="cdc_ether", TAG+="systemd", ENV{SYSTEMD_WANTS}+="grayrouter-usbnet@%k.service"
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_USB_DRIVER}=="cdc_ncm", TAG+="systemd", ENV{SYSTEMD_WANTS}+="grayrouter-usbnet@%k.service"
+ACTION=="add", SUBSYSTEM=="net", KERNELS=="usb*", ENV{DEVTYPE}=="wired", TAG+="systemd", ENV{SYSTEMD_WANTS}+="grayrouter-usbnet@%k.service"

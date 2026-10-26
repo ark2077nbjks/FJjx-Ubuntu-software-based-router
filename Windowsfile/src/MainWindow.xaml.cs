@@ -444,7 +444,46 @@ public partial class MainWindow : Window
         finally { _rolesLoading = false; }
     }
 
-    // ---------------- 双 WAN 故障转移 ----------------
+    // ---------------- 兜底恢复 ----------------
+
+    private bool _rescuing;
+
+    private async void OnRescue(object sender, RoutedEventArgs e)
+    {
+        if (_rescuing) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { MessageBox.Show("还没配置软路由地址。", "恢复上网"); return; }
+
+        var r = MessageBox.Show(
+            "会做这些事：\n\n" +
+            "① 关掉「自动切换」（免得边修边被切走）\n" +
+            "② 删掉面板加的临时默认路由，交回系统\n" +
+            "③ 主网口没路由就重连一次\n" +
+            "④ 校园网重新认证一次\n\n" +
+            "不会重启、不会断 Wi-Fi 热点，随时可以再开自动切换。\n\n继续？",
+            "恢复上网（兜底重置）", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes);
+        if (r != MessageBoxResult.Yes) return;
+
+        _rescuing = true; BtnRescue.IsEnabled = false;
+        BtnRescue.Content = "恢复中…";
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "rescue",
+                msg => AppPaths.Log("[恢复] " + msg));
+            AppPaths.Log($"[恢复] 结果：{(ok ? "成功" : "失败")} · {detail}");
+            MessageBox.Show(detail, ok ? "恢复完成" : "恢复没完全成功",
+                            MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            if (ok) { await RefreshAsync(true); }
+        }
+        finally
+        {
+            BtnRescue.Content = "恢复上网";
+            BtnRescue.IsEnabled = true;
+            _rescuing = false;
+        }
+    }
+
+    // ---------------- 多 WAN 故障转移 ----------------
 
     private bool _wanFailEnabled;
     private bool _wanFailBusy;
@@ -456,39 +495,44 @@ public partial class MainWindow : Window
         var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-get");
         if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
 
-        string enable = "0", primary = "", backup = "", active = "primary", pLat = "-", bLat = "-";
-        string pOk = "0", bOk = "0", last = "", reason = "";
+        _wanFailEnabled = false; var prefer = "auto"; var active = "";
+        var rows = new List<(string Iface, bool Up, string Lat)>();
+        var last = ""; var reason = "";
         foreach (var raw in detail.Split('\n'))
         {
             var line = raw.Trim();
             int eq = line.IndexOf('=');
             if (eq <= 0) continue;
             var k = line.Substring(0, eq); var v = line.Substring(eq + 1);
-            switch (k)
+            if (k == "ENABLE") _wanFailEnabled = v == "1";
+            else if (k == "PREFER") prefer = v;
+            else if (k == "ACTIVE") active = v;
+            else if (k == "LAST_SWITCH") last = v;
+            else if (k == "LAST_REASON") reason = v;
+            else if (k.StartsWith("WAN"))
             {
-                case "ENABLE": enable = v; break;
-                case "PRIMARY": primary = v; break;
-                case "BACKUP": backup = v; break;
-                case "ACTIVE": active = v; break;
-                case "P_OK": pOk = v; break;
-                case "B_OK": bOk = v; break;
-                case "P_LAT": pLat = v; break;
-                case "B_LAT": bLat = v; break;
-                case "LAST_SWITCH": last = v; break;
-                case "LAST_REASON": reason = v; break;
+                var f = v.Split('|');
+                if (f.Length >= 3) rows.Add((f[0], f[1] == "1", f[2]));
             }
         }
 
-        _wanFailEnabled = enable == "1";
         BtnWanFailToggle.Content = _wanFailEnabled ? "关闭自动切换" : "开启自动切换";
 
-        string Dot(string ok, string lat)
-            => ok == "1" ? $"√ {lat} ms" : "× 不通";
-        var backupText = string.IsNullOrEmpty(backup) ? "未接" : $"{backup} {Dot(bOk, bLat)}";
-        var mode = _wanFailEnabled ? "" : "（未开启）";
-        TxtWanFailInfo.Text =
-            $"主 {primary} {Dot(pOk, pLat)}   备 {backupText}   当前出口：{(active == "backup" ? "备用" : "主用")}{mode}"
-            + (string.IsNullOrEmpty(last) ? "" : $"   最近切换 {last}（{reason}）");
+        // 优先网口下拉：auto + 所有候选
+        var keep = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? prefer;
+        CmbWanPrefer.Items.Clear();
+        CmbWanPrefer.Items.Add(new ComboBoxItem { Content = "自动（按优先级）", Tag = "auto" });
+        foreach (var r in rows) CmbWanPrefer.Items.Add(new ComboBoxItem { Content = r.Iface, Tag = r.Iface });
+        foreach (ComboBoxItem it in CmbWanPrefer.Items)
+            if ((string?)it.Tag == keep) { CmbWanPrefer.SelectedItem = it; break; }
+        if (CmbWanPrefer.SelectedItem == null && CmbWanPrefer.Items.Count > 0) CmbWanPrefer.SelectedIndex = 0;
+
+        var parts = rows.Select(r => $"{r.Iface} {(r.Up ? "√ " + r.Lat + " ms" : "×")}").ToList();
+        var list = parts.Count == 0 ? "没发现能上网的网口" : string.Join("  ·  ", parts);
+        var cur = string.IsNullOrEmpty(active) ? "跟随系统" : active;
+        TxtWanFailInfo.Text = $"候选：{list}    当前出口：{cur}"
+            + (_wanFailEnabled ? "" : "（自动切换未开）")
+            + (string.IsNullOrEmpty(last) ? "" : $"    最近切换 {last}（{reason}）");
     }
 
     private async void OnWanFailToggle(object sender, RoutedEventArgs e)
@@ -500,33 +544,35 @@ public partial class MainWindow : Window
         var (ok, detail) = await RouterCtl.RunAsync(cfg, _wanFailEnabled ? "wanfail-set disable" : "wanfail-set enable");
         BtnWanFailToggle.IsEnabled = true; _wanFailBusy = false;
         if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
-        AppPaths.Log($"[双WAN] {(_wanFailEnabled ? "关闭" : "开启")}自动切换");
+        AppPaths.Log($"[多WAN] {(_wanFailEnabled ? "关闭" : "开启")}自动切换");
         await LoadWanFailAsync();
     }
 
-    private async void OnWanToBackup(object sender, RoutedEventArgs e)
+    private async void OnWanToBackup(object sender, RoutedEventArgs e)   // 切到所选
     {
         if (_wanFailBusy) return;
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) return;
+        var sel = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? "auto";
         _wanFailBusy = true; BtnWanToBackup.IsEnabled = false;
-        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch backup");
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch " + sel);
         BtnWanToBackup.IsEnabled = true; _wanFailBusy = false;
         TxtWanFailInfo.Text = ok ? "√ " + detail.Trim() : "× " + detail;
-        AppPaths.Log($"[双WAN] 手动切备用 → {(ok ? "成功" : detail)}");
+        AppPaths.Log($"[多WAN] 切到 {sel} → {(ok ? "成功" : detail)}");
         await LoadWanFailAsync();
     }
 
-    private async void OnWanToPrimary(object sender, RoutedEventArgs e)
+    private async void OnWanToPrimary(object sender, RoutedEventArgs e)  // 恢复自动
     {
         if (_wanFailBusy) return;
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) return;
         _wanFailBusy = true; BtnWanToPrimary.IsEnabled = false;
-        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch primary");
+        await RouterCtl.RunAsync(cfg, "wanfail-set prefer auto");
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch auto");
         BtnWanToPrimary.IsEnabled = true; _wanFailBusy = false;
-        TxtWanFailInfo.Text = ok ? "√ " + detail.Trim() : "× " + detail;
-        AppPaths.Log($"[双WAN] 手动切回主用 → {(ok ? "成功" : detail)}");
+        TxtWanFailInfo.Text = ok ? "√ 已交回系统路由" : "× " + detail;
+        AppPaths.Log("[多WAN] 恢复自动");
         await LoadWanFailAsync();
     }
 

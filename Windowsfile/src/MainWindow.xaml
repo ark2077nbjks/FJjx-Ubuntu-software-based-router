@@ -214,6 +214,23 @@
                                                     </StackPanel>
                                                 </Button>
                                                 <Button
+                                                    x:Name="BtnRescue"
+                                                    Width="104"
+                                                    Height="32"
+                                                    Margin="8,0,0,0"
+                                                    AutomationProperties.Name="恢复上网"
+                                                    Background="#FFE5484D"
+                                                    BorderThickness="0"
+                                                    Click="OnRescue"
+                                                    Cursor="Hand"
+                                                    FontSize="13.5"
+                                                    Foreground="#FFFFFFFF">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Foreground="#FFFFFFFF"
+                                                        Text="恢复上网" />
+                                                </Button>
+                                                <Button
                                                     x:Name="BtnRefresh"
                                                     Width="92"
                                                     Height="32"
@@ -958,7 +975,7 @@
                                             <Grid.Children>
                                                 <StackPanel Grid.Row="0" Orientation="Horizontal">
                                                     <StackPanel.Children>
-                                                        <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Foreground="#FF374151" Text="双 WAN 故障转移" />
+                                                        <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Foreground="#FF374151" Text="多 WAN 故障转移" />
                                                         <TextBlock x:Name="TxtWanFailInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF7C8798" Text="" />
                                                         <Button x:Name="BtnWanFailToggle" Height="26" Margin="14,0,0,0" Padding="12,0" Click="OnWanFailToggle">
                                                             <StackPanel Orientation="Horizontal">
@@ -967,24 +984,25 @@
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
+                                                        <ComboBox x:Name="CmbWanPrefer" Width="150" Height="26" Margin="12,0,0,0" VerticalContentAlignment="Center" />
                                                         <Button x:Name="BtnWanToBackup" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFFDF6E3" BorderBrush="#FFEEDFB0" Click="OnWanToBackup">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="切到备用" />
+                                                                    <TextBlock VerticalAlignment="Center" Text="切到所选" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
                                                         <Button x:Name="BtnWanToPrimary" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnWanToPrimary">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="切回主用" />
+                                                                    <TextBlock VerticalAlignment="Center" Text="恢复自动" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
                                                     </StackPanel.Children>
                                                 </StackPanel>
                                                 <TextBlock Grid.Row="1" Margin="0,8,0,0" FontSize="12" Foreground="#FF7C8798" TextWrapping="Wrap"
-                                                           Text="主 WAN 连续 3 次探测失败 → 自动切备用；主 WAN 连续 2 次恢复 → 自动切回。探测只读（ICMP + HTTP 204），不改任何路由，除非真的触发切换。默认关闭，需手动开启。" />
+                                                           Text="自动发现所有能当出口的网口（有线 / USB 网卡 / 手机共享 / 无线 STA），按优先级排列；当前出口连续 3 次探测失败就换下一条，更高优先级的线连续 2 次恢复就切回去。探测只读（ICMP + HTTP 204），不触发切换就不动路由。默认关闭，需手动开启。" />
                                             </Grid.Children>
                                         </Grid>
                                     </Border.Child>

@@ -126,10 +126,51 @@ restore_system() {  # 删掉我们自己加的 50 号默认路由，交回 Netwo
     gw=$(gw_of "$i"); [ -z "$gw" ] && continue
     ip route del default via "$gw" dev "$i" metric 50 2>/dev/null
   done
+  # 主线上如果也残留了我们加的 50 号路由（同网关），一并清掉
+  p=$(role_wan); pgw=$(gw_of "$p")
+  [ -n "$pgw" ] && ip route del default via "$pgw" dev "$p" metric 50 2>/dev/null
+}
+
+
+# ---------- USB 网卡 / 手机共享：没有 IP 就自动要一次 ----------
+ensure_usb_net() {
+  local n name
+  for n in $(ls /sys/class/net 2>/dev/null | grep -E '^(enx|usb|rndis|wwan)'); do
+    ip -4 addr show dev "$n" 2>/dev/null | grep -q 'inet ' && continue
+    [ "$(cat "/sys/class/net/$n/carrier" 2>/dev/null)" = "1" ] || continue
+    name="USB共享-$n"
+    if ! nmcli -t -f NAME con show 2>/dev/null | grep -qx "$name"; then
+      nmcli con add type ethernet con-name "$name" ifname "$n" \
+            ipv4.method auto ipv4.never-default yes ipv4.route-metric 700 \
+            ipv6.method ignore connection.autoconnect yes >/dev/null 2>&1
+      log "为 $n 建连接（never-default，不会抢默认路由）"
+    fi
+    nmcli con up "$name" >/dev/null 2>&1
+    sleep 1
+    if ip -4 addr show dev "$n" 2>/dev/null | grep -q 'inet '; then
+      log "$n 已拿到 $(ip -4 -o addr show dev "$n" | awk '{print $4}' | head -1)"
+      rm -f "/run/grayrouter/usbnet.fail-$n"
+      continue
+    fi
+    # DHCP 拿不到：累计 3 次后试一次静态（安卓共享常见网段 192.168.42.0/24，网关 .129）
+    f="/run/grayrouter/usbnet.fail-$n"
+    cnt=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 ))
+    echo "$cnt" > "$f" 2>/dev/null
+    if [ "$cnt" -lt 3 ]; then
+      log "$n 还没有地址（第 $cnt 次，手机没开共享 / 手机没网）"
+      continue
+    fi
+    if ! ip -4 addr show dev "$n" 2>/dev/null | grep -q '192.168.42.100'; then
+      ip addr add 192.168.42.100/24 dev "$n" 2>/dev/null
+      ip route replace default via 192.168.42.129 dev "$n" metric 700 2>/dev/null
+      log "$n DHCP 连续 $cnt 次失败 → 试静态 192.168.42.100/24 网关 .129（metric 700，不会抢主线路）"
+    fi
+  done
 }
 
 tick() {
   [ "$ENABLE" = "1" ] || { echo disabled; return; }
+  ensure_usb_net
   resolve_wans
   [ -z "${ALL// /}" ] && { echo "no-wan"; return; }
   load_state
@@ -183,11 +224,20 @@ case "${1:-get}" in
   tick) tick ;;
   switch)
     if [ "${2:-auto}" = "auto" ]; then
-      ENABLE=0; restore_system; ACTIVE=""; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="交回系统"; save_state
+      ENABLE=0; resolve_wans; restore_system; ACTIVE=""; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="交回系统"; save_state
       echo "已交回系统路由"
     else
       [ -d "/sys/class/net/${2:-}" ] || { echo "没这个网口：${2:-}"; exit 1; }
-      resolve_wans; set_active "$2" "手动指定" && echo "已切到 $2"
+      resolve_wans
+      # 硬约束：手动切换前必须先探通，探不通直接拒绝，绝不把默认路由指到死路上
+      chk=$(probe "$2")
+      if [ "${chk%% *}" != "1" ]; then
+        log "拒绝手动切换到 $2（探测不通）"
+        echo "拒绝切换：$2 现在探不通（ICMP 与 HTTP 204 都没通过），切过去会断网。"
+        echo "先确认这条线真的能上网（手机开移动数据、热点开着），再切。"
+        exit 3
+      fi
+      set_active "$2" "手动指定" && echo "已切到 $2（延迟 ${chk##* } ms）"
     fi ;;
   set)
     [ "$(id -u)" -eq 0 ] || { echo "需要 root"; exit 1; }

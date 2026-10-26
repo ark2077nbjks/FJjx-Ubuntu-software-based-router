@@ -37,10 +37,26 @@ systemctl enable --now grayrouter-traffic.timer >/dev/null 2>&1 || true
 
 echo "③.7 装双 WAN 故障转移（默认关，面板里开）"
 install -m 755 "$DIR/grayrouter-wanfail.sh" /usr/local/bin/grayrouter-wanfail.sh || exit 1
+install -m 755 "$DIR/grayrouter-rescue.sh" /usr/local/bin/grayrouter-rescue.sh || exit 1
 install -m 644 "$DIR/grayrouter-wanfail.service" /etc/systemd/system/grayrouter-wanfail.service || exit 1
 install -m 644 "$DIR/grayrouter-wanfail.timer" /etc/systemd/system/grayrouter-wanfail.timer || exit 1
 systemctl daemon-reload
 systemctl enable --now grayrouter-wanfail.timer >/dev/null 2>&1 || true
+
+echo "③.8 手机 USB 共享插上自动要 IP（udev + 模板服务）"
+install -m 755 "$DIR/grayrouter-usbnet-up.sh" /usr/local/bin/grayrouter-usbnet-up.sh || exit 1
+install -m 644 "$DIR/grayrouter-usbnet@.service" /etc/systemd/system/grayrouter-usbnet@.service || exit 1
+install -m 644 "$DIR/70-grayrouter-usbnet.rules" /etc/udev/rules.d/70-grayrouter-usbnet.rules || exit 1
+udevadm control --reload-rules 2>/dev/null || true
+systemctl daemon-reload
+# 已经插着的立刻激活一次
+for n in $(ls /sys/class/net | grep -E '^(enx|usb|rndis|wwan)'); do
+  ip -4 addr show dev "$n" 2>/dev/null | grep -q 'inet ' && continue
+  systemctl start --no-block "grayrouter-usbnet@$n.service" 2>/dev/null || true
+done
+
+systemctl enable --now grayrrouter-wanfail.timer >/dev/null 2>&1 || true
+systemctl restart grayrrouter-wanfail.timer >/dev/null 2>&1 || true
 
 echo "④ 清掉调试残留规则"
 nft delete table inet dbgprobe 2>/dev/null && echo "   删了 dbgprobe" || true
