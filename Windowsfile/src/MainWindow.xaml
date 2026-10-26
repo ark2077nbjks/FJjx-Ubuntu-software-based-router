@@ -2534,7 +2534,56 @@
                                                     BorderThickness="1"
                                                     Click="OnClearLog"
                                                     Cursor="Hand"
-                                                    ToolTip="清空日志（会先备份成 app.log.1）">
+                                                    AutomationProperties.Name="清空日志（归档）"
+                                                    ToolTip="把当前日志滚成 app.log.1（最多保留 5 份，旧的自动丢弃）">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <StackPanel.Children>
+                                                            <Image
+                                                                Width="15"
+                                                                Height="15"
+                                                                Margin="0,0,6,0"
+                                                                VerticalAlignment="Center"
+                                                                Source="/icons/b_back.png" />
+                                                            <TextBlock VerticalAlignment="Center" Text="清空日志" />
+                                                        </StackPanel.Children>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button
+                                                    x:Name="BtnLogExport"
+                                                    Height="32"
+                                                    Margin="8,0,0,0"
+                                                    Padding="14,0"
+                                                    AutomationProperties.Name="导出日志"
+                                                    Background="#FFEEF2F8"
+                                                    BorderBrush="#FFD5DBE5"
+                                                    BorderThickness="1"
+                                                    Click="OnExportLog"
+                                                    Cursor="Hand"
+                                                    ToolTip="把当前日志和保留的历史日志导出成一个文件">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <StackPanel.Children>
+                                                            <Image
+                                                                Width="15"
+                                                                Height="15"
+                                                                Margin="0,0,6,0"
+                                                                VerticalAlignment="Center"
+                                                                Source="/icons/n_export.png" />
+                                                            <TextBlock VerticalAlignment="Center" Text="导出日志" />
+                                                        </StackPanel.Children>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button
+                                                    x:Name="BtnLogDelete"
+                                                    Height="32"
+                                                    Margin="8,0,0,0"
+                                                    Padding="14,0"
+                                                    AutomationProperties.Name="删除全部日志"
+                                                    Background="#FFFDF1F0"
+                                                    BorderBrush="#FFF3C7C3"
+                                                    BorderThickness="1"
+                                                    Click="OnDeleteAllLogs"
+                                                    Cursor="Hand"
+                                                    ToolTip="把所有日志文件彻底删掉，不可恢复">
                                                     <StackPanel Orientation="Horizontal">
                                                         <StackPanel.Children>
                                                             <Image
@@ -2543,7 +2592,7 @@
                                                                 Margin="0,0,6,0"
                                                                 VerticalAlignment="Center"
                                                                 Source="/icons/b_trash.png" />
-                                                            <TextBlock VerticalAlignment="Center" Text="清空日志" />
+                                                            <TextBlock VerticalAlignment="Center" Foreground="#FFD93025" Text="删除全部" />
                                                         </StackPanel.Children>
                                                     </StackPanel>
                                                 </Button>
