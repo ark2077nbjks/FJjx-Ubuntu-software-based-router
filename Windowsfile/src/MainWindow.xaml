@@ -1929,25 +1929,33 @@
                                                     </StackPanel>
                                                 </Button>
                                                 <Button
-                                                    x:Name="BtnTrafficOpen"
+                                                    x:Name="BtnTrafficExport"
                                                     Height="32"
                                                     Margin="8,0,0,0"
-                                                    Padding="12,0"
-                                                    AutomationProperties.Name="打开流量数据目录"
+                                                    Padding="14,0"
+                                                    AutomationProperties.Name="导出流量数据"
                                                     Background="#FFEEF2F8"
                                                     BorderBrush="#FFD5DBE5"
-                                                    BorderThickness="1"
-                                                    Click="OnTrafficOpenDir"
-                                                    Cursor="Hand">
+                                                    Click="OnTrafficExport">
                                                     <StackPanel Orientation="Horizontal">
                                                         <StackPanel.Children>
-                                                            <Image
-                                                                Width="15"
-                                                                Height="15"
-                                                                Margin="0,0,6,0"
-                                                                VerticalAlignment="Center"
-                                                                Source="/icons/n_data_usage.png" />
-                                                            <TextBlock VerticalAlignment="Center" Text="打开数据目录" />
+                                                            <TextBlock VerticalAlignment="Center" Text="导出" />
+                                                        </StackPanel.Children>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button
+                                                    x:Name="BtnTrafficClear"
+                                                    Height="32"
+                                                    Margin="8,0,0,0"
+                                                    Padding="14,0"
+                                                    AutomationProperties.Name="清空设备流量历史"
+                                                    Background="#FFFDECEC"
+                                                    BorderBrush="#FFF3C9C9"
+                                                    Foreground="#FFC0392B"
+                                                    Click="OnTrafficClear">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <StackPanel.Children>
+                                                            <TextBlock VerticalAlignment="Center" Text="清空历史" />
                                                         </StackPanel.Children>
                                                     </StackPanel>
                                                 </Button>
@@ -2054,18 +2062,7 @@
                                                             FontSize="12"
                                                             Foreground="#FF2F6FED"
                                                             Text="" />
-                                                        <Button
-                                                            x:Name="BtnDevTrafficRefresh"
-                                                            Height="26"
-                                                            Margin="16,0,0,0"
-                                                            Padding="12,0"
-                                                            Click="OnDevTrafficRefresh">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="刷新（立刻采样）" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
+                                                        
                                                     </StackPanel.Children>
                                                 </StackPanel>
                                                 <DataGrid
@@ -2084,7 +2081,7 @@
                                                     RowHeight="28">
                                                     <DataGrid.Columns>
                                                         <DataGridTextColumn
-                                                            Width="170"
+                                                            Width="210"
                                                             Binding="{Binding Name}"
                                                             Header="设备" />
                                                         <DataGridTextColumn
@@ -2095,6 +2092,10 @@
                                                             Width="58"
                                                             Binding="{Binding State}"
                                                             Header="状态" />
+                                                        <DataGridTextColumn
+                                                            Width="70"
+                                                            Binding="{Binding Share}"
+                                                            Header="占比" />
                                                         <DataGridTextColumn
                                                             Width="95"
                                                             Binding="{Binding TodayUp}"

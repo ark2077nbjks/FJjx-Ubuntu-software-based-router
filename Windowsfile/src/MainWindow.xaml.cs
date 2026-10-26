@@ -314,11 +314,13 @@ public partial class MainWindow : Window
         public string Name { get; set; } = "";
         public string Ip { get; set; } = "";
         public string State { get; set; } = "";
+        public string Share { get; set; } = "";
         public string TodayUp { get; set; } = "";
         public string TodayDown { get; set; } = "";
         public string SpanUp { get; set; } = "";
         public string SpanDown { get; set; } = "";
         public string Last { get; set; } = "";
+        public long _todayBytes { get; set; }
     }
 
     private readonly long[] _devHourDown = new long[24];
@@ -327,15 +329,12 @@ public partial class MainWindow : Window
 
     private DateTime _devTrafficStamp = DateTime.MinValue;
 
-    private async void OnDevTrafficRefresh(object sender, RoutedEventArgs e) => await LoadDevTrafficAsync(true);
-
     /// <summary>设备流量：sample=true 时先让远端立刻采一次，再取汇总</summary>
     private async Task LoadDevTrafficAsync(bool sample)
     {
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) { TxtDevTrafficInfo.Text = "软路由没连上"; return; }
 
-        BtnDevTrafficRefresh.IsEnabled = false;
         TxtDevTrafficInfo.Text = sample ? "正在采样…" : "读取中…";
         var detail = "";
         try
@@ -350,6 +349,9 @@ public partial class MainWindow : Window
             {
                 var mac = el.GetProperty("mac").GetString() ?? "";
                 var name = (el.GetProperty("name").GetString() ?? "").Trim();
+                if (name.Length == 0)
+                    name = (_devices.FirstOrDefault(x => string.Equals(x.Mac, mac,
+                        StringComparison.OrdinalIgnoreCase))?.Name ?? "").Trim();
                 var online = el.GetProperty("online").GetInt32() == 1;
                 rows.Add(new DevTrafficRow
                 {
@@ -361,8 +363,10 @@ public partial class MainWindow : Window
                     SpanUp = FmtShort(el.GetProperty("span_up").GetInt64()),
                     SpanDown = FmtShort(el.GetProperty("span_down").GetInt64()),
                     Last = el.GetProperty("last").GetString() ?? "",
+                    _todayBytes = el.GetProperty("today_down").GetInt64() + el.GetProperty("today_up").GetInt64(),
                 });
             }
+            var grand = rows.Count == 0 ? 0 : 0;
             DgDevTraffic.ItemsSource = rows;
 
             Array.Clear(_devHourDown);
@@ -387,6 +391,15 @@ public partial class MainWindow : Window
                     if (_devHourDown[idx] > 0 || _devHourUp[idx] > 0) _devHourHasData = true;
                 }
             }
+            var totalToday = todayD + todayU;
+            foreach (var r in rows)
+            {
+                var v = r._todayBytes;
+                r.Share = totalToday <= 0 ? "—" : $"{v * 100.0 / totalToday:F1}%";
+            }
+            DgDevTraffic.ItemsSource = null;
+            DgDevTraffic.ItemsSource = rows;
+
             TxtTrafficInfo.Text =
                 $"今天 ↓{Traffic.SizeText(todayD / 1048576.0)} ↑{Traffic.SizeText(todayU / 1048576.0)}" +
                 $"   近 30 天 ↓{Traffic.SizeText(spanD / 1048576.0)} ↑{Traffic.SizeText(spanU / 1048576.0)}" +
@@ -401,7 +414,7 @@ public partial class MainWindow : Window
             TxtDevTrafficInfo.Text = "× 解析失败，看日志";
             AppPaths.Log("[流量] 设备流量解析失败：" + ex.Message + " 原文=" + detail);
         }
-        finally { BtnDevTrafficRefresh.IsEnabled = true; }
+        finally { }
     }
 
     private async Task TrafficTickAsync()
@@ -414,9 +427,9 @@ public partial class MainWindow : Window
                 await Task.Run(() => Traffic.Append(rows));
                 var d = rows.Sum(r => r.DownKb) / 1024.0;
                 var u = rows.Sum(r => r.UpKb) / 1024.0;
-                TxtTrafficLive.Text = $"刚刚 ↓{Traffic.SizeText(d)}  ↑{Traffic.SizeText(u)}";
+                TxtTrafficLive.Text = $"本机 ↓{Traffic.SizeText(d)}  ↑{Traffic.SizeText(u)}";
             }
-            else TxtTrafficLive.Text = "空闲中";
+            else TxtTrafficLive.Text = "本机空闲";
 
             if (++_trafficCount % 4 == 0) RefreshTrafficView();   // 图 1 分钟重绘一次，省 CPU
         }
@@ -568,12 +581,68 @@ public partial class MainWindow : Window
         CvTraffic.Children.Add(t);
     }
 
-    private void OnTrafficRefresh(object sender, RoutedEventArgs e)
+    private async void OnTrafficRefresh(object sender, RoutedEventArgs e)
     {
         var rows = Traffic.Sample();
         if (rows.Count > 0) Traffic.Append(rows);
-        RefreshTrafficView();
         TxtTrafficLive.Text = "已刷新 " + DateTime.Now.ToString("HH:mm:ss");
+        await LoadDevTrafficAsync(true);       // 远端立刻采一次 + 取汇总，图也跟着重画
+    }
+
+    /// <summary>导出当前设备流量表（CSV，位置自选）</summary>
+    private void OnTrafficExport(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (DgDevTraffic.ItemsSource is not System.Collections.IEnumerable src)
+            { TxtDevTrafficInfo.Text = "没有数据可导出"; return; }
+
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "导出设备流量",
+                Filter = "CSV 文件|*.csv",
+                FileName = $"设备流量-{DateTime.Now:yyyyMMdd-HHmm}.csv",
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("设备,IP,状态,今日上行,今日下行,占比,近30天上行,近30天下行,最后在线");
+            int n = 0;
+            foreach (var item in src)
+            {
+                if (item is not DevTrafficRow r) continue;
+                sb.AppendLine($"{r.Name},{r.Ip},{r.State},{r.TodayUp},{r.TodayDown},{r.Share},{r.SpanUp},{r.SpanDown},{r.Last}");
+                n++;
+            }
+            File.WriteAllText(dlg.FileName, sb.ToString(), new System.Text.UTF8Encoding(true));
+            TxtDevTrafficInfo.Text = $"√ 已导出 {n} 台 → {System.IO.Path.GetFileName(dlg.FileName)}";
+            AppPaths.Log($"[流量] 导出 {n} 台 → {dlg.FileName}");
+        }
+        catch (Exception ex)
+        {
+            TxtDevTrafficInfo.Text = "× 导出失败，看日志";
+            AppPaths.Log("[流量] 导出失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>清空软路由上的设备流量历史（二次确认，默认否）</summary>
+    private async void OnTrafficClear(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtDevTrafficInfo.Text = "软路由没连上"; return; }
+
+        var ans = MessageBox.Show(
+            "清空软路由上保存的设备流量历史（最近 32 天）？\n\n" +
+            "· 只删流量记录，不动黑名单\n· 不动本机网卡流量\n· 删了找不回来",
+            "清空设备流量历史", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (ans != MessageBoxResult.Yes) return;
+
+        TxtDevTrafficInfo.Text = "正在清空…";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "traffic-reset");
+        if (!ok) { TxtDevTrafficInfo.Text = "× " + detail; return; }
+        AppPaths.Log("[流量] 已清空远端设备流量历史");
+        await LoadDevTrafficAsync(true);
+        TxtDevTrafficInfo.Text = "√ 已清空 · " + DateTime.Now.ToString("HH:mm:ss");
     }
 
     private void OnTrafficOpenDir(object sender, RoutedEventArgs e)
