@@ -944,10 +944,10 @@
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
-                                                        <Button x:Name="BtnRoleAuto" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnRoleAuto">
+                                                        <Button x:Name="BtnRoleAuto" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnRoleAuto" ToolTip="恢复「出口/热点」按网口自动识别（取消手动钉）">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="恢复自动" />
+                                                                    <TextBlock VerticalAlignment="Center" Text="自动识别" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
@@ -978,7 +978,7 @@
                                                     <StackPanel.Children>
                                                         <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Foreground="#FF374151" Text="多 WAN 故障转移" />
                                                         <TextBlock x:Name="TxtWanFailInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF7C8798" Text="" />
-                                                        <Button x:Name="BtnWanFailToggle" Height="26" Margin="14,0,0,0" Padding="12,0" Click="OnWanFailToggle">
+                                                        <Button x:Name="BtnWanFailToggle" Height="26" Margin="14,0,0,0" Padding="12,0" Click="OnWanFailToggle" ToolTip="开启后每 15 秒探测一次，当前出口连续 3 次失败自动换下一条">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
                                                                     <TextBlock VerticalAlignment="Center" Text="开启自动切换" />
@@ -986,17 +986,17 @@
                                                             </StackPanel>
                                                         </Button>
                                                         <ComboBox x:Name="CmbWanPrefer" Width="200" Height="26" Margin="12,0,0,0" VerticalContentAlignment="Center" />
-                                                        <Button x:Name="BtnWanToBackup" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFFDF6E3" BorderBrush="#FFEEDFB0" Click="OnWanToBackup">
+                                                        <Button x:Name="BtnWanToBackup" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFFDF6E3" BorderBrush="#FFEEDFB0" Click="OnWanToBackup" ToolTip="先探活再切；探不通直接拒绝，不会把网切死">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
                                                                     <TextBlock VerticalAlignment="Center" Text="切到所选" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
-                                                        <Button x:Name="BtnWanToPrimary" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnWanToPrimary">
+                                                        <Button x:Name="BtnWanToPrimary" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnWanToPrimary" ToolTip="清除面板加的路由，交回 NetworkManager 管理；会同时关闭自动切换">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="恢复自动" />
+                                                                    <TextBlock VerticalAlignment="Center" Text="恢复系统路由" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
@@ -1004,7 +1004,7 @@
                                                 </StackPanel>
                                                 <StackPanel Grid.Row="2" Margin="0,8,0,0" Orientation="Horizontal">
                                                     <StackPanel.Children>
-                                                        <Button x:Name="BtnUsbNow" Height="26" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnUsbNow">
+                                                        <Button x:Name="BtnUsbNow" Height="26" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnUsbNow" ToolTip="立刻给所有 USB / 手机共享网口建连接并要地址">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
                                                                     <TextBlock VerticalAlignment="Center" Text="立即激活 USB 网卡" />
@@ -1015,10 +1015,10 @@
                                                         <TextBox x:Name="TxtStaticIp" Width="120" Height="24" VerticalContentAlignment="Center" FontSize="12" />
                                                         <TextBlock VerticalAlignment="Center" Margin="8,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="网关" />
                                                         <TextBox x:Name="TxtStaticGw" Width="120" Height="24" VerticalContentAlignment="Center" FontSize="12" />
-                                                        <Button x:Name="BtnStaticSave" Height="26" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave">
+                                                        <Button x:Name="BtnStaticSave" Height="26" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave" ToolTip="保存 DHCP 拿不到地址时用的兜底网段（不会覆盖主线路由）">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="保存" />
+                                                                    <TextBlock VerticalAlignment="Center" Text="保存网段" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
                                                         </Button>
