@@ -1,195 +1,215 @@
 #!/usr/bin/env bash
 # ============================================================
-#  grayrrouter-wanfail.sh —— 双 WAN 故障转移（主挂切备，恢复切回）
-#    设计参考 fidpa/linux-dual-wan-failover 的思路：
-#      多目标探测 / 连续失败才判挂（防抖）/ 连续成功才切回 / 状态落盘 / 留日志
+#  grayrrouter-wanfail.sh —— 多 WAN 故障转移（N 条上线，按优先级自动选）
+#    自动发现所有「能当出口」的网口：默认路由口 → 有线插线的 → USB 网卡 → 无线 STA
+#    每 15 秒探测一次；当前出口连续失败 → 换下一条；更高优先级恢复 → 切回去
 #
-#    get              输出当前状态（KEY=VALUE，给面板读）
-#    tick             一次探测 + 决策（systemd timer 每 15 秒跑）
-#    set <k> <v>      改配置（enable / disable / prefer auto|primary|backup / primary <if> / backup <if>）
-#    switch primary|backup   手动强制切换
+#    get                    输出状态（KEY=VALUE）
+#    tick                   一次探测 + 决策（systemd timer）
+#    switch <iface|auto>    立即切到指定网口 / 交回自动
+#    set <k> <v>            enable / disable / prefer <iface|auto> / wans "a b c" / failn / okn
 # ============================================================
 set -uo pipefail
 
 CONF=/etc/grayrouter/wanfail.env
 STATE=/run/grayrouter/wanfail.state
+CNT=/run/grayrouter/wanfail.counters
 LOG=/var/log/grayrouter-wanfail.log
 ROLES=/usr/local/bin/grayrouter-roles.sh
 
-# ---------- 默认配置 ----------
-ENABLE=0            # 默认关：要用户显式开
-PRIMARY=""          # 空=自动（roles.sh 的 WAN_IF）
-BACKUP=""           # 空=自动（找 usb*/enx*，其次其它 STA 无线口）
-CHECK_IP=223.5.5.5  # 公网探测目标（阿里 DNS，国内稳）
-GW_CHECK=0          # 探网关（校园网/部分网关不答 ICMP，默认关，只看公网通不通）
-FAIL_N=3            # 连续失败几次判定挂了
-OK_N=2              # 连续成功几次判定恢复
+ENABLE=0
+WANS=""             # 空 = 自动发现（空格分隔，顺序即优先级）
+PREFER=""           # 空/auto = 自动选；填网口 = 钉死这条
+CHECK_IP=223.5.5.5
+FAIL_N=3
+OK_N=2
 [ -f "$CONF" ] && . "$CONF" 2>/dev/null
 mkdir -p /run/grayrouter 2>/dev/null
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG" 2>/dev/null; }
-
 role_wan() { [ -x "$ROLES" ] && "$ROLES" get 2>/dev/null | sed -n 's/^WAN_IF=//p'; }
+role_lan() { [ -x "$ROLES" ] && "$ROLES" get 2>/dev/null | sed -n 's/^LAN_IF=//p'; }
 
-gw_of() {  # $1=网口 → 网关
+gw_of() {
   local g
+  [ -z "${1:-}" ] && { echo ""; return; }
   g=$(ip -4 route show default dev "$1" 2>/dev/null | awk '{print $3; exit}')
   [ -n "$g" ] && { echo "$g"; return; }
   g=$(nmcli -g IP4.GATEWAY dev show "$1" 2>/dev/null | head -1)
   echo "${g%% *}"
 }
+carrier() { cat "/sys/class/net/$1/carrier" 2>/dev/null || echo 0; }
+is_wifi() { [ -e "/sys/class/net/$1/wireless" ]; }
+is_ap() { [ "$(iw dev "$1" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ]; }
 
-is_up() { [ -d "/sys/class/net/$1" ] && [ "$(cat "/sys/class/net/$1/operstate" 2>/dev/null)" != "down" ]; }
-
-pick_backup() {  # 自动挑备线：手机 USB 共享优先，其次其它无线 STA
-  local p="$1" n
+# ---------- 自动发现候选出口 ----------
+discover() {
+  local p l n out=""
+  p=$(role_wan); l=$(role_lan)
+  add() {
+    local c="$1"
+    [ -z "$c" ] && return
+    [ -d "/sys/class/net/$c" ] || return
+    [ "$c" = "lo" ] && return
+    [ "$c" = "$l" ] && return
+    [ -n "$(gw_of "$c")" ] || return
+    case " $out " in *" $c "*) return ;; esac
+    out="$out $c"
+  }
+  add "$p"
+  # 有线（插了线、有网关）
   for n in $(ls /sys/class/net 2>/dev/null); do
-    [ "$n" = "lo" ] && continue
-    [ "$n" = "$p" ] && continue
-    case "$n" in docker*|veth*|br-*|virbr*|wlp*) continue ;; esac
-    if [ -e "/sys/class/net/$n/wireless" ]; then continue; fi
-    [ -n "$(gw_of "$n")" ] && { echo "$n"; return; }
+    case "$n" in lo|docker*|veth*|br-*|virbr*) continue ;; esac
+    is_wifi "$n" && continue
+    [ "$(carrier "$n")" = "1" ] || continue
+    add "$n"
   done
-  # 其次：非 AP 状态的无线口（USB 网卡当 STA 用）
+  # USB 网卡 / 手机共享（名字特征）
+  for n in $(ls /sys/class/net 2>/dev/null); do
+    case "$n" in usb*|enx*|rndis*|wwan*) add "$n" ;; esac
+  done
+  # 无线 STA（不是 AP 的那个）
   for n in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
-    [ "$n" = "$p" ] && continue
-    [ "$(iw dev "$n" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && continue
-    [ -n "$(gw_of "$n")" ] && { echo "$n"; return; }
+    is_ap "$n" && continue
+    add "$n"
   done
+  echo "${out# }"
 }
 
-probe() {  # $1=网口 → 输出 "ok latency" ；只读探测，不改任何路由
-  local ifc="$1" gw t0 t1 ms lip
+resolve_wans() {  # → ALL（空格分隔，按优先级）
+  if [ -n "${WANS// /}" ]; then ALL="$WANS"; else ALL=$(discover); fi
+  [ -n "${PREFER// /}" ] && [ "$PREFER" != "auto" ] && [ -d "/sys/class/net/$PREFER" ] && \
+    ALL="$PREFER $(echo "$ALL" | tr ' ' '\n' | grep -vx "$PREFER" | tr '\n' ' ')"
+}
+
+probe() {  # $1=网口 → "ok lat"
+  local ifc="$1" gw lip code t0 t1 ms
   [ -z "$ifc" ] && { echo "0 -"; return; }
-  is_up "$ifc" || { echo "0 -"; return; }
+  [ -d "/sys/class/net/$ifc" ] || { echo "0 -"; return; }
+  [ "$(cat "/sys/class/net/$ifc/operstate" 2>/dev/null)" = "down" ] && { echo "0 -"; return; }
   gw=$(gw_of "$ifc")
-  if [ "$GW_CHECK" = "1" ] && [ -n "$gw" ]; then
-    if ! ping -I "$ifc" -c 1 -W 2 -q "$gw" >/dev/null 2>&1; then
-      lip=$(ip -4 -o addr show dev "$ifc" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-      [ -z "$lip" ] && { echo "0 -"; return; }
-      ping -I "$lip" -c 1 -W 2 -q "$gw" >/dev/null 2>&1 || { echo "0 -"; return; }
-    fi
-  fi
-  # 绑定网口需要 root；非 root 时退回「绑定源 IP」，效果一样
   lip=$(ip -4 -o addr show dev "$ifc" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+  [ -z "$lip" ] && { echo "0 -"; return; }
   t0=$(date +%s%N)
-  if ! ping -I "$ifc" -c 1 -W 2 -q "$CHECK_IP" >/dev/null 2>&1; then
-    if ! ping -I "$lip" -c 1 -W 2 -q "$CHECK_IP" >/dev/null 2>&1; then
-      # ICMP 被封时用 HTTP 204 兜底（204 无正文，最省流量）
-      code=$(curl -s -m 4 -o /dev/null -w '%{http_code}' --interface "${lip:-$ifc}" \
-                  http://connect.rom.miui.com/generate_204 2>/dev/null)
-      [ "$code" = "204" ] || { echo "0 -"; return; }
-    fi
+  if ! ping -I "$lip" -c 1 -W 2 -q "$CHECK_IP" >/dev/null 2>&1; then
+    code=$(curl -s -m 4 -o /dev/null -w '%{http_code}' --interface "$lip" \
+           http://connect.rom.miui.com/generate_204 2>/dev/null)
+    [ "$code" = "204" ] || { echo "0 -"; return; }
   fi
-  t1=$(date +%s%N)
-  ms=$(( (t1 - t0) / 1000000 ))
+  t1=$(date +%s%N); ms=$(( (t1 - t0) / 1000000 ))
   echo "1 $ms"
 }
 
 # ---------- 状态 ----------
-load_state() {
-  ACTIVE=primary; P_FAIL=0; B_FAIL=0; P_OK=0; B_OK=0; LAST_SWITCH=""; LAST_REASON=""
-  [ -f "$STATE" ] && . "$STATE" 2>/dev/null
-}
+load_state() { ACTIVE=""; LAST_SWITCH=""; LAST_REASON=""; [ -f "$STATE" ] && . "$STATE" 2>/dev/null; }
 save_state() {
-  printf 'ACTIVE=%s\nP_FAIL=%s\nB_FAIL=%s\nP_OK=%s\nB_OK=%s\nLAST_SWITCH=%s\nLAST_REASON=%s\n' \
-    "$ACTIVE" "$P_FAIL" "$B_FAIL" "$P_OK" "$B_OK" "${LAST_SWITCH:-}" "${LAST_REASON:-}" > "$STATE" 2>/dev/null
+  printf 'ACTIVE=%s\nLAST_SWITCH=%s\nLAST_REASON=%s\n' "$ACTIVE" "${LAST_SWITCH:-}" "${LAST_REASON:-}" > "$STATE" 2>/dev/null
+}
+cnt_get() { awk -v i="$1" '$1==i{print $2" "$3}' "$CNT" 2>/dev/null | head -1; }
+cnt_set() {
+  local i="$1" f="$2" o="$3" tmp="${CNT}.tmp"
+  touch "$CNT" 2>/dev/null
+  awk -v i="$i" '$1!=i' "$CNT" 2>/dev/null > "$tmp"; echo "$i $f $o" >> "$tmp"; mv "$tmp" "$CNT" 2>/dev/null
 }
 
-resolve() {
-  P_IF=${PRIMARY:-$(role_wan)}
-  [ -z "${P_IF:-}" ] && P_IF=eno1
-  B_IF=${BACKUP:-$(pick_backup "$P_IF")}
+set_active() {  # $1=网口 $2=原因
+  local ifc="$1" gw; gw=$(gw_of "$ifc")
+  [ -z "$gw" ] && { log "切换失败：$ifc 没有网关"; return 1; }
+  ip route replace default via "$gw" dev "$ifc" metric 50 2>/dev/null || { log "切换失败：写路由被拒"; return 1; }
+  log "出口 → $ifc（网关 $gw，原因：$2）"
+  ACTIVE="$ifc"; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="$2"; save_state
 }
 
-do_switch() {  # $1=primary|backup
-  local want="$1" ifc gw
-  resolve
-  if [ "$want" = "backup" ]; then
-    ifc="$B_IF"; gw=$(gw_of "$ifc")
-    [ -z "$ifc" ] || [ -z "$gw" ] && { log "切备用失败：没有可用备线"; return 1; }
-    ip route replace default via "$gw" dev "$ifc" metric 50 2>/dev/null || { log "切备用失败：写路由被拒"; return 1; }
-    log "切到备用 $ifc（网关 $gw，metric 50）"
-  else
-    ifc="$P_IF"; gw=$(gw_of "$ifc")
-    # 删掉我们自己加的备用默认路由，让 NM 的主线路由重新生效
-    [ -n "$B_IF" ] && [ -n "$(gw_of "$B_IF")" ] && \
-      ip route del default via "$(gw_of "$B_IF")" dev "$B_IF" metric 50 2>/dev/null
-    log "切回主用 $ifc（网关 ${gw:-?}）"
-  fi
-  ACTIVE="$want"; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="${2:-manual}"; save_state
+restore_system() {  # 删掉我们自己加的 50 号默认路由，交回 NetworkManager
+  local gw
+  for i in $(echo "${ALL:-}" | tr ' ' '\n'); do
+    gw=$(gw_of "$i"); [ -z "$gw" ] && continue
+    ip route del default via "$gw" dev "$i" metric 50 2>/dev/null
+  done
 }
 
 tick() {
-  [ "$ENABLE" = "1" ] || { echo "disabled"; return; }
-  resolve
-  [ -z "${B_IF:-}" ] && { echo "no-backup"; return; }
+  [ "$ENABLE" = "1" ] || { echo disabled; return; }
+  resolve_wans
+  [ -z "${ALL// /}" ] && { echo "no-wan"; return; }
+  load_state
 
-  local pr br
-  pr=$(probe "$P_IF"); br=$(probe "$B_IF")
-  P_OK_NOW=${pr%% *}; P_LAT=${pr##* }
-  B_OK_NOW=${br%% *}; B_LAT=${br##* }
+  local best="" best_ok=0 order=0 line ifc res ok lat f o
+  for ifc in $ALL; do
+    order=$((order+1)); [ "$order" -gt 4 ] && break     # 最多探 4 条，别乱发包
+    res=$(probe "$ifc"); ok=${res%% *}; lat=${res##* }
+    read -r f o <<< "$(cnt_get "$ifc")"; f=${f:-0}; o=${o:-0}
+    if [ "$ok" = "1" ]; then f=0; o=$((o+1)); else f=$((f+1)); o=0; fi
+    cnt_set "$ifc" "$f" "$o"
+    if [ "$ok" = "1" ] && [ -z "$best" ]; then best="$ifc"; best_ok=1; fi
+  done
 
-  if [ "$P_OK_NOW" = "1" ]; then P_FAIL=0; P_OK=$((P_OK+1)); else P_FAIL=$((P_FAIL+1)); P_OK=0; fi
-  if [ "$B_OK_NOW" = "1" ]; then B_FAIL=0; B_OK=$((B_OK+1)); else B_FAIL=$((B_FAIL+1)); B_OK=0; fi
-
-  if [ "$ACTIVE" = "primary" ] && [ "$P_FAIL" -ge "$FAIL_N" ] && [ "$B_OK" -ge "$OK_N" ]; then
-    do_switch backup "主用连续 ${P_FAIL} 次探测失败"
-  elif [ "$ACTIVE" = "backup" ] && [ "$P_OK" -ge "$OK_N" ]; then
-    do_switch primary "主用恢复（连续 ${P_OK} 次成功）"
+  if [ -z "$ACTIVE" ]; then
+    [ -n "$best" ] && set_active "$best" "首次选路"
+  else
+    res=$(probe "$ACTIVE"); ok=${res%% *}
+    if [ "$ok" = "0" ]; then
+      read -r f o <<< "$(cnt_get "$ACTIVE")"; f=${f:-0}
+      if [ "$f" -ge "$FAIL_N" ] && [ -n "$best" ] && [ "$best" != "$ACTIVE" ]; then
+        set_active "$best" "当前出口连续 $f 次失败"
+      fi
+    elif [ -n "$best" ] && [ "$best" != "$ACTIVE" ]; then
+      # 更高优先级的线恢复了：连续 OK_N 次成功就切回去
+      read -r f o <<< "$(cnt_get "$best")"; o=${o:-0}
+      if [ "$o" -ge "$OK_N" ]; then set_active "$best" "更高优先级恢复（连续 $o 次成功）"; fi
+    fi
   fi
   save_state
-  echo "primary=$P_OK_NOW/$P_LAT backup=$B_OK_NOW/$B_LAT active=$ACTIVE p_fail=$P_FAIL b_ok=$B_OK"
+  echo "active=$ACTIVE wans=$(echo $ALL | tr ' ' ',')"
 }
 
 case "${1:-get}" in
   get)
-    resolve; load_state
-    pr=$(probe "$P_IF"); br=$(probe "${B_IF:-}")
+    resolve_wans; load_state
     echo "ENABLE=$ENABLE"
-    echo "PRIMARY=$P_IF"
-    echo "BACKUP=${B_IF:-}"
+    echo "MODE=$([ -n "${PREFER// /}" ] && [ "$PREFER" != auto ] && echo prefer || echo auto)"
+    echo "PREFER=${PREFER:-auto}"
     echo "ACTIVE=$ACTIVE"
-    echo "P_OK=${pr%% *}"; echo "P_LAT=${pr##* }"
-    echo "B_OK=${br%% *}"; echo "B_LAT=${br##* }"
-    echo "LAST_SWITCH=${LAST_SWITCH:-}"
-    echo "LAST_REASON=${LAST_REASON:-}"
+    n=0
+    for ifc in $ALL; do
+      n=$((n+1)); [ "$n" -gt 4 ] && break
+      res=$(probe "$ifc")
+      echo "WAN$n=$ifc|${res%% *}|${res##* }"
+    done
+    echo "COUNT=$n"
+    echo "LAST_SWITCH=${LAST_SWITCH:-}"; echo "LAST_REASON=${LAST_REASON:-}"
     echo "FAIL_N=$FAIL_N"; echo "OK_N=$OK_N"; echo "CHECK_IP=$CHECK_IP"
     ;;
   tick) tick ;;
   switch)
-    case "${2:-}" in
-      primary|backup) do_switch "${2}" "manual" && echo "已切换到 ${2}" ;;
-      *) echo "用法: $0 switch primary|backup"; exit 1 ;;
-    esac ;;
+    if [ "${2:-auto}" = "auto" ]; then
+      ENABLE=0; restore_system; ACTIVE=""; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="交回系统"; save_state
+      echo "已交回系统路由"
+    else
+      [ -d "/sys/class/net/${2:-}" ] || { echo "没这个网口：${2:-}"; exit 1; }
+      resolve_wans; set_active "$2" "手动指定" && echo "已切到 $2"
+    fi ;;
   set)
     [ "$(id -u)" -eq 0 ] || { echo "需要 root"; exit 1; }
-    k="${2:-}"; v="${3:-}"
-    mkdir -p /etc/grayrouter
-    [ -f "$CONF" ] || : > "$CONF"
+    k="${2:-}"; v="${3:-}"; shift 2 2>/dev/null || true; v="${*:-$v}"
+    mkdir -p /etc/grayrouter; [ -f "$CONF" ] || : > "$CONF"
     case "$k" in
-      enable)  ENABLE=1 ;;
-      disable) ENABLE=0 ;;
-      primary) PRIMARY="$v" ;;
-      backup)  BACKUP="$v" ;;
-      failn)   FAIL_N="${v:-3}" ;;
-      okn)     OK_N="${v:-2}" ;;
+      enable) ENABLE=1 ;; disable) ENABLE=0 ;;
+      prefer) PREFER="${v:-auto}" ;;
+      wans)   WANS="$v" ;;
+      failn)  FAIL_N="${v:-3}" ;; okn) OK_N="${v:-2}" ;;
       checkip) CHECK_IP="${v:-223.5.5.5}" ;;
       *) echo "不认识的配置项：$k"; exit 1 ;;
     esac
-    # 重写整份配置（简单可靠）
-    [ "$k" = "enable" ] && ENABLE=1
-    [ "$k" = "disable" ] && ENABLE=0
     {
       echo "ENABLE=$ENABLE"
-      echo "PRIMARY=\"$PRIMARY\""
-      echo "BACKUP=\"$BACKUP\""
+      echo "WANS=\"$WANS\""
+      echo "PREFER=\"$PREFER\""
       echo "CHECK_IP=$CHECK_IP"
-      echo "GW_CHECK=$GW_CHECK"
       echo "FAIL_N=$FAIL_N"
       echo "OK_N=$OK_N"
     } > "$CONF"
-    echo "已更新 $k=$v"
+    echo "已更新 $k=${v:-$ENABLE}"
     ;;
-  *) echo "用法: $0 get|tick|switch primary|backup|set <k> <v>"; exit 1 ;;
+  *) echo "用法: $0 get|tick|switch <iface|auto>|set <k> <v>"; exit 1 ;;
 esac

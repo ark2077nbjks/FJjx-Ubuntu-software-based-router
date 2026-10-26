@@ -244,11 +244,22 @@ echo "   日志：/var/log/grayrouter-ctl.log"
         => RunAsync(cfg, "wifi-2g " + channel, progress);
 
     /// <summary>发一条命令，等远端执行完（最多等 4 分钟）</summary>
+    private static readonly SemaphoreSlim _gate = new(1, 1);
+    private static int _seq;
+
+    /// <summary>同一条通道同一时刻只能有一个请求：远端只会执行「最新一条」，并发会互相顶掉。</summary>
     public static async Task<(bool Ok, string Detail)> RunAsync(RemoteConfig cfg, string cmd, Action<string>? progress = null)
+    {
+        await _gate.WaitAsync();
+        try { return await RunCoreAsync(cfg, cmd, progress); }
+        finally { _gate.Release(); }
+    }
+
+    private static async Task<(bool Ok, string Detail)> RunCoreAsync(RemoteConfig cfg, string cmd, Action<string>? progress = null)
     {
         if (!cfg.IsConfigured) return (false, "还没配置远端地址");
 
-        var id = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var id = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + (_seq++ % 1000).ToString("D3");
         var write = "echo '" + id + " " + cmd + "' > /run/grayrouter/request 2>/dev/null && echo CTL_OK";
         var (rc, o, e) = await Remote.RunAsync("ssh.exe",
             Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + write + "\"");
