@@ -73,6 +73,11 @@ case "$cmd" in
   dev-apply)     SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="apply"; DEVCAP=1 ;;
   dev-list)      SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="list"; DEVCAP=1 ;;
   dev-names)     SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="names"; DEVCAP=1 ;;
+  roles-get)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="get"; DEVCAP=1 ;;
+  roles-set)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="set ${rest:-auto}"; DEVCAP=1 ;;
+  wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
+  wanfail-set)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="set ${rest:-}"; DEVCAP=1 ;;
+  wanfail-switch) SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="switch ${rest:-primary}"; DEVCAP=1 ;;
   traffic-now)   SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="now ${arg:-30}"; DEVCAP=1 ;;
   traffic-summary) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="summary ${arg:-30}"; DEVCAP=1 ;;
   traffic-reset) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="reset"; DEVCAP=1 ;;

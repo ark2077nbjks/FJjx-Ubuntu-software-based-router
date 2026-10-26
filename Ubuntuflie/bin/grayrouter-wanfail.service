@@ -1,0 +1,9 @@
+[Unit]
+Description=GrayRouter 双 WAN 健康检查（主挂切备，恢复切回）
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-wanfail.sh tick
+Nice=5

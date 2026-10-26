@@ -4,6 +4,9 @@
 # 模式开关：面板写 /run/grayrouter/mode.request（act/observe），每轮读一次并清空
 set -u
 # LAN 口自动探测（优先 AP 模式网口，其次 192.168.x，最后兜底 wlp2s0）
+if [ -z "${IFACE:-}" ] && [ -x /usr/local/bin/grayrouter-roles.sh ]; then
+  IFACE=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null | sed -n 's/^LAN_IF=//p')
+fi
 if [ -z "${IFACE:-}" ]; then
   for _i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
     [ "$(iw dev "$_i" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && { IFACE=$_i; break; }

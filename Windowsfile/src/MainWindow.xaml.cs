@@ -390,6 +390,184 @@ public partial class MainWindow : Window
         if (got > 0) { SaveDevNames(); AppPaths.Log($"[流量] 设备名补到 {got} 个"); }
     }
 
+    // ---------------- 网口角色（WAN / LAN）----------------
+
+    private bool _rolesLoading;
+
+    private async Task LoadRolesAsync()
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtRoleInfo.Text = "软路由没连上"; return; }
+
+        _rolesLoading = true;
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "roles-get");
+            if (!ok) { TxtRoleInfo.Text = "× " + detail; return; }
+
+            string mode = "auto", wan = "", lan = "", wanAuto = "", lanAuto = "";
+            var ifs = new List<(string Name, string Kind, string State, string Ip)>();
+            foreach (var raw in detail.Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith("MODE=")) mode = line.Substring(5);
+                else if (line.StartsWith("WAN_IF=")) wan = line.Substring(7);
+                else if (line.StartsWith("LAN_IF=")) lan = line.Substring(7);
+                else if (line.StartsWith("WAN_AUTO=")) wanAuto = line.Substring(9);
+                else if (line.StartsWith("LAN_AUTO=")) lanAuto = line.Substring(9);
+                else if (line.StartsWith("IF="))
+                {
+                    var parts = line.Substring(3).Split('|');
+                    if (parts.Length >= 4)
+                        ifs.Add((parts[0], parts[1], parts[3], parts.Length > 4 ? parts[4] : ""));
+                }
+            }
+
+            CmbRoleWan.Items.Clear();
+            CmbRoleLan.Items.Clear();
+            foreach (var it in ifs)
+            {
+                var tag = it.Kind == "wifi" ? "无线" : "有线";
+                var st = it.State == "AP" ? " · AP" : (it.State == "-" ? "" : " · " + it.State);
+                var label = $"{it.Name}（{tag}{st}）";
+                CmbRoleWan.Items.Add(new ComboBoxItem { Content = label, Tag = it.Name });
+                CmbRoleLan.Items.Add(new ComboBoxItem { Content = label, Tag = it.Name });
+            }
+            SelectRole(CmbRoleWan, wan);
+            SelectRole(CmbRoleLan, lan);
+
+            TxtRoleInfo.Text = mode == "manual"
+                ? $"手动：WAN={wan} LAN={lan}（自动探测：{wanAuto} / {lanAuto}）"
+                : $"自动：WAN={wan} LAN={lan}";
+        }
+        catch (Exception ex) { TxtRoleInfo.Text = "× 解析失败：" + ex.Message; }
+        finally { _rolesLoading = false; }
+    }
+
+    // ---------------- 双 WAN 故障转移 ----------------
+
+    private bool _wanFailEnabled;
+    private bool _wanFailBusy;
+
+    private async Task LoadWanFailAsync()
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtWanFailInfo.Text = "软路由没连上"; return; }
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-get");
+        if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
+
+        string enable = "0", primary = "", backup = "", active = "primary", pLat = "-", bLat = "-";
+        string pOk = "0", bOk = "0", last = "", reason = "";
+        foreach (var raw in detail.Split('\n'))
+        {
+            var line = raw.Trim();
+            int eq = line.IndexOf('=');
+            if (eq <= 0) continue;
+            var k = line.Substring(0, eq); var v = line.Substring(eq + 1);
+            switch (k)
+            {
+                case "ENABLE": enable = v; break;
+                case "PRIMARY": primary = v; break;
+                case "BACKUP": backup = v; break;
+                case "ACTIVE": active = v; break;
+                case "P_OK": pOk = v; break;
+                case "B_OK": bOk = v; break;
+                case "P_LAT": pLat = v; break;
+                case "B_LAT": bLat = v; break;
+                case "LAST_SWITCH": last = v; break;
+                case "LAST_REASON": reason = v; break;
+            }
+        }
+
+        _wanFailEnabled = enable == "1";
+        BtnWanFailToggle.Content = _wanFailEnabled ? "关闭自动切换" : "开启自动切换";
+
+        string Dot(string ok, string lat)
+            => ok == "1" ? $"√ {lat} ms" : "× 不通";
+        var backupText = string.IsNullOrEmpty(backup) ? "未接" : $"{backup} {Dot(bOk, bLat)}";
+        var mode = _wanFailEnabled ? "" : "（未开启）";
+        TxtWanFailInfo.Text =
+            $"主 {primary} {Dot(pOk, pLat)}   备 {backupText}   当前出口：{(active == "backup" ? "备用" : "主用")}{mode}"
+            + (string.IsNullOrEmpty(last) ? "" : $"   最近切换 {last}（{reason}）");
+    }
+
+    private async void OnWanFailToggle(object sender, RoutedEventArgs e)
+    {
+        if (_wanFailBusy) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtWanFailInfo.Text = "软路由没连上"; return; }
+        _wanFailBusy = true; BtnWanFailToggle.IsEnabled = false;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, _wanFailEnabled ? "wanfail-set disable" : "wanfail-set enable");
+        BtnWanFailToggle.IsEnabled = true; _wanFailBusy = false;
+        if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
+        AppPaths.Log($"[双WAN] {(_wanFailEnabled ? "关闭" : "开启")}自动切换");
+        await LoadWanFailAsync();
+    }
+
+    private async void OnWanToBackup(object sender, RoutedEventArgs e)
+    {
+        if (_wanFailBusy) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) return;
+        _wanFailBusy = true; BtnWanToBackup.IsEnabled = false;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch backup");
+        BtnWanToBackup.IsEnabled = true; _wanFailBusy = false;
+        TxtWanFailInfo.Text = ok ? "√ " + detail.Trim() : "× " + detail;
+        AppPaths.Log($"[双WAN] 手动切备用 → {(ok ? "成功" : detail)}");
+        await LoadWanFailAsync();
+    }
+
+    private async void OnWanToPrimary(object sender, RoutedEventArgs e)
+    {
+        if (_wanFailBusy) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) return;
+        _wanFailBusy = true; BtnWanToPrimary.IsEnabled = false;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch primary");
+        BtnWanToPrimary.IsEnabled = true; _wanFailBusy = false;
+        TxtWanFailInfo.Text = ok ? "√ " + detail.Trim() : "× " + detail;
+        AppPaths.Log($"[双WAN] 手动切回主用 → {(ok ? "成功" : detail)}");
+        await LoadWanFailAsync();
+    }
+
+    private static void SelectRole(ComboBox cb, string iface)
+    {
+        foreach (ComboBoxItem item in cb.Items)
+            if ((string?)item.Tag == iface) { cb.SelectedItem = item; return; }
+        if (cb.Items.Count > 0) cb.SelectedIndex = 0;
+    }
+
+    private async void OnRoleSave(object sender, RoutedEventArgs e)
+    {
+        if (_rolesLoading) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtRoleInfo.Text = "软路由没连上"; return; }
+        var wan = (CmbRoleWan.SelectedItem as ComboBoxItem)?.Tag as string;
+        var lan = (CmbRoleLan.SelectedItem as ComboBoxItem)?.Tag as string;
+        if (string.IsNullOrWhiteSpace(wan) || string.IsNullOrWhiteSpace(lan))
+        { TxtRoleInfo.Text = "先选好两个网口"; return; }
+
+        BtnRoleSave.IsEnabled = false;
+        TxtRoleInfo.Text = "保存中…";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, $"roles-set {wan} {lan}");
+        BtnRoleSave.IsEnabled = true;
+        TxtRoleInfo.Text = ok ? "√ " + detail.Trim() : "× " + detail;
+        AppPaths.Log($"[网口] 手动指定 WAN={wan} LAN={lan} → {(ok ? "成功" : detail)}");
+        if (ok) await LoadRolesAsync();
+    }
+
+    private async void OnRoleAuto(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtRoleInfo.Text = "软路由没连上"; return; }
+        BtnRoleAuto.IsEnabled = false;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "roles-set auto");
+        BtnRoleAuto.IsEnabled = true;
+        TxtRoleInfo.Text = ok ? "√ 已恢复自动" : "× " + detail;
+        AppPaths.Log("[网口] 恢复自动探测");
+        if (ok) await LoadRolesAsync();
+    }
+
     /// <summary>设备流量：sample=true 时先让远端立刻采一次，再取汇总</summary>
     private async Task LoadDevTrafficAsync(bool sample)
     {
@@ -1140,7 +1318,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
         // 网卡页：只在看得见时做热插拔轮询（8 秒一次本地查询），切走立刻停
         _nicPoll.Stop();                       // 网卡页：只进页查一次，手动刷新
-        if (page == "网卡") _ = PollAdaptersAsync();
+        if (page == "网卡") { _ = PollAdaptersAsync(); _ = LoadRolesAsync(); _ = LoadWanFailAsync(); }
 
         // 校园网页：第一次进来，账号空着就从 minipc 的 Config.yaml 读一份（只读，不动配置）
         if (page == "校园网" && TxtCampusUser.Text.Trim().Length == 0 && !_campusPrefilled)
