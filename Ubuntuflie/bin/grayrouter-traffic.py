@@ -92,8 +92,11 @@ def sample():
     lines = []
     for mac, c in cur.items():
         prev = state.get(mac, {})
-        drx = c["rx"] - int(prev.get("rx", 0))
-        dtx = c["tx"] - int(prev.get("tx", 0))
+        if not prev:                 # 第一次见到这台设备：只记基线，不把历史会话量算进今天
+            drx = dtx = 0
+        else:
+            drx = c["rx"] - int(prev.get("rx", 0))
+            dtx = c["tx"] - int(prev.get("tx", 0))
         if drx < 0: drx = 0          # 设备重连 / AP 重启，计数器归零
         if dtx < 0: dtx = 0
         if drx or dtx or mac not in state:
@@ -119,6 +122,7 @@ def summary(days=30):
     start = today - datetime.timedelta(days=days - 1)
 
     agg = {}
+    hours = [[0, 0] for _ in range(24)]
     for path in sorted(glob.glob(os.path.join(BASE, "*.csv"))):
         try:
             day = datetime.datetime.strptime(os.path.basename(path)[:8], "%Y%m%d").date()
@@ -137,6 +141,14 @@ def summary(days=30):
                 dn, up = int(p[4] or 0), int(p[5] or 0)
             except Exception:
                 continue
+            if day == today:
+                try:
+                    hh = int(p[0][11:13])
+                    if 0 <= hh <= 23:
+                        hours[hh][0] += dn
+                        hours[hh][1] += up
+                except Exception:
+                    pass
             a = agg.setdefault(mac, {"d": 0, "u": 0, "td": 0, "tu": 0, "last": "", "name": ""})
             a["d"] += dn; a["u"] += up; a["last"] = p[0]
             if p[3]: a["name"] = p[3]
@@ -158,7 +170,11 @@ def summary(days=30):
             "signal": online.get(mac, {}).get("signal"),
         })
     out.sort(key=lambda x: (x["online"], x["span_down"] + x["span_up"]), reverse=True)
-    print(json.dumps({"days": days, "devices": out}, ensure_ascii=False))
+    print(json.dumps({
+        "days": days,
+        "devices": out,
+        "hours": [{"h": i, "down": hours[i][0], "up": hours[i][1]} for i in range(24)],
+    }, ensure_ascii=False))
 
 
 if __name__ == "__main__":
@@ -167,7 +183,12 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         try: n = max(1, min(31, int(sys.argv[2])))
         except Exception: n = 30
-    if act == "sample":
+    if act == "reset":
+        for f in glob.glob(os.path.join(BASE, "*")):
+            try: os.remove(f)
+            except Exception: pass
+        print("已清空 " + BASE)
+    elif act == "sample":
         sample()
     elif act == "now":
         sample(); summary(n)
