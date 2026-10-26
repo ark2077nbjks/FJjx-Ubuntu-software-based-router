@@ -84,6 +84,8 @@ case "$cmd" in
   dev-unblock-all) SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="unblock-all"; DEVCAP=1 ;;
   dev-apply)     SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="apply"; DEVCAP=1 ;;
   dev-list)      SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="list"; DEVCAP=1 ;;
+  traffic-now)   SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="now ${arg:-30}"; DEVCAP=1 ;;
+  traffic-summary) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="summary ${arg:-30}"; DEVCAP=1 ;;
   *)
     write_res "unknown" 64 "不认识的命令：$cmd"
     log "拒绝：$cmd"

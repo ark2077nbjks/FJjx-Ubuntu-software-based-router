@@ -1889,7 +1889,8 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                                                            <RowDefinition Height="200" />
+</Grid.RowDefinitions>
                             <Grid.Children>
                                 <Grid Margin="0,0,0,8" Row="0">
                                     <Grid.Children>
@@ -2070,7 +2071,105 @@
                                         </DataGrid>
                                     </Border.Child>
                                 </Border>
-                            </Grid.Children>
+                                                            <Border
+                                    Grid.Row="4"
+                                    Margin="0,10,0,0"
+                                    Padding="12,10,12,8"
+                                    Background="#FFFFFFFF"
+                                    BorderBrush="#FFE4E8EF"
+                                    BorderThickness="1"
+                                    CornerRadius="4">
+                                    <Border.Child>
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Grid.Children>
+                                                <StackPanel
+                                                    Grid.Row="0"
+                                                    Margin="0,0,0,6"
+                                                    Orientation="Horizontal">
+                                                    <StackPanel.Children>
+                                                        <TextBlock
+                                                            FontSize="12"
+                                                            Foreground="#FF4B5563"
+                                                            Text="设备流量（软路由 · 每小时自动记一次 · 只读计数器不发包）" />
+                                                        <TextBlock
+                                                            x:Name="TxtDevTrafficInfo"
+                                                            Margin="12,0,0,0"
+                                                            VerticalAlignment="Center"
+                                                            FontSize="12"
+                                                            Foreground="#FF2F6FED"
+                                                            Text="" />
+                                                        <Button
+                                                            x:Name="BtnDevTrafficRefresh"
+                                                            Height="26"
+                                                            Margin="16,0,0,0"
+                                                            Padding="12,0"
+                                                            Click="OnDevTrafficRefresh">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <StackPanel.Children>
+                                                                    <TextBlock VerticalAlignment="Center" Text="刷新（立刻采样）" />
+                                                                </StackPanel.Children>
+                                                            </StackPanel>
+                                                        </Button>
+                                                    </StackPanel.Children>
+                                                </StackPanel>
+                                                <DataGrid
+                                                    x:Name="DgDevTraffic"
+                                                    Grid.Row="1"
+                                                    AutoGenerateColumns="False"
+                                                    Background="#00FFFFFF"
+                                                    BorderThickness="0"
+                                                    CanUserReorderColumns="False"
+                                                    CanUserSortColumns="False"
+                                                    FontSize="12"
+                                                    GridLinesVisibility="Horizontal"
+                                                    HeadersVisibility="Column"
+                                                    HorizontalGridLinesBrush="#FFEDF0F5"
+                                                    IsReadOnly="True"
+                                                    RowHeight="28">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTextColumn
+                                                            Width="170"
+                                                            Binding="{Binding Name}"
+                                                            Header="设备" />
+                                                        <DataGridTextColumn
+                                                            Width="120"
+                                                            Binding="{Binding Ip}"
+                                                            Header="IP" />
+                                                        <DataGridTextColumn
+                                                            Width="58"
+                                                            Binding="{Binding State}"
+                                                            Header="状态" />
+                                                        <DataGridTextColumn
+                                                            Width="95"
+                                                            Binding="{Binding TodayUp}"
+                                                            Header="今日 ↑" />
+                                                        <DataGridTextColumn
+                                                            Width="95"
+                                                            Binding="{Binding TodayDown}"
+                                                            Header="今日 ↓" />
+                                                        <DataGridTextColumn
+                                                            Width="105"
+                                                            Binding="{Binding SpanUp}"
+                                                            Header="近30天 ↑" />
+                                                        <DataGridTextColumn
+                                                            Width="105"
+                                                            Binding="{Binding SpanDown}"
+                                                            Header="近30天 ↓" />
+                                                        <DataGridTextColumn
+                                                            Width="*"
+                                                            Binding="{Binding Last}"
+                                                            Header="最后在线" />
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+                                            </Grid.Children>
+                                        </Grid>
+                                    </Border.Child>
+                                </Border>
+</Grid.Children>
                         </Grid>
                     </TabItem>
                     <TabItem AutomationProperties.Name="连接">

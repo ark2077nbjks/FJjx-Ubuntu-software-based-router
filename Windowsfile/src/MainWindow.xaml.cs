@@ -293,6 +293,10 @@ public partial class MainWindow : Window
                 _connAutoStamp = now;
                 OnConnRefresh(this, new RoutedEventArgs());
             }
+            else if (page == "流量" && (now - _devTrafficStamp).TotalSeconds >= 60)
+            {
+                await LoadDevTrafficAsync(false);
+            }
             else if (page == "日志" && (now - _logAutoStamp).TotalSeconds >= 600)
             {
                 _logAutoStamp = now;
@@ -300,6 +304,68 @@ public partial class MainWindow : Window
             }
         }
         catch (Exception ex) { AppPaths.Log("[自动刷新] " + ex.Message); }
+    }
+
+    public sealed class DevTrafficRow
+    {
+        public string Name { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public string State { get; set; } = "";
+        public string TodayUp { get; set; } = "";
+        public string TodayDown { get; set; } = "";
+        public string SpanUp { get; set; } = "";
+        public string SpanDown { get; set; } = "";
+        public string Last { get; set; } = "";
+    }
+
+    private DateTime _devTrafficStamp = DateTime.MinValue;
+
+    private async void OnDevTrafficRefresh(object sender, RoutedEventArgs e) => await LoadDevTrafficAsync(true);
+
+    /// <summary>设备流量：sample=true 时先让远端立刻采一次，再取汇总</summary>
+    private async Task LoadDevTrafficAsync(bool sample)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtDevTrafficInfo.Text = "软路由没连上"; return; }
+
+        BtnDevTrafficRefresh.IsEnabled = false;
+        TxtDevTrafficInfo.Text = sample ? "正在采样…" : "读取中…";
+        var detail = "";
+        try
+        {
+            var (ok, d) = await RouterCtl.RunAsync(cfg, sample ? "traffic-now 30" : "traffic-summary 30");
+            detail = d;
+            if (!ok) { TxtDevTrafficInfo.Text = "× " + detail; return; }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            var rows = new List<DevTrafficRow>();
+            foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
+            {
+                var mac = el.GetProperty("mac").GetString() ?? "";
+                var name = (el.GetProperty("name").GetString() ?? "").Trim();
+                var online = el.GetProperty("online").GetInt32() == 1;
+                rows.Add(new DevTrafficRow
+                {
+                    Name = name.Length > 0 ? name : mac,
+                    Ip = el.GetProperty("ip").GetString() ?? "",
+                    State = online ? "在线" : "离线",
+                    TodayUp = FmtShort(el.GetProperty("today_up").GetInt64()),
+                    TodayDown = FmtShort(el.GetProperty("today_down").GetInt64()),
+                    SpanUp = FmtShort(el.GetProperty("span_up").GetInt64()),
+                    SpanDown = FmtShort(el.GetProperty("span_down").GetInt64()),
+                    Last = el.GetProperty("last").GetString() ?? "",
+                });
+            }
+            DgDevTraffic.ItemsSource = rows;
+            TxtDevTrafficInfo.Text = $"√ {rows.Count} 台 · {DateTime.Now:HH:mm:ss} 更新";
+            _devTrafficStamp = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            TxtDevTrafficInfo.Text = "× 解析失败，看日志";
+            AppPaths.Log("[流量] 设备流量解析失败：" + ex.Message + " 原文=" + detail);
+        }
+        finally { BtnDevTrafficRefresh.IsEnabled = true; }
     }
 
     private async Task TrafficTickAsync()
@@ -835,6 +901,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         // 无线频段页：进页开始 2 秒热检测，离页立刻停
         if (page == "无线频段") StartApWatch();
         else StopApWatch();
+
+        // 流量页：进来读一次设备流量汇总（不采样，秒出）
+        if (page == "流量") _ = LoadDevTrafficAsync(false);
 
         // 设备页：进来按当前网络重填扫描网段（换过网就不会再扫旧网段）
         if (page == "设备") _ = RefreshScanCidrAsync(false);

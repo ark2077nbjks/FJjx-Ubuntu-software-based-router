@@ -25,6 +25,14 @@ if [ -f "$DIR/grayrouter-watch.sh" ]; then
   install -m 755 "$DIR/grayrouter-watch.sh" /usr/local/bin/grayrouter-watch.sh && echo "   已更新 grayrouter-watch.sh"
 fi
 
+echo "③.6 装每设备流量采样（每小时，只读计数器）"
+install -m 755 "$DIR/grayrouter-traffic.py" /usr/local/bin/grayrouter-traffic.py || exit 1
+install -m 755 "$DIR/grayrouter-traffic.sh" /usr/local/bin/grayrouter-traffic.sh || exit 1
+install -m 644 "$DIR/grayrouter-traffic.service" /etc/systemd/system/grayrouter-traffic.service || exit 1
+install -m 644 "$DIR/grayrouter-traffic.timer" /etc/systemd/system/grayrouter-traffic.timer || exit 1
+mkdir -p /var/lib/grayrouter/traffic
+systemctl enable --now grayrrouter-traffic.timer >/dev/null 2>&1 || true
+
 echo "④ 清掉调试残留规则"
 nft delete table inet dbgprobe 2>/dev/null && echo "   删了 dbgprobe" || true
 nft delete table inet gray_dev 2>/dev/null && echo "   重建 gray_dev" || true
@@ -40,4 +48,5 @@ nft list table inet gray_dev 2>/dev/null | head -12
 echo "--- 设备清单 ---"
 bash /usr/local/bin/grayrouter-devices.sh list
 echo ""
-echo "√ 装好了。回面板「设备」页，点「刷新」就能看到「流量」和「操作」两列。"
+echo "√ 装好了。回面板「设备」页点「刷新」看拉黑/流量；「流量」页下方新增「设备流量」表。"
+systemctl list-timers grayrouter-traffic.timer --no-pager | head -3
