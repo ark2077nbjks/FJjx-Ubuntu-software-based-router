@@ -1,0 +1,10 @@
+[Unit]
+Description=GrayRouter 双 WAN 健康检查（每 15 秒）
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=15
+AccuracySec=1
+
+[Install]
+WantedBy=timers.target

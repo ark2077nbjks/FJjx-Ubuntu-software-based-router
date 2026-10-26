@@ -4,7 +4,13 @@
 #   WAN_IF = 默认路由出口；没有默认路由时取第一个「已插线的有线口」
 #   LAN_IF = AP 模式网口；没有 AP 时取第一个 192.168.x 地址的口；再不行退回 WAN_IF
 
-WAN_IF=$(ip -o -4 route show default 2>/dev/null | awk '{print $5; exit}')
+# 优先用角色解析（支持手动指定）；没装就退回自动探测
+if [ -x /usr/local/bin/grayrouter-roles.sh ]; then
+  _R=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null)
+  WAN_IF=$(printf '%s\n' "$_R" | sed -n 's/^WAN_IF=//p')
+  LAN_IF=$(printf '%s\n' "$_R" | sed -n 's/^LAN_IF=//p')
+fi
+[ -n "${WAN_IF:-}" ] || WAN_IF=$(ip -o -4 route show default 2>/dev/null | awk '{print $5; exit}')
 if [ -z "$WAN_IF" ]; then
   for d in /sys/class/net/*; do
     n=${d##*/}
@@ -15,7 +21,7 @@ if [ -z "$WAN_IF" ]; then
   done
 fi
 
-LAN_IF=$(for i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
+[ -n "${LAN_IF:-}" ] || LAN_IF=$(for i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
            [ "$(iw dev "$i" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && { echo "$i"; break; }
          done)
 [ -z "$LAN_IF" ] && LAN_IF=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\./ {print $2; exit}')

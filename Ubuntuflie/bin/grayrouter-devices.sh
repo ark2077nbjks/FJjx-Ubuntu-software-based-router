@@ -13,6 +13,9 @@ JSON=/etc/grayrouter/devices.json
 LOG=/var/log/grayrouter-devices.log
 # LAN 口自动探测：优先 AP 模式网口，其次 192.168.x 地址的口，最后兜底 wlp2s0
 IFACE=${GR_LAN_IF:-}
+if [ -z "$IFACE" ] && [ -x /usr/local/bin/grayrouter-roles.sh ]; then
+  IFACE=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null | sed -n 's/^LAN_IF=//p')
+fi
 if [ -z "$IFACE" ]; then
   for i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
     [ "$(iw dev "$i" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && { IFACE=$i; break; }
