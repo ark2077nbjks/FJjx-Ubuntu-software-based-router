@@ -286,7 +286,7 @@ public partial class MainWindow : Window
         foreach (var b in buckets) max = Math.Max(max, Math.Max(b[0], b[1]));
         if (max <= 0) max = 0.1;
 
-        const double padLeft = 56, padRight = 10, padTop = 8, padBottom = 20;
+        const double padLeft = 56, padRight = 10, padTop = 8, padBottom = 30;
         double plotW = w - padLeft - padRight, plotH = h - padTop - padBottom;
         double slot = plotW / 24, barW = Math.Max(3, Math.Min(12, slot * 0.32));
 
@@ -321,8 +321,46 @@ public partial class MainWindow : Window
                 CvTraffic.Children.Add(Bar(x0 + barW + 2, baseY - hUp, barW, hUp, "#2F6FED",
                     $"{hour:D2}:00  上行 {Traffic.SizeText(buckets[hour][1])}"));
 
-            if (hour % 3 == 0)
-                AddCanvasText($"{hour}", x0 - 2, baseY + 3, 11, "#9AA5B4");
+        }
+
+        // ---- 时间轴：底部基线 + 每个整点标签（窄了自动隔一个/隔两个） ----
+        CvTraffic.Children.Add(new System.Windows.Shapes.Line
+        {
+            X1 = padLeft, X2 = padLeft + plotW,
+            Y1 = padTop + plotH, Y2 = padTop + plotH,
+            Stroke = new SolidColorBrush(Color.FromRgb(0xD8, 0xDE, 0xE8)),
+            StrokeThickness = 1,
+        });
+
+        var label = new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        int step = slot >= 40 ? 1 : slot >= 26 ? 2 : 3;
+        for (int hour = 0; hour < 24; hour += step)
+        {
+            var txt = $"{hour:D2}:00";
+            var ft = new FormattedText(txt, System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, label, 10.5, new SolidColorBrush(Color.FromRgb(0x9A, 0xA5, 0xB4)),
+                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            double cx = padLeft + hour * slot + slot / 2;
+            double x = Math.Max(padLeft - 2, Math.Min(padLeft + plotW - ft.Width, cx - ft.Width / 2));
+            var t = new TextBlock { Text = txt, FontSize = 10.5, Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA5, 0xB4)) };
+            Canvas.SetLeft(t, x);
+            Canvas.SetTop(t, padTop + plotH + 7);
+            CvTraffic.Children.Add(t);
+        }
+
+        // 每小时竖线（淡淡的，帮眼睛对齐柱子）
+        if (slot >= 30)
+        {
+            for (int hour = 1; hour < 24; hour++)
+            {
+                double x = padLeft + hour * slot;
+                CvTraffic.Children.Add(new System.Windows.Shapes.Line
+                {
+                    X1 = x, X2 = x, Y1 = padTop, Y2 = padTop + plotH,
+                    Stroke = new SolidColorBrush(Color.FromRgb(0xF3, 0xF5, 0xF9)),
+                    StrokeThickness = 1,
+                });
+            }
         }
     }
 
@@ -977,6 +1015,190 @@ public partial class MainWindow : Window
 
     // ---------------- 一键网络诊断 ----------------
 
+    // ===== 看门狗（grayrouter-watch）：一键装到远端 / 触发重启 / 切模式 =====
+
+    private async void OnWatchInstall(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured)
+        {
+            MessageBox.Show("先在「连接」页填好远端地址和用户名。", "安装看门狗",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        BtnWatchInstall.IsEnabled = false;
+        try
+        {
+            AppPaths.Log("[看门狗] 开始安装到 " + cfg.Target);
+            var (ok, detail) = await Watchdog.InstallAsync(cfg);
+            AppPaths.Log("[看门狗] " + (ok ? "上传成功" : "失败") + "：" + detail);
+            WaitWatchInstall(detail);
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[看门狗] 安装异常: " + ex.Message);
+            MessageBox.Show("装不上：" + ex.Message, "安装看门狗", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            BtnWatchInstall.IsEnabled = true;
+        }
+    }
+
+    /// <summary>终端里输密码装完后，等几秒自动刷新状态（不做轮询，只等一次）</summary>
+    private async void WaitWatchInstall(string detail)
+    {
+        MessageBox.Show(detail + "\n\n装完关掉那个窗口后，这里会自动刷新。", "安装看门狗",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+        await Task.Delay(TimeSpan.FromSeconds(25));
+        try { await RefreshAsync(); } catch { }
+    }
+
+    private async void OnWatchRestart(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) return;
+        BtnWatchRestart.IsEnabled = false;
+        try
+        {
+            var (ok, detail) = await Watchdog.RestartApAsync(cfg);
+            AppPaths.Log("[看门狗] 重启 AP 请求：" + detail);
+            MessageBox.Show(detail, "重启 AP", MessageBoxButton.OK,
+                ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("发不出去：" + ex.Message, "重启 AP", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            BtnWatchRestart.IsEnabled = true;
+        }
+    }
+
+    private async void OnWatchAuto(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) return;
+
+        var target = StatusGather.LastWatchMode == "act" ? "observe" : "act";
+        BtnWatchAuto.IsEnabled = false;
+        try
+        {
+            AppPaths.Log("[看门狗] 切换 → " + target);
+            var (ok, detail) = await Watchdog.SetModeAsync(cfg, target);
+            if (!ok)
+                MessageBox.Show(detail, "自动执行", MessageBoxButton.OK, MessageBoxImage.Warning);
+            await Task.Delay(1200);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("切不了：" + ex.Message, "自动执行", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            BtnWatchAuto.IsEnabled = true;
+        }
+    }
+
+    /// <summary>把开关和文字刷成远端当前模式</summary>
+    private void UpdateWatchUi()
+    {
+        var act = StatusGather.LastWatchMode == "act";
+        ImgWatchSwitch.Source = new System.Windows.Media.Imaging.BitmapImage(
+            new Uri(act ? "pack://application:,,,/icons/switch_on.png" : "pack://application:,,,/icons/switch_off.png"));
+        TxtWatchAuto.Text = act ? "自动执行：开" : "自动执行：关";
+    }
+
+    // ---------------- 软路由模式（远端遥控） ----------------
+
+    private async void OnSwitchRouter(object sender, RoutedEventArgs e) =>
+        await RunModeAsync("mode-router", "切到软路由模式",
+            "切到软路由模式前，请先确认：\n\n" +
+            "① 主力机已经从校园网注销（一号一设备，不注销会互相挤断）\n" +
+            "② 主力机的有线网卡已禁用 / 网线已拔\n" +
+            "③ minipc 的有线口已经插上校园网网线\n\n" +
+            "切过去之后，这台电脑要连 Gray-Router 才能继续管理它。\n\n继续吗？");
+
+    private async void OnSwitchHotspot(object sender, RoutedEventArgs e) =>
+        await RunModeAsync("mode-hotspot", "回滚到热点模式",
+            "回滚到热点模式前，请先确认：\n\n" +
+            "① 主力机已经开好手机热点（名字要能对上）\n" +
+            "② 回滚后 minipc 会去连那个热点\n\n" +
+            "如果热点没开，minipc 会掉线，只能接显示器救回来。\n\n继续吗？");
+
+    private async void OnHarden(object sender, RoutedEventArgs e) =>
+        await RunModeAsync("harden", "加固伪装",
+            "加固伪装会改：主机名随机化 / 关 mDNS / TTL 规则等。\n\n" +
+            "不会断网，但相关服务会重启一下。\n\n继续吗？");
+
+    private void SetModeButtons(bool enabled)
+    {
+        BtnSwitchRouter.IsEnabled = enabled;
+        BtnSwitchHotspot.IsEnabled = enabled;
+        BtnHarden.IsEnabled = enabled;
+    }
+
+    private async Task RunModeAsync(string cmd, string title, string ask)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) return;
+
+        if (!await RouterCtl.IsInstalledAsync(cfg))
+        {
+            var yes = MessageBox.Show(
+                "这个按钮需要在远端装一个权限助手（一次 sudo 密码，之后就不用再输）。\n\n现在就装吗？",
+                title, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes) == MessageBoxResult.Yes;
+            if (!yes) return;
+
+            var (iok, idetail) = await RouterCtl.InstallAsync(cfg);
+            TxtModeHint.Text = idetail;
+            AppPaths.Log("[遥控] 安装：" + idetail);
+            if (!iok)
+            {
+                MessageBox.Show(idetail, "安装助手", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            MessageBox.Show("文件已传好，请在刚弹出的终端里输一次密码。\n装完再点一次这个按钮就行。",
+                title, MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MessageBox.Show(ask, title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        SetModeButtons(false);
+        TxtModeHint.Text = "正在执行…";
+        try
+        {
+            AppPaths.Log("[遥控] 发送 " + cmd);
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, cmd, p => TxtModeHint.Text = p);
+            TxtModeHint.Text = (ok ? "√ " : "× ") + detail;
+            AppPaths.Log("[遥控] " + cmd + " → " + (ok ? "OK" : "FAIL") + "：" + detail);
+            if (!ok)
+                MessageBox.Show(detail, title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            await Task.Delay(1500);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            TxtModeHint.Text = "× " + ex.Message;
+        }
+        finally { SetModeButtons(true); }
+    }
+
+    /// <summary>把「当前：…」刷成远端模式</summary>
+    private void UpdateModeUi()
+    {
+        TxtModeNow.Text = StatusGather.LastMode switch
+        {
+            "router" => "当前：软路由（AP）",
+            "hotspot" => "当前：热点模式（客户端）",
+            _ => "当前：— 读不到（远端没连上？）",
+        };
+    }
+
     private void OnDiagnose(object sender, RoutedEventArgs e)
     {
         try
@@ -1428,6 +1650,8 @@ public partial class MainWindow : Window
         {
             _busy = false;
             BtnRefresh.IsEnabled = true;
+            UpdateWatchUi();
+            UpdateModeUi();
         }
     }
 
@@ -2342,53 +2566,127 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                var g = new Grid { Margin = new Thickness(0, 1, 0, 1) };
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                // 有没有图标都占同一格，保证所有行结构一致、标签列永远对齐
-                FrameworkElement iconCell;
-                if (!string.IsNullOrEmpty(row.Icon))
-                    iconCell = new Image
-                    {
-                        Source = new BitmapImage(new Uri($"pack://application:,,,/icons/{row.Icon}")),
-                        Width = 14, Height = 14,
-                        VerticalAlignment = VerticalAlignment.Top,
-                        Margin = new Thickness(0, 3, 0, 0),
-                    };
-                else
-                    iconCell = new Border { Width = 14, Height = 14 };
-                Grid.SetColumn(iconCell, 0);
-                g.Children.Add(iconCell);
-
-                var lbl = new TextBlock
+                if (row.Children != null && row.Children.Count > 0)
                 {
-                    Text = row.Label,
-                    FontSize = 12.5,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x94, 0xA3)),
-                    TextAlignment = TextAlignment.Right,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Margin = new Thickness(0, 0, 10, 0),
-                    VerticalAlignment = VerticalAlignment.Top,
-                };
-                var val = new TextBlock
-                {
-                    Text = row.Value,
-                    FontSize = 12.5,
-                    Foreground = new SolidColorBrush(row.Sub ? Color.FromRgb(0x8A, 0x94, 0xA3) : Color.FromRgb(0x1F, 0x2A, 0x3D)),
-                    TextWrapping = row.Sub ? TextWrapping.NoWrap : TextWrapping.Wrap,
-                    TextTrimming = row.Sub ? TextTrimming.CharacterEllipsis : TextTrimming.None,
-                    LineHeight = 19,
-                    ToolTip = row.Value,
-                };
-                Grid.SetColumn(lbl, 1);
-                Grid.SetColumn(val, 2);
-                g.Children.Add(lbl);
-                g.Children.Add(val);
-                host.Children.Add(g);
+                    host.Children.Add(BuildCollapsible(row));
+                    continue;
+                }
+
+                host.Children.Add(BuildRow(row));
             }
         }
+    }
+
+    /// <summary>普通一行：图标 + 标签 + 值</summary>
+    private FrameworkElement BuildRow(NetPanel.Services.StatusRow row)
+    {
+        var g = new Grid { Margin = new Thickness(0, 1, 0, 1) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // 有没有图标都占同一格，保证所有行结构一致、标签列永远对齐
+        FrameworkElement iconCell;
+        if (!string.IsNullOrEmpty(row.Icon))
+            iconCell = new Image
+            {
+                Source = new BitmapImage(new Uri($"pack://application:,,,/icons/{row.Icon}")),
+                Width = 14, Height = 14,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 0, 0),
+            };
+        else
+            iconCell = new Border { Width = 14, Height = 14 };
+        Grid.SetColumn(iconCell, 0);
+        g.Children.Add(iconCell);
+
+        var lbl = new TextBlock
+        {
+            Text = row.Label,
+            FontSize = 12.5,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x94, 0xA3)),
+            TextAlignment = TextAlignment.Right,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 10, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        var val = new TextBlock
+        {
+            Text = row.Value,
+            FontSize = 12.5,
+            Foreground = new SolidColorBrush(row.Sub ? Color.FromRgb(0x8A, 0x94, 0xA3) : Color.FromRgb(0x1F, 0x2A, 0x3D)),
+            TextWrapping = row.Sub ? TextWrapping.NoWrap : TextWrapping.Wrap,
+            TextTrimming = row.Sub ? TextTrimming.CharacterEllipsis : TextTrimming.None,
+            LineHeight = 19,
+            ToolTip = row.Value,
+        };
+        Grid.SetColumn(lbl, 1);
+        Grid.SetColumn(val, 2);
+        g.Children.Add(lbl);
+        g.Children.Add(val);
+        return g;
+    }
+
+    /// <summary>可折叠组：一行灰底标题 + 箭头，点一下展开/收起（默认收起）</summary>
+    private FrameworkElement BuildCollapsible(NetPanel.Services.StatusRow row)
+    {
+        var wrap = new StackPanel();
+
+        var hg = new Grid();
+        hg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        hg.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var txt = new TextBlock
+        {
+            Text = row.Label + "  " + row.Value,
+            FontSize = 12.5,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x3A, 0x45, 0x58)),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var arrow = new TextBlock
+        {
+            Text = "▸",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98)),
+            Margin = new Thickness(8, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(txt, 0);
+        Grid.SetColumn(arrow, 1);
+        hg.Children.Add(txt);
+        hg.Children.Add(arrow);
+
+        var head = new Button
+        {
+            Content = hg,
+            Background = new SolidColorBrush(Color.FromRgb(0xF4, 0xF6, 0xFA)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xE1, 0xE6, 0xEF)),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(9, 4, 9, 4),
+            Margin = new Thickness(0, 2, 0, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            ToolTip = "点一下展开 / 收起",
+        };
+        System.Windows.Automation.AutomationProperties.SetName(head, (row.Label + " " + row.Value).Trim());
+
+        var body = new StackPanel
+        {
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(10, 3, 0, 2),
+        };
+        foreach (var kid in row.Children!) body.Children.Add(BuildRow(kid));
+
+        head.Click += (_, _) =>
+        {
+            var show = body.Visibility != Visibility.Visible;
+            body.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            arrow.Text = show ? "▾" : "▸";
+        };
+
+        wrap.Children.Add(head);
+        wrap.Children.Add(body);
+        return wrap;
     }
 
     private void InitSpeedTab()

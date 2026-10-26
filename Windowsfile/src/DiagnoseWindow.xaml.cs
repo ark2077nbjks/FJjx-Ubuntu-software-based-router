@@ -47,6 +47,7 @@ public partial class DiagnoseWindow : Window
 
             _verdict = res.Verdict;
             TxtVerdict.Text = res.Verdict;
+            TxtSub.Text = res.Advice ?? "";
             TxtSub.Text = (string.IsNullOrEmpty(res.Egress) ? "" : $"出口 IP {res.Egress}   ·   ") +
                           $"{DateTime.Now:HH:mm:ss} 完成，共 {_items.Count} 项";
             var color = _items.Any(x => x.State == "fail") ? "#E5484D"

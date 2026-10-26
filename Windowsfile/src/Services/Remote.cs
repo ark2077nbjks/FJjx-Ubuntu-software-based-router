@@ -61,7 +61,7 @@ public sealed class RemoteConfig
 public static class Remote
 {
     /// <summary>ssh 公共参数</summary>
-    private static string BaseArgs(RemoteConfig cfg, bool batchMode)
+    public static string BaseArgs(RemoteConfig cfg, bool batchMode)
     {
         var sb = new StringBuilder();
         sb.Append($"-o ConnectTimeout=4 -o StrictHostKeyChecking=accept-new -p {cfg.Port} ");
@@ -113,6 +113,12 @@ echo.
 echo ==== 会话结束，按任意键关闭 ====
 pause >nul
 """);
+
+    /// <summary>在真终端里跑一条远端命令（要 sudo 时用，密码由用户敲）</summary>
+    public static void RunInTerminal(RemoteConfig cfg, string title, string remoteCommand) =>
+        StartConsole($"@echo off\nchcp 65001 >nul\ntitle {title}\n" +
+                     $"ssh.exe -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new -p {cfg.Port} {cfg.Target} \"{remoteCommand}\"\n" +
+                     "chcp 936 >nul\necho.\necho ==== 结束，按任意键关闭 ====\npause >nul\n");
 
     /// <summary>
     /// 把脚本写成临时 bat，再用 start 开一个新控制台跑它。

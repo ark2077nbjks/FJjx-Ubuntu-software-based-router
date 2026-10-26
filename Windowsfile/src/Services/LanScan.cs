@@ -100,7 +100,7 @@ public static class LanScan
         return (secs / 86400) + " 天";
     }
 
-    /// <summary>清掉 DHCP 主机名里的随机后缀、下划线，例如 HUAWEI_P30-132378065a → HUAWEI P30</summary>
+    /// <summary>清掉 DHCP 主机名里的随机后缀、下划线，例如 android-132378065a → android</summary>
     public static string CleanName(string raw)
     {
         var s = (raw ?? "").Trim();
