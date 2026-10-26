@@ -1334,7 +1334,10 @@ public partial class MainWindow : Window
             var lines = text.Replace("\r\n", "\n").Split('\n');
             // 最新的排在上面，省得往下滚
             TxtLog.Text = string.Join("\n", lines.Reverse());
-            TxtLogInfo.Text = $"{fi.Length / 1024.0:F1} KB · {lines.Length} 行 · 最后修改 {fi.LastWriteTime:MM-dd HH:mm:ss}";
+            int rolls = 0;
+            for (int k = 1; k < AppPaths.MaxLogFiles; k++)
+                if (File.Exists(AppPaths.RolledLogFile(k))) rolls++;
+            TxtLogInfo.Text = $"{AppPaths.Human(fi.Length)} / 上限 {AppPaths.Human(AppPaths.MaxLogBytes)} · 历史 {rolls} 份 · {lines.Length} 行 · 最后修改 {fi.LastWriteTime:MM-dd HH:mm:ss}";
             TxtLog.ScrollToHome();
         }
         catch (Exception ex) { TxtLog.Text = "读取日志失败：" + ex.Message; }
@@ -1350,17 +1353,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            var f = AppPaths.LogFile;
-            if (!File.Exists(f)) { TxtFoot.Text = "没有日志可清"; return; }
-            long size = new FileInfo(f).Length;
+            var size = AppPaths.CurrentLogSize;
+            if (size <= 0) { TxtFoot.Text = "没有日志可清"; return; }
             if (MessageBox.Show(
-                    $"确定清空日志吗？当前 {size / 1024.0:F1} KB。\n\n会先把旧内容备份成 app.log.1，再清空。",
+                    $"清空当前日志？当前 {AppPaths.Human(size)}。\n\n旧内容会变成 app.log.1 保留下来（最多保留 {AppPaths.MaxLogFiles} 份，更旧的自动丢弃）。",
                     "清空日志", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
-            File.Copy(f, f + ".1", overwrite: true);
-            File.WriteAllText(f, "", new UTF8Encoding(false));
-            AppPaths.Log("日志已手动清空（旧内容备份在 app.log.1）");
+            AppPaths.RotateNow();
+            AppPaths.Log("日志已手动清空（旧内容在 app.log.1）");
             LoadLog();
             TxtFoot.Text = "√ 日志已清空，旧内容在 app.log.1";
         }
@@ -1369,6 +1370,55 @@ public partial class MainWindow : Window
             AppPaths.Log("清空日志失败: " + ex.Message);
             MessageBox.Show("清空失败：\n" + ex.Message, "清空日志", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private void OnExportLog(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "导出日志",
+            Filter = "日志文件 (*.log)|*.log|文本文件 (*.txt)|*.txt",
+            FileName = $"NetPanel-日志-{DateTime.Now:yyyyMMdd-HHmmss}.log",
+            DefaultExt = ".log",
+        };
+        if (!string.IsNullOrWhiteSpace(_cfg.LastExportDir) && System.IO.Directory.Exists(_cfg.LastExportDir))
+            dlg.InitialDirectory = _cfg.LastExportDir;
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            // UTF-8 带 BOM：记事本打开中文不乱码
+            File.WriteAllText(dlg.FileName, AppPaths.BuildExportText(), new UTF8Encoding(true));
+            _cfg.LastExportDir = System.IO.Path.GetDirectoryName(dlg.FileName) ?? "";
+            _cfg.Save();
+            AppPaths.Log("日志已导出: " + dlg.FileName);
+            TxtFoot.Text = "√ 日志已导出到 " + dlg.FileName;
+            MessageBox.Show("已导出到：\n" + dlg.FileName, "导出日志", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("导出日志失败: " + ex.Message);
+            MessageBox.Show("导出失败：\n" + ex.Message, "导出日志", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void OnDeleteAllLogs(object sender, RoutedEventArgs e)
+    {
+        var size = AppPaths.CurrentLogSize;
+        int rolls = 0;
+        for (int k = 1; k < AppPaths.MaxLogFiles; k++)
+            if (File.Exists(AppPaths.RolledLogFile(k))) rolls++;
+
+        if (MessageBox.Show(
+                $"把 app.log 和 {rolls} 份历史日志全部删掉？\n\n当前文件 {AppPaths.Human(size)}，删除后不可恢复。",
+                "删除全部日志", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        var (ok, n) = AppPaths.DeleteAllLogs();
+        AppPaths.Log("已删除全部日志（" + n + " 个文件）");
+        LoadLog();
+        TxtFoot.Text = ok ? $"√ 已删除 {n} 个日志文件" : "× 部分文件删除失败（可能被占用）";
     }
 
     private void OnOpenLogDir(object sender, RoutedEventArgs e)
