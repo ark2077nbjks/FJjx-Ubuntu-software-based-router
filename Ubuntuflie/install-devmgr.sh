@@ -20,6 +20,11 @@ if [ -f /usr/local/bin/grayrouter-ctl.sh ]; then
 fi
 install -m 755 "$DIR/grayrouter-ctl.sh" /usr/local/bin/grayrouter-ctl.sh || exit 1
 
+echo "③.5 更新看门狗（网口自动探测版）"
+if [ -f "$DIR/grayrouter-watch.sh" ]; then
+  install -m 755 "$DIR/grayrouter-watch.sh" /usr/local/bin/grayrouter-watch.sh && echo "   已更新 grayrouter-watch.sh"
+fi
+
 echo "④ 清掉调试残留规则"
 nft delete table inet dbgprobe 2>/dev/null && echo "   删了 dbgprobe" || true
 nft delete table inet gray_dev 2>/dev/null && echo "   重建 gray_dev" || true

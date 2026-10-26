@@ -807,6 +807,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             _campusPrefilled = true;
             _ = PrefillCampusUserAsync();
+            _ = RefreshCampusIfacesAsync();
         }
 
         if (page == "其他") RefreshOtherRuntime();
@@ -1966,7 +1967,6 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             TxtCampusUser.Text = c.Username;
             CmbCampusIsp.SelectionChanged += (_, _) =>
                 TxtCampusIspCustom.Visibility = CmbCampusIsp.SelectedIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
-            CmbCampusIf.SelectedIndex = c.Interface == "wlp2s0" ? 1 : 0;
             CmbCampusIsp.SelectedIndex = c.UserType switch
             {
                 "unicom" => 0, "cmcc" => 1, "telecom" => 2,
@@ -1983,6 +1983,70 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             }
         }
         catch { }
+    }
+
+    private DateTime _cifStamp = DateTime.MinValue;
+
+    /// <summary>校园网网卡下拉：优先用远端探测到的 WAN 口，其次本机物理网卡（5 分钟缓存）</summary>
+    private async Task RefreshCampusIfacesAsync(bool force = false)
+    {
+        if (!force && CmbCampusIf.Items.Count > 0 && (DateTime.Now - _cifStamp).TotalSeconds < 300) return;
+
+        var names = new List<string>();
+        var wan = "";
+        try
+        {
+            var cfg = RemoteConfig.Load();
+            if (cfg.IsConfigured)
+            {
+                var cmd = "ip -o -4 route show default 2>/dev/null | awk '{print \"WAN=\" $5; exit}'; "
+                        + "ip -o link show up 2>/dev/null | sed -n 's/^[0-9]*: \\([^:@]*\\).*/IF=\\1/p' | grep -vE '^(IF=(lo|docker|veth|br-|virbr|tun|tap|wg))'";
+                var args = Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + cmd + "\"";
+                var run = await Remote.RunAsync("ssh.exe", args, 8);
+                foreach (var raw in (run.Out ?? "").Split('\n'))
+                {
+                    var t = raw.Trim();
+                    if (t.StartsWith("WAN=")) wan = t.Substring(4).Trim();
+                    else if (t.StartsWith("IF="))
+                    {
+                        var n = t.Substring(3).Trim();
+                        if (n.Length > 0 && n != "lo" && !names.Contains(n)) names.Add(n);
+                    }
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                var ty = ni.NetworkInterfaceType;
+                if (ty == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet
+                    || ty == System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211)
+                {
+                    var n = ni.Name;
+                    if (!names.Any(x => x.Equals(n, StringComparison.OrdinalIgnoreCase))) names.Add(n);
+                }
+            }
+        }
+        catch { }
+
+        if (names.Count == 0) return;
+
+        var saved = "";
+        try { saved = CampusLogin.LoadCreds().Interface ?? ""; } catch { }
+        var want = names.Contains(saved) ? saved
+                 : (!string.IsNullOrWhiteSpace(wan) && names.Contains(wan) ? wan
+                 : (names.Contains("eno1") ? "eno1" : names[0]));
+
+        CmbCampusIf.Items.Clear();
+        foreach (var n in names) CmbCampusIf.Items.Add(new ComboBoxItem { Content = n });
+        foreach (ComboBoxItem it in CmbCampusIf.Items)
+            if ((string)it.Content == want) { CmbCampusIf.SelectedItem = it; break; }
+
+        _cifStamp = DateTime.Now;
+        AppPaths.Log($"[校园网] 网卡候选 {string.Join("/", names)}，默认 {want}（远端 WAN={wan}）");
     }
 
     private bool _campusPrefilled;
