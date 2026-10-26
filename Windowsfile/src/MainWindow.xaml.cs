@@ -33,7 +33,7 @@ public partial class MainWindow : Window
     // ---- 流量（每 15 秒读一次网卡计数器，只在本机内存里算，不发包）----
     private readonly DispatcherTimer _trafficTick = new() { Interval = TimeSpan.FromSeconds(15) };
     // 无线频段页：2 秒一次 iw 读取（只读，离页即停）
-    private readonly DispatcherTimer _apTick = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _apTick = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool _apBusy;
     private static readonly SolidColorBrush ApGray = new(Color.FromRgb(0x9A, 0xA3, 0xB2));
     private static readonly SolidColorBrush ApWarn = new(Color.FromRgb(0xC0, 0x50, 0x2F));
@@ -1483,7 +1483,7 @@ public partial class MainWindow : Window
             "① 主力机已经从校园网注销（一号一设备，不注销会互相挤断）\n" +
             "② 主力机的有线网卡已禁用 / 网线已拔\n" +
             "③ minipc 的有线口已经插上校园网网线\n\n" +
-            "切过去之后，这台电脑要连 Gray-Router 才能继续管理它。\n\n继续吗？");
+            "切过去之后，这台电脑要连 Gray-Router 才能继续管理它。\n\n如果 5 分钟后连不上：接显示器 + 键盘，执行 sudo bash ~/router-down.sh 回滚。\n\n继续吗？");
 
     private async void OnSwitchHotspot(object sender, RoutedEventArgs e) =>
         await RunModeAsync("mode-hotspot", "回滚到热点模式",
