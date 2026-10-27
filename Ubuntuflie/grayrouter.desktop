@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=GrayRouter 状态
+Comment=查看软路由运行状态
+Exec=bash -c '/opt/grayrouter/bin/router-status.sh; echo; read -p "按回车关闭"'
+Icon=network-wireless
+Terminal=true
+Categories=Network;

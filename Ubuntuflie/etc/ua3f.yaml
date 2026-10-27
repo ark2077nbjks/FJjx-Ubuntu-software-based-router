@@ -1,0 +1,12 @@
+# GrayRouter 伪装层配置（UA3F）
+# 只做 IP 层改写：IPID 重写 + 明文 HTTP 的 UA 改写
+# 不做 MitM —— 不装证书、不解密 HTTPS，客户端零配置
+server-mode: TPROXY
+bind-address: 0.0.0.0
+port: 1080
+include-lan-routes: false
+rewrite-mode: GLOBAL
+user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+ipid: true
+l3-rewrite:
+    ipid: true

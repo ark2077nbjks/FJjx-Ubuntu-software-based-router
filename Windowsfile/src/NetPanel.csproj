@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>NetPanel</AssemblyName>
+    <RootNamespace>NetPanel</RootNamespace>
+    <ApplicationManifest Condition="'$(NoAdmin)' != 'true'">app.manifest</ApplicationManifest>
+    <Version>1.50</Version>
+    <ApplicationIcon>icons\NetPanel.ico</ApplicationIcon>
+    <Product>网络面板</Product>
+    <AssemblyTitle>网络面板 NetPanel</AssemblyTitle>
+  </PropertyGroup>
+
+  <!-- WinForms 会塞全局 using（Forms / Drawing），会跟 WPF 的 Button/Panel/Color/Application 撞名，这里去掉 -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SSH.NET" Version="2025.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="assets\GrayRouter.zip" LogicalName="deploy.zip" Condition="Exists('assets\GrayRouter.zip')" />
+    <!-- 仓库里没有 assets 时，用 Ubuntuflie 下的发布包 -->
+    <EmbeddedResource Include="..\..\Ubuntuflie\GrayRouter-1.50.zip" LogicalName="deploy.zip" Condition="!Exists('assets\GrayRouter.zip')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="icons\*.png" />
+    <Resource Include="icons\NetPanelTray.ico" />
+  </ItemGroup>
+
+
+  <!-- 发布版不带调试符号：避免 exe 里残留构建机的绝对路径（隐私） -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GrayRouter 体检
+Name[zh_CN]=GrayRouter 体检
+Comment=检查这台机器能不能装（只读，不改任何东西）
+Exec=bash -c 'd=$(dirname "%k"); cd "$d"; x-terminal-emulator -e bash -c "bash grayrouter-doctor.sh; read -p \"回车关闭\""'
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;
