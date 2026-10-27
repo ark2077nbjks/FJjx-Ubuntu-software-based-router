@@ -166,7 +166,7 @@ sudo bash uninstall.sh -y                 # 全部清理干净
 
 ## Windows 面板（可选，但好用）
 
-`Windowsfile/NetPanel.exe` 是单文件程序，双击即用（会请求管理员权限，因为要读网卡和 WiFi 信息）。需要 **.NET 10 桌面运行时**；不想装运行时的，用 Release 里的 `NetPanel-selfcontained-*.exe`（约 73 MB，双击即用）。
+面板是单文件程序（从 **Releases** 下载 `NetPanel.exe`，仓库不再存构建产物），双击即用（会请求管理员权限，因为要读网卡和 WiFi 信息）。需要 **.NET 10 桌面运行时**；不想装运行时的，用 Release 里的 `NetPanel-selfcontained-*.exe`（约 73 MB，双击即用）。
 
 十四个栏目（v1.35）：
 
