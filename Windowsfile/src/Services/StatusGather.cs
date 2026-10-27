@@ -101,6 +101,14 @@ public static class StatusGather
         return obs ? $"√ {hm} 正常（观察模式）" : $"√ {hm} 正常";
     }
 
+    /// <summary>CLIENTS 是逗号分隔的 IP 列表 → 显示成「N 台」，避免一长串</summary>
+    private static string ClientCn(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "0 台";
+        int n = s.Split(',', StringSplitOptions.RemoveEmptyEntries).Length;
+        return n + " 台";
+    }
+
     private static string CnUptime(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return s;
@@ -378,7 +386,7 @@ public static class StatusGather
                     secMini.Rows.Add(new StatusRow { Label = "LAN", Value = $"{d.GetValueOrDefault("LAN_IF")} {d.GetValueOrDefault("LAN_IP")}"
                                                                     + (string.IsNullOrWhiteSpace(ssid) ? "" : $" · 热点 {ssid}") });
                     secMini.Rows.Add(new StatusRow { Label = "转发", Value = (d.GetValueOrDefault("LAN_ACTIVE") == "1" ? "√ 已启动" : "× 没起来")
-                                                                    + $" · 客户端 {d.GetValueOrDefault("CLIENTS")}" });
+                                                                    + $" · 客户端 {ClientCn(d.GetValueOrDefault("CLIENTS"))}" });
                     secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTP {d.GetValueOrDefault("OUT_HTTP")} · ip_forward={d.GetValueOrDefault("IP_FORWARD")}" });
 
                     // 伪装层（UA3F：IPID 重写；不做 MitM）
@@ -411,7 +419,7 @@ public static class StatusGather
                     secMini.Rows.Add(new StatusRow { Label = "有线", Value = $"{d.GetValueOrDefault("WAN_IP")}  "
                         + $"{(d.GetValueOrDefault("CARRIER") == "1" ? "已插线" : "没插线")}  {d.GetValueOrDefault("SPEED")} Mb/s" });
                     secMini.Rows.Add(new StatusRow { Label = "无线", Value = $"{d.GetValueOrDefault("AP_TYPE")} / {d.GetValueOrDefault("AP_SSID")}  {d.GetValueOrDefault("AP_IP")}" });
-                    secMini.Rows.Add(new StatusRow { Label = "客户端", Value = $"{d.GetValueOrDefault("CLIENTS")} · 转发 ip_forward={d.GetValueOrDefault("FWD")}" });
+                    secMini.Rows.Add(new StatusRow { Label = "客户端", Value = $"{ClientCn(d.GetValueOrDefault("CLIENTS"))} · 转发 ip_forward={d.GetValueOrDefault("FWD")}" });
                     secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTPS {d.GetValueOrDefault("HTTPS")} · 出口 {d.GetValueOrDefault("EGRESS")}" });
 
                     // 伪装层（旧版采集脚本不带这项时显示“—”，不误报未运行）

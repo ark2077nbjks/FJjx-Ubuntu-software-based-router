@@ -22,10 +22,13 @@ public partial class App : Application
     private static System.Threading.Mutex? _single;
 
     /// <summary>--page=名字：启动后直接切到指定页（截图/自检用）</summary>
-    public static string? StartPage;
+    public static string? StartPageName;
 
     /// <summary>--deploywin=主机：启动后直接打开一键部署窗口（截图/自测用）</summary>
     public static string? DeployWin;
+
+    /// <summary>--page=网卡：启动后直接切到某个页面（截图/自测用）</summary>
+    public static string? StartPage;
 
     protected override void OnStartup(StartupEventArgs e)
     {

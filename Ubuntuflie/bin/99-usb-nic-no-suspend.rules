@@ -1,0 +1,4 @@
+# RTL8153 USB 有线网卡：禁止 USB 自动挂起
+# 原因：r8152 驱动遇到 autosuspend 会掉线（内核提交 0fbd79c、AskUbuntu #1044127）
+# 只匹配 0bda:8153（8153 网卡），不碰同为 0bda 的蓝牙 0bda:c821
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="8153", TEST=="power/control", ATTR{power/control}="on"

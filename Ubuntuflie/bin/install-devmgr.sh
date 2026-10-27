@@ -7,6 +7,22 @@ TS=$(date +%m%d_%H%M)
 
 [ "$(id -u)" -eq 0 ] || { echo "× 请用 sudo 跑：sudo bash $0"; exit 1; }
 
+echo "⓪ 先给当前配置存一份快照（出问题可回滚）"
+if [ -f "$DIR/grayrouter-snapshot.sh" ]; then
+  install -m 755 "$DIR/grayrouter-snapshot.sh" /usr/local/bin/grayrouter-snapshot.sh || true
+  /usr/local/bin/grayrouter-snapshot.sh save pre-install >/dev/null 2>&1 && echo "   已存：pre-install" || echo "   （快照没存成，继续）"
+fi
+
+echo "⓪.5 遥控通道保险（/run 被清也能自己恢复）"
+install -m 644 "$DIR/60-grayrouter.conf" /etc/tmpfiles.d/grayrouter.conf || true
+systemd-tmpfiles --create /etc/tmpfiles.d/grayrouter.conf >/dev/null 2>&1 || true
+mkdir -p /run/grayrouter
+[ -f /run/grayrouter/request ] || : > /run/grayrouter/request
+chmod 666 /run/grayrouter/request
+[ -f /run/grayrouter/result.json ] || echo '{}' > /run/grayrouter/result.json
+chmod 644 /run/grayrouter/result.json
+echo "   请求文件："$(ls -l /run/grayrouter/request | awk '{print $1, $3}')
+
 echo "① 装脚本"
 install -m 755 "$DIR/grayrouter-devices.sh" /usr/local/bin/grayrouter-devices.sh || exit 1
 
@@ -22,10 +38,23 @@ if [ -f /usr/local/bin/grayrouter-ctl.sh ]; then
 fi
 install -m 755 "$DIR/grayrouter-ctl.sh" /usr/local/bin/grayrouter-ctl.sh || exit 1
 
-echo "③.5 更新看门狗（网口自动探测版）"
+echo "③.5 更新看门狗（自愈版：LAN/AP/SSH/路由/外网）"
 if [ -f "$DIR/grayrouter-watch.sh" ]; then
   install -m 755 "$DIR/grayrouter-watch.sh" /usr/local/bin/grayrouter-watch.sh && echo "   已更新 grayrouter-watch.sh"
 fi
+
+echo "③.8 USB 网卡禁止自动挂起（udev）"
+if [ -f "$DIR/99-usb-nic-no-suspend.rules" ]; then
+  install -m 644 "$DIR/99-usb-nic-no-suspend.rules" /etc/udev/rules.d/99-usb-nic-no-suspend.rules
+  udevadm control --reload 2>/dev/null || true
+  echo "     √ 已装：RTL8153 网卡保持 power/control=on（不影响蓝牙）"
+else
+  echo "     （没找到规则文件，跳过）"
+fi
+
+echo "③.9 每设备流量计数表（nft 动态集合，覆盖有线+无线）"
+install -m 755 "$DIR/grayrouter-acct.sh" /usr/local/bin/grayrouter-acct.sh || exit 1
+bash /usr/local/bin/grayrouter-acct.sh apply || echo "   （计数表没建成，看报错）"
 
 echo "③.6 装每设备流量采样（每小时，只读计数器）"
 install -m 755 "$DIR/grayrouter-traffic.py" /usr/local/bin/grayrouter-traffic.py || exit 1
@@ -70,6 +99,21 @@ systemctl enable grayrouter-devices.service >/dev/null 2>&1
 bash /usr/local/bin/grayrouter-devices.sh apply || exit 1
 
 echo ""
+echo "④.5 有线 LAN（USB 网卡）开机规则"
+install -m 755 "$DIR/lan-usb.sh" /usr/local/bin/lan-usb.sh || exit 1
+install -m 644 "$DIR/grayrouter-lan2.service" /etc/systemd/system/grayrouter-lan2.service || exit 1
+systemctl daemon-reload
+systemctl enable --now grayrrouter-lan2.service >/dev/null 2>&1 || true
+echo "   有线 LAN：$(systemctl is-active grayrrouter-lan2.service 2>/dev/null || echo 未知)"
+
+install -m 644 "$DIR/grayrouter-watch.service" /etc/systemd/system/grayrouter-watch.service || true
+
+echo "⑤.5 看门狗 + 快照"
+systemctl enable --now grayrrouter-watch.timer >/dev/null 2>&1 || true
+systemctl restart grayrrouter-watch.timer >/dev/null 2>&1 || true
+echo "   看门狗：$(systemctl is-active grayrrouter-watch.timer 2>/dev/null || echo 未知)"
+ls -1t /var/lib/grayrouter/snapshots/*.tar.gz 2>/dev/null | head -3 | sed 's/^/   快照：/'
+
 echo "⑥ 验证"
 nft list table inet gray_dev 2>/dev/null | head -12
 echo "--- 设备清单 ---"

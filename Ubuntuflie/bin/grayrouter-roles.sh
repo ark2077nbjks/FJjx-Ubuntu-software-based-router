@@ -24,14 +24,22 @@ detect_wan() {
   done
 }
 detect_lan() {
-  local n t
-  for n in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
+  local n t cn
+  # 1) 真正的 AP 模式网口（注意 iw dev 输出带缩进）
+  for n in $(iw dev 2>/dev/null | sed -n 's/^[[:space:]]*Interface //p'); do
     t=$(iw dev "$n" info 2>/dev/null | awk '/type/{print $2}')
     [ "$t" = "AP" ] && { echo "$n"; return; }
   done
-  # 没有 AP：取第一个 192.168.x 地址的口
-  n=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\./ {print $2; exit}')
-  echo "${n:-}"
+  # 2) 没有 AP：优先「无线口上有 192.168 地址」的
+  for n in $(iw dev 2>/dev/null | sed -n 's/^[[:space:]]*Interface //p'); do
+    ip -4 -o addr show dev "$n" 2>/dev/null | grep -q 'inet 192\.168\.' && { echo "$n"; return; }
+  done
+  # 3) 最后兜底：任意 192.168 口，但排除被配成共享 LAN 的（LAN-*）
+  for n in $(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\./ {print $2}'); do
+    cn=$(nmcli -g GENERAL.CONNECTION dev show "$n" 2>/dev/null | head -1)
+    case "$cn" in LAN-*) continue ;; esac
+    echo "$n"; return
+  done
 }
 
 WAN_AUTO=$(detect_wan); LAN_AUTO=$(detect_lan)

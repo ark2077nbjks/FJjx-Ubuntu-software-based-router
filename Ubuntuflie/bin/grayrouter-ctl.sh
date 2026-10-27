@@ -9,6 +9,7 @@ set -uo pipefail
 
 REQ=/run/grayrouter/request
 RES=/run/grayrouter/result.json
+RDIR=/run/grayrouter/res
 SEEN=/run/grayrouter/ctl.seen
 LOG=/var/log/grayrouter-ctl.log
 
@@ -40,15 +41,23 @@ log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 write_res() {   # $1=state  $2=exit  $3=msg
   STATE="$1" CODE="$2" RID="$rid" CMD="$cmd" MSG="$3"
-  export STATE CODE RID CMD MSG
+  export STATE CODE RID CMD MSG RES RDIR
+  mkdir -p "$RDIR" 2>/dev/null; chmod 777 "$RDIR" 2>/dev/null
   python3 - <<'PY' 2>/dev/null || echo "{\"state\":\"$1\",\"exit\":$2}" > "$RES"
 import json, os, time
-json.dump({"state": os.environ["STATE"], "exit": int(os.environ["CODE"]),
-           "id": os.environ["RID"], "cmd": os.environ["CMD"],
-           "msg": os.environ["MSG"], "ts": int(time.time())},
-          open("/run/grayrouter/result.json", "w"), ensure_ascii=False)
+d = {"state": os.environ["STATE"], "exit": int(os.environ["CODE"]),
+     "id": os.environ["RID"], "cmd": os.environ["CMD"],
+     "msg": os.environ["MSG"], "ts": int(time.time())}
+for p in (os.environ["RES"], os.path.join(os.environ["RDIR"], os.environ["RID"] + ".json")):
+    try:
+        json.dump(d, open(p, "w"), ensure_ascii=False)
+    except Exception:
+        pass
 PY
   chmod 644 "$RES" 2>/dev/null
+  chmod 644 "$RDIR/$rid.json" 2>/dev/null
+  # 只留最近 40 份，别把 /run 塞满
+  ls -t "$RDIR"/*.json 2>/dev/null | tail -n +41 | xargs -r rm -f 2>/dev/null
 }
 
 # 设备命令的参数只允许 MAC / 数字，防止被塞奇怪的东西
@@ -77,6 +86,11 @@ case "$cmd" in
   roles-set)     SCRIPT=/usr/local/bin/grayrouter-roles.sh; ARGS="set ${rest:-auto}"; DEVCAP=1 ;;
   rescue)        SCRIPT=/usr/local/bin/grayrouter-rescue.sh; ARGS=""; DEVCAP=1 ;;
   auth-now)      SCRIPT=/usr/local/bin/grayrouter-auth.sh; ARGS=""; DEVCAP=1 ;;
+  acct-status)   SCRIPT=/usr/local/bin/grayrouter-acct.sh; ARGS="status"; DEVCAP=1 ;;
+  acct-apply)    SCRIPT=/usr/local/bin/grayrouter-acct.sh; ARGS="apply"; DEVCAP=1 ;;
+  snapshot-save)  SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="save panel"; DEVCAP=1 ;;
+  snapshot-list)  SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="list"; DEVCAP=1 ;;
+  snapshot-restore) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore ${rest:-latest}"; DEVCAP=1 ;;
   usbnet-now)    SCRIPT=/usr/local/bin/grayrouter-usbnet-now.sh; ARGS=""; DEVCAP=1 ;;
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
   wanfail-set)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="set ${rest:-}"; DEVCAP=1 ;;
