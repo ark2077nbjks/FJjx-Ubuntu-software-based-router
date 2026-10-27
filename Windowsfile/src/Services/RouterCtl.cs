@@ -21,6 +21,7 @@ set -uo pipefail
 
 REQ=/run/grayrouter/request
 RES=/run/grayrouter/result.json
+RDIR=/run/grayrouter/res
 SEEN=/run/grayrouter/ctl.seen
 LOG=/var/log/grayrouter-ctl.log
 
@@ -52,15 +53,22 @@ log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 write_res() {   # $1=state  $2=exit  $3=msg
   STATE="$1" CODE="$2" RID="$rid" CMD="$cmd" MSG="$3"
-  export STATE CODE RID CMD MSG
+  export STATE CODE RID CMD MSG RES RDIR
+  mkdir -p "$RDIR" 2>/dev/null; chmod 777 "$RDIR" 2>/dev/null
   python3 - <<'PY' 2>/dev/null || echo "{\"state\":\"$1\",\"exit\":$2}" > "$RES"
 import json, os, time
-json.dump({"state": os.environ["STATE"], "exit": int(os.environ["CODE"]),
-           "id": os.environ["RID"], "cmd": os.environ["CMD"],
-           "msg": os.environ["MSG"], "ts": int(time.time())},
-          open("/run/grayrouter/result.json", "w"), ensure_ascii=False)
+d = {"state": os.environ["STATE"], "exit": int(os.environ["CODE"]),
+     "id": os.environ["RID"], "cmd": os.environ["CMD"],
+     "msg": os.environ["MSG"], "ts": int(time.time())}
+for p in (os.environ["RES"], os.path.join(os.environ["RDIR"], os.environ["RID"] + ".json")):
+    try:
+        json.dump(d, open(p, "w"), ensure_ascii=False)
+    except Exception:
+        pass
 PY
   chmod 644 "$RES" 2>/dev/null
+  chmod 644 "$RDIR/$rid.json" 2>/dev/null
+  ls -t "$RDIR"/*.json 2>/dev/null | tail -n +41 | xargs -r rm -f 2>/dev/null
 }
 
 # 设备命令的参数只允许 MAC，防止被塞奇怪的东西
@@ -244,11 +252,39 @@ echo "   日志：/var/log/grayrouter-ctl.log"
         => RunAsync(cfg, "wifi-2g " + channel, progress);
 
     /// <summary>发一条命令，等远端执行完（最多等 4 分钟）</summary>
+    private static readonly SemaphoreSlim _gate = new(1, 1);
+    private static int _seq;
+
+    /// <summary>连续失败次数：给面板的轮询做指数退避用（成功一次就归零）</summary>
+    public static int Fails { get; private set; }
+
+    /// <summary>按失败次数放大轮询间隔：基础 3s → 6/12/24…，封顶 maxSec</summary>
+    public static TimeSpan Backoff(TimeSpan baseIv, int maxSec = 300)
+    {
+        if (Fails <= 0) return baseIv;
+        double s = baseIv.TotalSeconds * Math.Pow(2, Math.Min(Fails, 6));
+        return TimeSpan.FromSeconds(Math.Min(maxSec, Math.Max(baseIv.TotalSeconds, s)));
+    }
+
+    /// <summary>同一条通道同一时刻只能有一个请求：远端只会执行「最新一条」，并发会互相顶掉。</summary>
     public static async Task<(bool Ok, string Detail)> RunAsync(RemoteConfig cfg, string cmd, Action<string>? progress = null)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var r = await RunCoreAsync(cfg, cmd, progress);
+            if (r.Ok) Fails = 0;
+            else Fails = Math.Min(Fails + 1, 6);
+            return r;
+        }
+        finally { _gate.Release(); }
+    }
+
+    private static async Task<(bool Ok, string Detail)> RunCoreAsync(RemoteConfig cfg, string cmd, Action<string>? progress = null)
     {
         if (!cfg.IsConfigured) return (false, "还没配置远端地址");
 
-        var id = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var id = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + (_seq++ % 1000).ToString("D3");
         var write = "echo '" + id + " " + cmd + "' > /run/grayrouter/request 2>/dev/null && echo CTL_OK";
         var (rc, o, e) = await Remote.RunAsync("ssh.exe",
             Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + write + "\"");
@@ -263,7 +299,7 @@ echo "   日志：/var/log/grayrouter-ctl.log"
             progress?.Invoke(i < 5 ? "正在执行…" : "还在跑（" + ((i + 1) * 3) + " 秒）…");
 
             var (rc2, out2, _) = await Remote.RunAsync("ssh.exe",
-                Remote.BaseArgs(cfg, true) + cfg.Target + " \"cat /run/grayrouter/result.json 2>/dev/null\"");
+                Remote.BaseArgs(cfg, true) + cfg.Target + " \"cat /run/grayrouter/res/" + id + ".json 2>/dev/null || cat /run/grayrouter/result.json 2>/dev/null\"");
             if (rc2 != 0 || string.IsNullOrWhiteSpace(out2))
             {
                 // 切模式/切频段时远端会断开几十秒，连不上是正常的；但别死等到 4 分钟

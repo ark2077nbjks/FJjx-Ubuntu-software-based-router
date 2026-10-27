@@ -20,6 +20,7 @@ ROLES=/usr/local/bin/grayrouter-roles.sh
 ENABLE=0
 WANS=""             # 空 = 自动发现（空格分隔，顺序即优先级）
 PREFER=""           # 空/auto = 自动选；填网口 = 钉死这条
+PRIO=""             # 面板调整的顺序（只影响先后，不影响自动发现）
 CHECK_IP=223.5.5.5
 STATIC_IP=192.168.42.100
 STATIC_GW=192.168.42.129
@@ -45,6 +46,19 @@ is_wifi() { [ -e "/sys/class/net/$1/wireless" ]; }
 is_ap() { [ "$(iw dev "$1" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ]; }
 
 # ---------- 自动发现候选出口 ----------
+iface_kind() {  # $1=网口 → phone | usb-eth | wired | wifi | other
+  local c="$1" drv=""
+  case "$c" in rndis*|wwan*) echo phone; return ;; esac
+  drv=$(readlink -f "/sys/class/net/$c/device/driver" 2>/dev/null | xargs -r basename)
+  case "$drv" in
+    rndis_host|cdc_ether|cdc_ncm|cdc_mbim) echo phone; return ;;
+    r8152|ax88179_178a|asix|mt76xx|lan78xx|mos7720) echo usb-eth; return ;;
+  esac
+  if is_wifi "$c"; then echo wifi; return; fi
+  case "$c" in enx*|usb*) echo usb-eth; return ;; esac
+  echo wired
+}
+
 discover() {
   local p l n out=""
   p=$(role_wan); l=$(role_lan)
@@ -55,6 +69,13 @@ discover() {
     [ "$c" = "lo" ] && return
     [ "$c" = "$l" ] && return
     [ -n "$(gw_of "$c")" ] || return
+    # 被面板配成共享 LAN 的网口（ipv4.method=shared）不能当出口
+    local _cn _mm
+    _cn=$(nmcli -g GENERAL.CONNECTION dev show "$c" 2>/dev/null | head -1)
+    [ -n "$_cn" ] && _mm=$(nmcli -g ipv4.method con show "$_cn" 2>/dev/null | head -1)
+    [ "${_mm:-}" = "shared" ] && return
+    # USB 有线网卡（RTL8153/AX88179 这类）默认当 LAN，不抢出口；要当 WAN 请在面板里手动指定出口网口
+    if [ "$c" != "$(role_wan)" ] && [ "$(iface_kind "$c")" = "usb-eth" ]; then return; fi
     case " $out " in *" $c "*) return ;; esac
     out="$out $c"
   }
@@ -80,6 +101,18 @@ discover() {
 
 resolve_wans() {  # → ALL（空格分隔，按优先级）
   if [ -n "${WANS// /}" ]; then ALL="$WANS"; else ALL=$(discover); fi
+  # 面板里调过顺序：只把 PRIO 里的网口提到前面，其余保持发现顺序（新网口仍会自动加入）
+  if [ -n "${PRIO// /}" ]; then
+    local _tmp="$ALL" _o=""
+    for _c in $PRIO; do
+      case " $_tmp " in *" $_c "*)
+        _o="$_o $_c"
+        _tmp=$(echo "$_tmp" | tr ' ' '\n' | grep -vx "$_c" | tr '\n' ' ')
+        ;;
+      esac
+    done
+    ALL=$(echo "$_o $_tmp" | tr -s ' ' | sed 's/^ //;s/ $//')
+  fi
   [ -n "${PREFER// /}" ] && [ "$PREFER" != "auto" ] && [ -d "/sys/class/net/$PREFER" ] && \
     ALL="$PREFER $(echo "$ALL" | tr ' ' '\n' | grep -vx "$PREFER" | tr '\n' ' ')"
 }
@@ -93,8 +126,9 @@ probe() {  # $1=网口 → "ok lat"
   lip=$(ip -4 -o addr show dev "$ifc" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
   [ -z "$lip" ] && { echo "0 -"; return; }
   t0=$(date +%s%N)
-  if ! ping -I "$lip" -c 1 -W 2 -q "$CHECK_IP" >/dev/null 2>&1; then
-    code=$(curl -s -m 4 -o /dev/null -w '%{http_code}' --interface "$lip" \
+  # 必须绑“网口名”而不是源地址：绑源地址时内核仍然按默认路由选路，会假阳性
+  if ! ping -I "$ifc" -c 1 -W 2 -q "$CHECK_IP" >/dev/null 2>&1; then
+    code=$(curl -s -m 4 -o /dev/null -w '%{http_code}' --interface "$ifc" \
            http://connect.rom.miui.com/generate_204 2>/dev/null)
     [ "$code" = "204" ] || { echo "0 -"; return; }
   fi
@@ -139,6 +173,10 @@ ensure_usb_net() {
   local n name
   for n in $(ls /sys/class/net 2>/dev/null | grep -E '^(enx|usb|rndis|wwan)'); do
     ip -4 addr show dev "$n" 2>/dev/null | grep -q 'inet ' && continue
+    # 配成有线 LAN 的网口不参与「手机共享自动要地址」
+    case "$(nmcli -g GENERAL.CONNECTION dev show "$n" 2>/dev/null | head -1)" in LAN-*) continue ;; esac
+    # USB 有线网卡（RTL8153/AX88179 等）默认当 LAN，不当手机共享
+    [ "$(iface_kind "$n")" = "usb-eth" ] && continue
     [ "$(cat "/sys/class/net/$n/carrier" 2>/dev/null)" = "1" ] || continue
     name="USB共享-$n"
     if ! nmcli -t -f NAME con show 2>/dev/null | grep -qx "$name"; then
@@ -212,13 +250,22 @@ case "${1:-get}" in
     echo "ENABLE=$ENABLE"
     echo "MODE=$([ -n "${PREFER// /}" ] && [ "$PREFER" != auto ] && echo prefer || echo auto)"
     echo "PREFER=${PREFER:-auto}"
+    # ACTIVE 为空时（例如刚交回系统路由）用真实默认路由口兜底，别让面板显示“跟随系统”
+    if [ -z "$ACTIVE" ]; then
+      dflt=$(ip route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); exit}}')
+      [ -n "$dflt" ] && ACTIVE="$dflt"
+    fi
     echo "ACTIVE=$ACTIVE"
     n=0
     for ifc in $ALL; do
       n=$((n+1)); [ "$n" -gt 4 ] && break
       res=$(probe "$ifc")
       cidr=$(ip -4 -o addr show dev "$ifc" 2>/dev/null | awk '{print $4}' | head -1)
-      echo "WAN$n=$ifc|${res%% *}|${res##* }|$cidr"
+      case "$ifc" in
+        enx*|usb*|rndis*|wwan*) typ=USB共享 ;;
+        *) if is_wifi "$ifc"; then typ=无线; else typ=有线; fi ;;
+      esac
+      echo "WAN$n=$ifc|${res%% *}|${res##* }|$cidr|$typ|$n"
     done
     echo "COUNT=$n"
     echo "LAST_SWITCH=${LAST_SWITCH:-}"; echo "LAST_REASON=${LAST_REASON:-}"
@@ -233,15 +280,35 @@ case "${1:-get}" in
     else
       [ -d "/sys/class/net/${2:-}" ] || { echo "没这个网口：${2:-}"; exit 1; }
       resolve_wans
-      # 硬约束：手动切换前必须先探通，探不通直接拒绝，绝不把默认路由指到死路上
+      cidr_t=$(ip -4 -o addr show dev "$2" 2>/dev/null | awk '{print $4}' | head -1)
       chk=$(probe "$2")
+      # 校园网那条：探不通可能只是掉认证了，先认证一次再重探
+      if [ "${chk%% *}" != "1" ] && [ "${cidr_t#10.149.}" != "$cidr_t" ]; then
+        log "切到 $2 探不通，先尝试重新认证"
+        [ -x /usr/local/bin/grayrouter-auth.sh ] && /usr/local/bin/grayrouter-auth.sh >/dev/null 2>&1
+        sleep 3; chk=$(probe "$2")
+      fi
+      # 硬约束：手动切换前必须先探通，探不通直接拒绝，绝不把默认路由指到死路上
       if [ "${chk%% *}" != "1" ]; then
         log "拒绝手动切换到 $2（探测不通）"
         echo "拒绝切换：$2 现在探不通（ICMP 与 HTTP 204 都没通过），切过去会断网。"
         echo "先确认这条线真的能上网（手机开移动数据、热点开着），再切。"
         exit 3
       fi
-      set_active "$2" "手动指定" && echo "已切到 $2（延迟 ${chk##* } ms）"
+      prev="$ACTIVE"
+      set_active "$2" "手动指定"
+      sleep 3
+      vfy=$(probe "$2")
+      if [ "${vfy%% *}" != "1" ]; then
+        log "切到 $2 后验证失败，回滚"
+        if [ -n "$prev" ] && [ "$prev" != "$2" ] && [ -d "/sys/class/net/$prev" ] && \
+           [ "$(probe "$prev" | cut -d' ' -f1)" = "1" ]; then
+          set_active "$prev" "切换失败回滚"; echo "切换后验证失败，已回滚到 $prev"; exit 4
+        fi
+        ENABLE=0; restore_system; ACTIVE=""; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="切换失败回滚"; save_state
+        echo "切换后验证失败，已交回系统路由"; exit 4
+      fi
+      echo "已切到 $2（延迟 ${chk##* } ms）"
     fi ;;
   set)
     [ "$(id -u)" -eq 0 ] || { echo "需要 root"; exit 1; }
@@ -253,6 +320,7 @@ case "${1:-get}" in
       staticip) STATIC_IP="${v:-192.168.42.100}" ;;
       staticgw) STATIC_GW="${v:-192.168.42.129}" ;;
       wans)   WANS="$v" ;;
+      prio)   PRIO="$v" ;;
       failn)  FAIL_N="${v:-3}" ;; okn) OK_N="${v:-2}" ;;
       checkip) CHECK_IP="${v:-223.5.5.5}" ;;
       *) echo "不认识的配置项：$k"; exit 1 ;;

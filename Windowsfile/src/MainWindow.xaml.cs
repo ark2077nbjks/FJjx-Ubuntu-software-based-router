@@ -20,6 +20,13 @@ public partial class MainWindow : Window
     // 网卡热插拔轮询（8 秒一次，只查名字，很轻）
     // 网卡页改成纯手动：不再 8 秒轮询，进页查一次 + 点「刷新」才查
     private readonly DispatcherTimer _nicPoll = new() { Interval = TimeSpan.FromSeconds(8) };
+    // 线路表自动刷新（10 秒；只在网卡页跑，离页停）
+    private readonly DispatcherTimer _wanPoll = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _devTick = new() { Interval = TimeSpan.FromSeconds(3) };   // 设备页实时速率（只在页面可见时跑）
+    private readonly Dictionary<string, (long Up, long Down, DateTime At)> _devRatePrev = new();
+    private bool _devRateBusy;
+    private DateTime _rateLogAt = DateTime.MinValue;
+    private bool _wanLoading;
     private HashSet<string>? _knownNics;
 
     // ---- 托盘常驻 ----
@@ -42,7 +49,7 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _apTick = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool _apBusy;
-    private static readonly SolidColorBrush ApGray = new(Color.FromRgb(0x9A, 0xA3, 0xB2));
+    private static readonly SolidColorBrush ApGray = new(Color.FromRgb(0x9D, 0xAC, 0xC5));
     private static readonly SolidColorBrush ApWarn = new(Color.FromRgb(0xC0, 0x50, 0x2F));
     private static readonly SolidColorBrush ApInk = new(Color.FromRgb(0x1F, 0x27, 0x33));
     private static readonly SolidColorBrush ApSub = new(Color.FromRgb(0x6B, 0x74, 0x82));
@@ -80,7 +87,7 @@ public partial class MainWindow : Window
             await RefreshAsync();
             await LoadSavedWifiAsync();
             LoadLog();
-            _timer.Start();
+            if (CurrentPage == "状态") _timer.Start();
 
             if (App.DeployWin != null)   // --deploywin=主机：直接开部署窗口（截图/自测）
             {
@@ -90,12 +97,21 @@ public partial class MainWindow : Window
                 new DeployWindow(host, RemoteConfig.Load().User) { Owner = this }.Show();
             }
         };
-        _timer.Tick += async (_, _) => await RefreshAsync();
+        _timer.Tick += async (_, _) => { _timer.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(60)); await RefreshAsync(); };
+        _wanPoll.Tick += async (_, _) => { _wanPoll.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(10)); await LoadWanFailAsync(); };
+        _devTick.Tick += async (_, _) => { _devTick.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(3), 60); await PollDevRateAsync(); };
 
         _nicPoll.Tick += async (_, _) => await PollAdaptersAsync();   // 已停用（网卡页改手动），保留以免空引用
         InitSpeedTab();
+        Deactivated += (_, _) => PauseRemoteTicks();       // 失焦：全部远端轮询停（Chrome/Grafana 同一套做法）
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized) PauseRemoteTicks();
+        };
         Activated += (_, _) =>
         {
+            ResumeTicksForPage();
+            if (CurrentPage == "设备") _devTick.Start();
             if (CurrentPage == "状态" && (DateTime.Now - _lastNicProbe).TotalSeconds > 25)
                 _ = WatchNicsAsync();
             if (CurrentPage == "设备") _ = RefreshScanCidrAsync(false);   // 换网回来顺手校正
@@ -436,6 +452,11 @@ public partial class MainWindow : Window
             SelectRole(CmbRoleWan, wan);
             SelectRole(CmbRoleLan, lan);
 
+            var lanUsb = ifs.Where(i => i.Name.StartsWith("enx") && i.Ip.Length > 0).ToList();
+            TxtLanUsb.Text = lanUsb.Count == 0
+                ? "有线 LAN：未接（USB 网卡配成 LAN-USB 后，插线即用）"
+                : "有线 LAN：" + string.Join(" · ", lanUsb.Select(i => $"{i.Name}  {i.Ip}"));
+
             TxtRoleInfo.Text = mode == "manual"
                 ? $"手动：WAN={wan} LAN={lan}（自动探测：{wanAuto} / {lanAuto}）"
                 : $"自动：WAN={wan} LAN={lan}";
@@ -487,18 +508,38 @@ public partial class MainWindow : Window
 
     private bool _wanFailEnabled;
     private bool _wanFailBusy;
+    private bool _wanUiReady;
+    private string _wanActive = "";
+    private readonly List<string> _wanOrder = new();
     private readonly Dictionary<string, string> _wanCidr = new();
 
+    private static readonly SolidColorBrush WanGray = new(Color.FromRgb(0x4B, 0x55, 0x63));
+    private static readonly SolidColorBrush WanHint = new(Color.FromRgb(0x8A, 0x99, 0xB8));
+    private static readonly SolidColorBrush WanOn = new(Color.FromRgb(0x18, 0xA0, 0x58));
+    private static readonly SolidColorBrush WanOff = new(Color.FromRgb(0x9D, 0xAC, 0xC5));
+
+    /// <summary>读远端多 WAN 状态，刷新线路表 + 策略卡</summary>
     private async Task LoadWanFailAsync()
+    {
+        if (_wanLoading) return;
+        _wanLoading = true;
+        try { await LoadWanFailCoreAsync(); }
+        catch (Exception ex) { TxtWanFailInfo.Text = "× " + ex.Message; }
+        finally { _wanLoading = false; }
+    }
+
+    private async Task LoadWanFailCoreAsync()
     {
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) { TxtWanFailInfo.Text = "软路由没连上"; return; }
         var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-get");
         if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
 
-        _wanFailEnabled = false; var prefer = "auto"; var active = "";
-        var rows = new List<(string Iface, bool Up, string Lat, string Cidr)>();
-        var last = ""; var reason = ""; var staticIp = ""; var staticGw = "";
+        _wanFailEnabled = false;
+        string active = "", staticIp = "", staticGw = "";
+        int failN = 3, okN = 2;
+        var rows = new List<(string Iface, bool Up, string Lat, string Cidr, string Type, int Prio)>();
+
         foreach (var raw in detail.Split('\n'))
         {
             var line = raw.Trim();
@@ -506,40 +547,127 @@ public partial class MainWindow : Window
             if (eq <= 0) continue;
             var k = line.Substring(0, eq); var v = line.Substring(eq + 1);
             if (k == "ENABLE") _wanFailEnabled = v == "1";
-            else if (k == "PREFER") prefer = v;
             else if (k == "ACTIVE") active = v;
             else if (k == "STATIC_IP") staticIp = v;
             else if (k == "STATIC_GW") staticGw = v;
-            else if (k == "LAST_SWITCH") last = v;
-            else if (k == "LAST_REASON") reason = v;
+            else if (k == "FAIL_N") int.TryParse(v, out failN);
+            else if (k == "OK_N") int.TryParse(v, out okN);
             else if (k.StartsWith("WAN"))
             {
                 var f = v.Split('|');
-                if (f.Length >= 3) rows.Add((f[0], f[1] == "1", f[2], f.Length > 3 ? f[3] : ""));
+                if (f.Length >= 3)
+                    rows.Add((f[0], f[1] == "1", f[2],
+                              f.Length > 3 ? f[3] : "",
+                              f.Length > 4 ? f[4] : "",
+                              f.Length > 5 && int.TryParse(f[5], out var pr) ? pr : 0));
             }
         }
+
+        _wanActive = active;
+        _wanOrder.Clear(); foreach (var r in rows) _wanOrder.Add(r.Iface);
+        _wanCidr.Clear(); foreach (var r in rows) _wanCidr[r.Iface] = r.Cidr;
 
         BtnWanFailToggle.Content = _wanFailEnabled ? "关闭自动切换" : "开启自动切换";
         if (TxtStaticIp.Text.Length == 0) TxtStaticIp.Text = staticIp.Length > 0 ? staticIp : "192.168.42.100";
         if (TxtStaticGw.Text.Length == 0) TxtStaticGw.Text = staticGw.Length > 0 ? staticGw : "192.168.42.129";
 
-        // 优先网口下拉：auto + 所有候选
-        var keep = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? prefer;
-        CmbWanPrefer.Items.Clear();
-        CmbWanPrefer.Items.Add(new ComboBoxItem { Content = "自动（按优先级）", Tag = "auto" });
-        foreach (var r in rows) CmbWanPrefer.Items.Add(new ComboBoxItem { Content = r.Iface, Tag = r.Iface });
-        foreach (ComboBoxItem it in CmbWanPrefer.Items)
-            if ((string?)it.Tag == keep) { CmbWanPrefer.SelectedItem = it; break; }
-        if (CmbWanPrefer.SelectedItem == null && CmbWanPrefer.Items.Count > 0) CmbWanPrefer.SelectedIndex = 0;
+        _wanUiReady = false;
+        if (CmbFailN.Items.Count == 0)
+            foreach (var n in new[] { 2, 3, 4, 5 }) CmbFailN.Items.Add(new ComboBoxItem { Content = n + " 次", Tag = n.ToString() });
+        if (CmbOkN.Items.Count == 0)
+            foreach (var n in new[] { 1, 2, 3 }) CmbOkN.Items.Add(new ComboBoxItem { Content = n + " 次", Tag = n.ToString() });
+        SelectComboTag(CmbFailN, failN.ToString());
+        SelectComboTag(CmbOkN, okN.ToString());
+        _wanUiReady = true;
 
-        _wanCidr.Clear();
-        foreach (var r in rows) _wanCidr[r.Iface] = r.Cidr;
-        var parts = rows.Select(r => $"{r.Iface} {(r.Up ? "√ " + r.Lat + " ms" : "×")}").ToList();
-        var list = parts.Count == 0 ? "没发现能上网的网口" : string.Join("  ·  ", parts);
-        var cur = string.IsNullOrEmpty(active) ? "跟随系统" : active;
-        TxtWanFailInfo.Text = $"候选：{list}    当前出口：{cur}"
-            + (_wanFailEnabled ? "" : "（自动切换未开）")
-            + (string.IsNullOrEmpty(last) ? "" : $"    最近切换 {last}（{reason}）");
+        RenderWanRows(rows);
+        TxtWanFailInfo.Text = _wanFailEnabled ? "自动切换已开启" : "自动切换未开启";
+    }
+
+    private void RenderWanRows(List<(string Iface, bool Up, string Lat, string Cidr, string Type, int Prio)> rows)
+    {
+        PanelWanRows.Children.Clear();
+        TxtWanEmpty.Text = rows.Count == 0 ? "没发现能当出口的网口：有线没插线、手机没开 USB 共享、无线也没连。" : "";
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var r = rows[i];
+            bool cur = r.Iface == _wanActive;
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 3) };
+            line.Children.Add(new TextBlock { Width = 150, VerticalAlignment = VerticalAlignment.Center, FontSize = 12.5, FontWeight = cur ? FontWeights.SemiBold : FontWeights.Normal, Text = cur ? r.Iface + "  ← 当前出口" : r.Iface });
+            line.Children.Add(new TextBlock { Width = 56, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = WanGray, Text = r.Type });
+            line.Children.Add(new TextBlock { Width = 150, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = WanGray, Text = r.Cidr.Length > 0 ? r.Cidr : "无地址" });
+            line.Children.Add(new TextBlock { Width = 56, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = r.Up ? WanOn : WanOff, Text = r.Up ? "● 通" : "○ 不通" });
+            line.Children.Add(new TextBlock { Width = 56, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = WanGray, Text = r.Up ? r.Lat + " ms" : "-" });
+            line.Children.Add(new TextBlock { Width = 48, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = WanHint, Text = (i + 1).ToString() });
+
+            var up = new Button { Content = "↑", Width = 26, Height = 24, Padding = new Thickness(0), Margin = new Thickness(2, 0, 0, 0), Tag = r.Iface + "|up", IsEnabled = i > 0, ToolTip = "提高优先级" };
+            up.Click += OnWanMove;
+            var dn = new Button { Content = "↓", Width = 26, Height = 24, Padding = new Thickness(0), Margin = new Thickness(2, 0, 0, 0), Tag = r.Iface + "|down", IsEnabled = i < rows.Count - 1, ToolTip = "降低优先级" };
+            dn.Click += OnWanMove;
+            var sw = new Button { Content = "设为出口", Height = 24, Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(6, 0, 0, 0), Tag = r.Iface, ToolTip = "先探活，通才切；切后 3 秒复验，失败自动回滚", IsEnabled = r.Up && !_wanFailBusy };
+            sw.Click += OnWanRowSwitch;
+
+            line.Children.Add(up); line.Children.Add(dn); line.Children.Add(sw);
+            PanelWanRows.Children.Add(line);
+        }
+    }
+
+    private async void OnWanRowSwitch(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string iface || _wanFailBusy) return;
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        _wanFailBusy = true; TxtWanFailInfo.Text = "正在切到 " + iface + "…";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch " + iface);
+        var msg = (ok ? "√ " : "× ") + detail.Trim();
+        if (ok)
+        {
+            var cidr = _wanCidr.TryGetValue(iface, out var cv) ? cv : "";
+            if (cidr.StartsWith("10.149."))
+            {
+                TxtWanFailInfo.Text = msg + "  正在认证校园网…";
+                var (aok, ad) = await RouterCtl.RunAsync(cfg, "auth-now");
+                msg += aok ? "  认证：" + ad.Trim().Replace("\n", " ") : "  认证失败：" + ad.Trim();
+            }
+        }
+        _wanFailBusy = false;
+        TxtWanFailInfo.Text = msg;
+        AppPaths.Log("[多WAN] 切到 " + iface + " → " + (ok ? "成功" : detail));
+        await LoadWanFailAsync();
+    }
+
+    private async void OnWanMove(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string tag) return;
+        var parts = tag.Split('|');
+        if (parts.Length < 2) return;
+        int i = _wanOrder.IndexOf(parts[0]);
+        int j = i + (parts[1] == "up" ? -1 : 1);
+        if (i < 0 || j < 0 || j >= _wanOrder.Count) return;
+        (_wanOrder[i], _wanOrder[j]) = (_wanOrder[j], _wanOrder[i]);
+
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        var (ok, d) = await RouterCtl.RunAsync(cfg, "wanfail-set prio " + string.Join(" ", _wanOrder));
+        AppPaths.Log("[多WAN] 优先级 → " + string.Join(" ", _wanOrder) + " · " + ok);
+        if (!ok) { TxtWanFailInfo.Text = "× " + d.Trim(); return; }
+        await LoadWanFailAsync();
+    }
+
+    private async void OnWanThresholdChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_wanUiReady) return;
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        var f = (CmbFailN.SelectedItem as ComboBoxItem)?.Tag as string;
+        var o = (CmbOkN.SelectedItem as ComboBoxItem)?.Tag as string;
+        if (f is not null) await RouterCtl.RunAsync(cfg, "wanfail-set failn " + f);
+        if (o is not null) await RouterCtl.RunAsync(cfg, "wanfail-set okn " + o);
+        AppPaths.Log("[多WAN] 阈值 失败" + f + " / 恢复" + o);
+        await LoadWanFailAsync();
+    }
+
+    private static void SelectComboTag(ComboBox cb, string tag)
+    {
+        foreach (ComboBoxItem it in cb.Items)
+            if ((string?)it.Tag == tag) { cb.SelectedItem = it; return; }
     }
 
     private async void OnUsbNow(object sender, RoutedEventArgs e)
@@ -547,7 +675,7 @@ public partial class MainWindow : Window
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) { TxtWanFailInfo.Text = "软路由没连上"; return; }
         BtnUsbNow.IsEnabled = false; TxtWanFailInfo.Text = "正在激活 USB 网卡…";
-        var (ok, detail) = await RouterCtl.RunAsync(cfg, "usbnet-now");
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "usbnet-now", m => AppPaths.Log("[多WAN] " + m));
         BtnUsbNow.IsEnabled = true;
         AppPaths.Log("[多WAN] 立即激活 USB：\n" + detail);
         MessageBox.Show(detail, ok ? "激活结果" : "激活失败", MessageBoxButton.OK,
@@ -565,8 +693,8 @@ public partial class MainWindow : Window
         var (ok1, d1) = await RouterCtl.RunAsync(cfg, "wanfail-set staticip " + ip);
         var (ok2, d2) = await RouterCtl.RunAsync(cfg, "wanfail-set staticgw " + gw);
         BtnStaticSave.IsEnabled = true;
-        AppPaths.Log($"[多WAN] 静态兜底 {ip} / {gw} → {ok1 && ok2}");
-        TxtWanFailInfo.Text = ok1 && ok2 ? $"√ 已保存：{ip} / {gw}" : "× " + d1 + " " + d2;
+        AppPaths.Log("[多WAN] 静态兜底 " + ip + " / " + gw + " → " + (ok1 && ok2));
+        TxtWanFailInfo.Text = ok1 && ok2 ? "√ 已保存：" + ip + " / " + gw : "× " + d1 + " " + d2;
         await LoadWanFailAsync();
     }
 
@@ -578,50 +706,22 @@ public partial class MainWindow : Window
         _wanFailBusy = true; BtnWanFailToggle.IsEnabled = false;
         var (ok, detail) = await RouterCtl.RunAsync(cfg, _wanFailEnabled ? "wanfail-set disable" : "wanfail-set enable");
         BtnWanFailToggle.IsEnabled = true; _wanFailBusy = false;
-        if (!ok) { TxtWanFailInfo.Text = "× " + detail; return; }
-        AppPaths.Log($"[多WAN] {(_wanFailEnabled ? "关闭" : "开启")}自动切换");
+        if (!ok) { TxtWanFailInfo.Text = "× " + detail.Trim(); return; }
+        AppPaths.Log("[多WAN] " + (_wanFailEnabled ? "关闭" : "开启") + "自动切换");
         await LoadWanFailAsync();
     }
 
-    private async void OnWanToBackup(object sender, RoutedEventArgs e)   // 切到所选
+    private async void OnRestoreSystem(object sender, RoutedEventArgs e)
     {
         if (_wanFailBusy) return;
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) return;
-        var sel = (CmbWanPrefer.SelectedItem as ComboBoxItem)?.Tag as string ?? "auto";
-        _wanFailBusy = true; BtnWanToBackup.IsEnabled = false;
-        var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch " + sel);
-        var msg = ok ? "√ " + detail.Trim() : "× " + detail;
-
-        // 切到校园网那条（10.149.x）时自动重新认证一次，免得切回去没网
-        if (ok && sel != "auto")
-        {
-            var cidr = _wanCidr.TryGetValue(sel, out var cv) ? cv : "";
-            if (cidr.StartsWith("10.149."))
-            {
-                TxtWanFailInfo.Text = msg + "   正在认证校园网…";
-                var (aok, adetail) = await RouterCtl.RunAsync(cfg, "auth-now");
-                msg += aok ? "   认证：" + adetail.Trim().Replace("\n", " ") : "   认证失败：" + adetail;
-                AppPaths.Log($"[多WAN] 切换后认证 → {(aok ? "成功" : adetail)}");
-            }
-        }
-        BtnWanToBackup.IsEnabled = true; _wanFailBusy = false;
-        TxtWanFailInfo.Text = msg;
-        AppPaths.Log($"[多WAN] 切到 {sel} → {(ok ? "成功" : detail)}");
-        await LoadWanFailAsync();
-    }
-
-    private async void OnWanToPrimary(object sender, RoutedEventArgs e)  // 恢复自动
-    {
-        if (_wanFailBusy) return;
-        var cfg = RemoteConfig.Load();
-        if (!cfg.IsConfigured) return;
-        _wanFailBusy = true; BtnWanToPrimary.IsEnabled = false;
+        _wanFailBusy = true; BtnRestoreSystem.IsEnabled = false;
         await RouterCtl.RunAsync(cfg, "wanfail-set prefer auto");
         var (ok, detail) = await RouterCtl.RunAsync(cfg, "wanfail-switch auto");
-        BtnWanToPrimary.IsEnabled = true; _wanFailBusy = false;
-        TxtWanFailInfo.Text = ok ? "√ 已交回系统路由" : "× " + detail;
-        AppPaths.Log("[多WAN] 恢复自动");
+        BtnRestoreSystem.IsEnabled = true; _wanFailBusy = false;
+        TxtWanFailInfo.Text = ok ? "√ 已交回系统路由" : "× " + detail.Trim();
+        AppPaths.Log("[多WAN] 恢复系统路由");
         await LoadWanFailAsync();
     }
 
@@ -914,7 +1014,7 @@ public partial class MainWindow : Window
                 }
 
                 YLabel(vd, Color.FromRgb(0x2F, 0xB8, 0x6B), true);
-                YLabel(vu, Color.FromRgb(0x2F, 0x6F, 0xED), false);
+                YLabel(vu, Color.FromRgb(0x2D, 0x8C, 0xFF), false);
             }
         }
 
@@ -1070,7 +1170,9 @@ public partial class MainWindow : Window
             double x = o.GetProperty("x").GetDouble(), y = o.GetProperty("y").GetDouble();
             bool max = o.GetProperty("max").GetBoolean();
 
-            if (w >= MinWidth && h >= MinHeight) { Width = w; Height = h; }
+            // 窗口太小会把设备表挤到横向滚动，这里直接夹到最小可用尺寸
+            Width = Math.Max(MinWidth, w);
+            Height = Math.Max(MinHeight, h);
 
             // 位置必须落在可见屏幕里，否则保持居中
             double sw = SystemParameters.VirtualScreenWidth, sh = SystemParameters.VirtualScreenHeight;
@@ -1108,8 +1210,27 @@ public partial class MainWindow : Window
     private bool _cidrHooked;
     private string _lastCidr = "";
 
+    private int _devColWidth = -1;
+
+    /// <summary>设备表按可用宽度自适应：宽了就全显示，窄了收起「延迟」列，避免横向滚动条</summary>
+    private void ApplyDeviceColumns(double w)
+    {
+        try
+        {
+            if (DgDevices.Columns.Count < 8 || double.IsNaN(w) || w <= 0) return;
+            int iw = (int)Math.Round(w);
+            if (iw == _devColWidth) return;
+            _devColWidth = iw;
+            bool wide = iw >= 1000;
+            DgDevices.Columns[6].Visibility = wide ? Visibility.Visible : Visibility.Collapsed;   // 延迟
+            DgDevices.Columns[2].MinWidth = wide ? 150 : 120;                                    // 名称
+        }
+        catch { }
+    }
+
     private async void InitDeviceTab()
     {
+        DgDevices.SizeChanged += (_, e) => ApplyDeviceColumns(e.NewSize.Width);
         if (!_cidrHooked)
         {
             _cidrHooked = true;
@@ -1247,7 +1368,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>拉一次远端的黑名单/流量计数，刷进表格（不重新扫描）</summary>
-    private async Task RefreshDevStateAsync()
+    private async Task RefreshDevStateAsync(bool quiet = false)
     {
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured || _devices.Count == 0) return;
@@ -1264,26 +1385,70 @@ public partial class MainWindow : Window
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
-            var map = new Dictionary<string, (bool Blocked, long Up, long Down)>(StringComparer.OrdinalIgnoreCase);
+            var map = new Dictionary<string, (bool Blocked, long Up, long Down, string Name, string Ip, string Kind, string Iface, bool Online)>(StringComparer.OrdinalIgnoreCase);
             foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
             {
-                var mac = (el.GetProperty("mac").GetString() ?? "").ToLowerInvariant();
-                map[mac] = (el.GetProperty("blocked").GetBoolean(),
-                            el.GetProperty("up").GetInt64(),
-                            el.GetProperty("down").GetInt64());
+                string S(string k) => el.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? (v.GetString() ?? "") : "";
+                long L(string k) => el.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetInt64() : 0;
+                bool B(string k) => el.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True;
+                var mac = S("mac").ToLowerInvariant();
+                if (mac.Length == 0) continue;
+                map[mac] = (B("blocked"), L("up"), L("down"), S("name"), S("ip"), S("kind"), S("iface"), B("online"));
             }
 
             foreach (var d in _devices)
             {
-                if (map.TryGetValue((d.Mac ?? "").ToLowerInvariant(), out var v))
+                var mac2 = (d.Mac ?? "").ToLowerInvariant();
+                if (!map.TryGetValue(mac2, out var v)) { d.Rate = ""; continue; }
+                d.Blocked = v.Blocked;
+                d.Traffic = FmtShort(v.Up) + " / " + FmtShort(v.Down);
+                if (string.IsNullOrWhiteSpace(d.Ip) && v.Ip.Length > 0) d.Ip = v.Ip;
+                if (string.IsNullOrWhiteSpace(d.Name) && v.Name.Length > 0) d.Name = v.Name;
+                if (string.IsNullOrWhiteSpace(d.Conn) || d.Conn == "同网段")
+                    d.Conn = v.Kind == "wired" ? "有线 · " + (v.Iface.Length > 0 ? v.Iface : "以太网")
+                            : v.Kind == "wifi" ? "无线 · " + (v.Iface.Length > 0 ? v.Iface : "WiFi") : d.Conn;
+                if (v.Online) d.State = "在线";
+
+                // 实时速率：和上一次采样（≥0.8 秒）的计数差 / 秒
+                if (_devRatePrev.TryGetValue(mac2, out var pv))
                 {
-                    d.Blocked = v.Blocked;
-                    d.Traffic = FmtShort(v.Up) + " / " + FmtShort(v.Down);
+                    double sec = (DateTime.UtcNow - pv.At).TotalSeconds;
+                    if (sec >= 0.8)
+                    {
+                        long du = v.Up >= pv.Up ? v.Up - pv.Up : 0;
+                        long dd = v.Down >= pv.Down ? v.Down - pv.Down : 0;
+                        d.Rate = "↑" + FmtRate((long)(du / sec)) + "  ↓" + FmtRate((long)(dd / sec));
+                    }
                 }
+                else d.Rate = "—";
+                _devRatePrev[mac2] = (v.Up, v.Down, DateTime.UtcNow);
             }
 
-            DgDevices.ItemsSource = null;
-            DgDevices.ItemsSource = _devices;
+            // 远端还看得见本机扫描网段之外的设备（比如有线 LAN 的 192.168.60.x）→ 补进表格
+            var known = new HashSet<string>(_devices.Select(x => (x.Mac ?? "").ToLowerInvariant()), StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in map)
+            {
+                if (known.Contains(kv.Key)) continue;
+                var v = kv.Value;
+                if (!v.Online && !v.Blocked) continue;      // 历史残留不显示
+                _devices.Add(new LanDevice
+                {
+                    Mac = kv.Key.ToUpperInvariant(),
+                    Ip = v.Ip,
+                    Name = v.Name,
+                    Vendor = LanScan.Vendor(kv.Key.ToUpperInvariant()),
+                    Conn = v.Kind == "wired" ? "有线 · " + (v.Iface.Length > 0 ? v.Iface : "以太网")
+                         : v.Kind == "wifi" ? "无线 · " + (v.Iface.Length > 0 ? v.Iface : "WiFi") : "软路由",
+                    State = v.Online ? "在线" : "不在线",
+                    Source = "软路由",
+                    Blocked = v.Blocked,
+                    Traffic = FmtShort(v.Up) + " / " + FmtShort(v.Down),
+                });
+                _devRatePrev[kv.Key] = (v.Up, v.Down, DateTime.UtcNow);   // 建基线：下一次采样直接出速率
+            }
+
+            if (quiet) DgDevices.Items.Refresh();
+            else { DgDevices.ItemsSource = null; DgDevices.ItemsSource = _devices; }
 
             var blocked = _devices.Count(x => x.Blocked);
             if (blocked > 0) TxtScanInfo.Text += $"　（已拉黑 {blocked} 台）";
@@ -1293,6 +1458,61 @@ public partial class MainWindow : Window
             AppPaths.Log("[设备] 解析 dev-list 失败：" + ex.Message + " 原文=" + detail);
             TxtScanInfo.Text += "　（流量/黑名单读取失败，看日志）";
         }
+    }
+
+    /// <summary>进设备页先采两次（间隔 1.2 秒）：第一次建基线，第二次出速率</summary>
+    private async Task PrimeDevRateAsync()
+    {
+        await PollDevRateAsync();          // 采样 1：建基线
+        await Task.Delay(1200);
+        await PollDevRateAsync();          // 采样 2：出速率
+        await Task.Delay(1200);
+        await PollDevRateAsync();          // 采样 3：稳住显示
+    }
+
+    /// <summary>窗口失焦/最小化：停掉所有会发 SSH 的轮询（本机流量采样保留，纯本地）</summary>
+    private void PauseRemoteTicks()
+    {
+        _timer.Stop();
+        _wanPoll.Stop();
+        _devTick.Stop();
+        _apTick.Stop();
+        _proxyLocalTick.Stop();
+        _proxyRemoteTick.Stop();
+        _pageTick.Stop();
+    }
+
+    /// <summary>窗口恢复：只启动当前页真正需要的轮询</summary>
+    private void ResumeTicksForPage()
+    {
+        var page = CurrentPage;
+        if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(60); _timer.Start(); _ = RefreshAsync(); }
+        if (page == "网卡") { _wanPoll.Interval = TimeSpan.FromSeconds(10); _wanPoll.Start(); }
+        if (page == "设备") { _devTick.Interval = TimeSpan.FromSeconds(3); _devTick.Start(); _ = PrimeDevRateAsync(); }
+        if (page == "无线频段") _apTick.Start();
+        if (page == "代理检测") { _proxyLocalTick.Start(); _proxyRemoteTick.Start(); }
+        _pageTick.Start();
+    }
+
+    /// <summary>设备页专用：3 秒一次拉计数，算实时速率（离开页面就停）</summary>
+    private async Task PollDevRateAsync()
+    {
+        if (_devRateBusy) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured || _devices.Count == 0) return;
+        _devRateBusy = true;
+        try { await RefreshDevStateAsync(quiet: true); }
+        catch { }
+        finally { _devRateBusy = false; }
+    }
+
+    private static string FmtRate(long bps)
+    {
+        const long K = 1024L, M = 1024L * 1024, G = 1024L * 1024 * 1024;
+        if (bps >= G) return (bps / (double)G).ToString("F1") + "G";
+        if (bps >= M) return (bps / (double)M).ToString("F1") + "M";
+        if (bps >= K) return (bps / (double)K).ToString("F0") + "K";
+        return Math.Max(0, bps).ToString();
     }
 
     private static string FmtShort(long b)
@@ -1388,6 +1608,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private string CurrentPage =>
         (NavTabs.SelectedItem as TabItem)?.GetValue(System.Windows.Automation.AutomationProperties.NameProperty) as string ?? "";
 
+
     private async void OnNavChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.Source is not TabControl) return;
@@ -1398,6 +1619,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             _ = WatchNicsAsync();
 
         // 代理检测页：进来开始实时刷新，离开就停（省资源）
+        if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(60); _timer.Start(); }
+        else _timer.Stop();
+
         if (page == "代理检测") StartProxyWatch();
         else StopProxyWatch();
 
@@ -1408,12 +1632,20 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         // 流量页：进来读一次设备流量汇总（不采样，秒出）
         if (page == "流量") _ = LoadDevTrafficAsync(false);
 
-        // 设备页：进来按当前网络重填扫描网段（换过网就不会再扫旧网段）
-        if (page == "设备") _ = RefreshScanCidrAsync(false);
+        // 设备页：进来按当前网络重填扫描网段（换过网就不会再扫旧网段），并开始实时速率
+        if (page == "设备")
+        {
+            _devRatePrev.Clear();
+            _devTick.Start();
+            _ = PrimeDevRateAsync();          // 立刻采两次，进页面就有速率，不用等 3 秒
+            _ = RefreshScanCidrAsync(false);
+        }
+        else { _devTick.Stop(); _devRatePrev.Clear(); }
 
         // 网卡页：只在看得见时做热插拔轮询（8 秒一次本地查询），切走立刻停
         _nicPoll.Stop();                       // 网卡页：只进页查一次，手动刷新
-        if (page == "网卡") { _ = PollAdaptersAsync(); _ = LoadRolesAsync(); _ = LoadWanFailAsync(); }
+        _wanPoll.Stop();
+        if (page == "网卡") { _ = PollAdaptersAsync(); _ = LoadRolesAsync(); _ = LoadWanFailAsync(); _wanPoll.Start(); }
 
         // 校园网页：第一次进来，账号空着就从 minipc 的 Config.yaml 读一份（只读，不动配置）
         if (page == "校园网" && TxtCampusUser.Text.Trim().Length == 0 && !_campusPrefilled)
@@ -1629,7 +1861,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     private void InitApTab()
     {
-        _apTick.Tick += async (_, _) => await ApTickAsync();
+        _apTick.Tick += async (_, _) => { _apTick.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(3), 60); await ApTickAsync(); };
     }
 
     private void StartApWatch()
@@ -1951,7 +2183,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private void InitProxyTab()
     {
         _proxyLocalTick.Tick += async (_, _) => await ProxyLocalTickAsync();
-        _proxyRemoteTick.Tick += async (_, _) => await ProxyRemoteTickAsync();
+        _proxyRemoteTick.Tick += async (_, _) => { _proxyRemoteTick.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(60), 600); await ProxyRemoteTickAsync(); };
     }
 
     private void StartProxyWatch()
@@ -2374,7 +2606,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             BtnRefresh.Content = old;
             BtnRefresh.IsEnabled = true;
-            _timer.Start();
+            if (CurrentPage == "状态" && IsActive) _timer.Start();
         }
     }
     private string _lastNicSet = "";
@@ -2384,7 +2616,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private void SetNicHint(string text, bool ok)
     {
         TxtNicHint.Text = text;
-        TxtNicHint.Foreground = new SolidColorBrush(ok ? Color.FromRgb(0x2F, 0x8F, 0x5B) : Color.FromRgb(0xC0, 0x39, 0x2B));
+        TxtNicHint.Foreground = new SolidColorBrush(ok ? Color.FromRgb(0x2F, 0x8F, 0x5B) : Color.FromRgb(0xFF, 0x4D, 0x4F));
     }
 
 
@@ -2426,7 +2658,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         _memBusy = true;
         BtnMemOptimize.IsEnabled = false;
         BtnMemOptimize.Content = "优化中…";
-        TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74));
+        TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x73, 0x8B));
         TxtMemResult.Text = "正在优化…";
         AppPaths.Log("[内存] 开始优化");
         try
@@ -2434,7 +2666,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             var r = await Task.Run(() => MemOptimize.Run(m => Dispatcher.Invoke(() => TxtMemResult.Text = m)));
             if (r.Error.Length > 0 && r.Steps == 0)
             {
-                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
+                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F));
                 TxtMemResult.Text = "优化失败：" + r.Error;
                 AppPaths.Log("[内存] 失败：" + r.Error);
             }
@@ -2442,7 +2674,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             {
                 var saved = MemOptimize.AvailPhys() - r.AvailBefore;
                 string delta = r.FreedMB > 0 ? $"释放约 {r.FreedMB:F0} MB" : "内存本来就很充裕，变化不大";
-                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x8E, 0x5A));
+                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94));
                 TxtMemResult.Text = $"完成：可用 {r.BeforeGB:F1} GB → {r.AfterGB:F1} GB（{delta}）";
                 AppPaths.Log($"[内存] 完成：可用 {r.BeforeGB:F1} GB → {r.AfterGB:F1} GB，释放 {r.FreedMB:F0} MB，命令成功 {r.Steps}/3");
                 RefreshOtherRuntime();
@@ -2451,7 +2683,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         }
         catch (Exception ex)
         {
-            TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
+            TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F));
             TxtMemResult.Text = "出错了：" + ex.Message;
             AppPaths.Log("[内存] 异常：" + ex.Message);
         }
@@ -2919,7 +3151,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             PanelNics.Children.Add(new TextBlock
             {
                 Text = "读不到物理网卡（可能需要管理员权限）",
-                Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)),
                 Margin = new Thickness(0, 10, 0, 0)
             });
             return;
@@ -2929,7 +3161,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             var row = new Border
             {
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE4, 0xE8, 0xEF)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE9, 0xEF, 0xF7)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Padding = new Thickness(0, 12, 0, 12)
             };
@@ -2945,26 +3177,58 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 FontSize = 15,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = a.IsDisabled
-                    ? new SolidColorBrush(Color.FromRgb(0xB4, 0x3B, 0x3B))
+                    ? new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F))
                     : a.Status.Equals("Up", StringComparison.OrdinalIgnoreCase)
-                        ? new SolidColorBrush(Color.FromRgb(0x1E, 0x8E, 0x5A))
-                        : new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98))
+                        ? new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94))
+                        : new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8))
             });
             info.Children.Add(new TextBlock
             {
                 Text = $"{a.Description}",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x73, 0x8B)),
                 Margin = new Thickness(0, 4, 0, 0)
             });
-            info.Children.Add(new TextBlock
+            // 2×2 网格：标签灰、值等宽字体；每格独立换行，MAC 不会断在中间（照 Windows 11 属性页的排法）
+            var detail = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+            detail.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            detail.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            detail.RowDefinitions.Add(new RowDefinition());
+            detail.RowDefinitions.Add(new RowDefinition());
+
+            void Cell(int row, int col, string label, string value)
             {
-                Text = $"速率 {a.LinkSpeed}    IP {a.Ip}    网关 {a.Gateway}    MAC {a.Mac}",
-                FontSize = 12,
-                FontFamily = new FontFamily("Consolas"),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74)),
-                Margin = new Thickness(0, 3, 0, 0)
-            });
+                var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, row == 0 ? 0 : 3, 12, 0) };
+                sp.Children.Add(new TextBlock
+                {
+                    Text = label,
+                    FontSize = 11.5,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x94, 0xA6)),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                sp.Children.Add(new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(value) ? "-" : value,
+                    FontSize = 12,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x73, 0x8B)),
+                    Margin = new Thickness(6, 0, 0, 0),
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                Grid.SetRow(sp, row); Grid.SetColumn(sp, col);
+                detail.Children.Add(sp);
+            }
+
+            // 网卡断开时 Windows 仍保留 DHCP 租约里的地址，标成「上次」免得看着像还连着
+            bool nicUp = a.Status.Equals("Up", StringComparison.OrdinalIgnoreCase);
+            string Mark(string v) => (!nicUp && !string.IsNullOrWhiteSpace(v) && v != "-") ? "上次 " + v : v;
+
+            Cell(0, 0, "速率", nicUp ? a.LinkSpeed : "-");
+            Cell(0, 1, "IP", Mark(a.Ip));
+            Cell(1, 0, "网关", Mark(a.Gateway));
+            Cell(1, 1, "MAC", a.Mac);
+            info.Children.Add(detail);
             Grid.SetColumn(info, 0);
             grid.Children.Add(info);
 
@@ -3019,7 +3283,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         return new Button
         {
             Content = IconText(isEnable ? "shield_check_w" : "shield_x", text,
-                isEnable ? Colors.White : Color.FromRgb(0xB4, 0x3B, 0x3B)),
+                isEnable ? Colors.White : Color.FromRgb(0xFF, 0x4D, 0x4F)),
             Width = 86,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
@@ -3027,11 +3291,11 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             Cursor = System.Windows.Input.Cursors.Hand,
             FontSize = 13,
             Background = isEnable
-                ? new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED))
+                ? new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF))
                 : new SolidColorBrush(Color.FromRgb(0xFB, 0xEF, 0xEF)),
             Foreground = isEnable
                 ? Brushes.White
-                : new SolidColorBrush(Color.FromRgb(0xB4, 0x3B, 0x3B)),
+                : new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F)),
             BorderThickness = new Thickness(isEnable ? 0 : 1),
             BorderBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xB4, 0xB4))
         };
@@ -3140,7 +3404,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             var row = new Border
             {
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE4, 0xE8, 0xEF)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE9, 0xEF, 0xF7)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Padding = new Thickness(0, 10, 0, 10)
             };
@@ -3160,7 +3424,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             {
                 Text = "已保存的配置",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)),
                 Margin = new Thickness(0, 3, 0, 0)
             });
             Grid.SetColumn(info, 0);
@@ -3173,7 +3437,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 Height = 32,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                Background = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED)),
+                Background = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF)),
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0)
             };
@@ -3194,7 +3458,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             var row = new Border
             {
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE4, 0xE8, 0xEF)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE9, 0xEF, 0xF7)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Padding = new Thickness(0, 11, 0, 11)
             };
@@ -3223,7 +3487,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                     {
                         Text = "已保存",
                         FontSize = 11,
-                        Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED))
+                        Foreground = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF))
                     }
                 });
             }
@@ -3234,7 +3498,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 Text = $"{net.Bars}    {net.Auth} / {net.Encrypt}",
                 FontSize = 12,
                 FontFamily = new FontFamily("Consolas"),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x73, 0x8B)),
                 Margin = new Thickness(0, 4, 0, 0)
             });
 
@@ -3249,7 +3513,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 Padding = new Thickness(10, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                Background = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED)),
+                Background = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF)),
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0)
             };
@@ -3364,7 +3628,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 FontSize = 12,
                 Cursor = System.Windows.Input.Cursors.Hand,
                 Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF3, 0xFC)),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF)),
                 BorderThickness = new Thickness(1),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0xD5, 0xDF, 0xF0))
             };
@@ -3508,7 +3772,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             if (r == null)
             {
-                var wait = new TextBlock { Text = "○ 等待中…", FontSize = 12.5, Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA3, 0xB2)) };
+                var wait = new TextBlock { Text = "○ 等待中…", FontSize = 12.5, Foreground = new SolidColorBrush(Color.FromRgb(0x9D, 0xAC, 0xC5)) };
                 PanelSiteResults.Children.Add(wait);
                 continue;
             }
@@ -3516,9 +3780,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             // 判定颜色：能连=绿，能连但非 2xx/3xx=黄，不通=红
             Color color;
             string mark;
-            if (!r.Ok) { color = Color.FromRgb(0xC0, 0x39, 0x2B); mark = "×"; }
-            else if (r.Error.Length > 0) { color = Color.FromRgb(0xC0, 0x39, 0x2B); mark = "×"; }
-            else if (r.Status >= 200 && r.Status < 400) { color = Color.FromRgb(0x18, 0x8A, 0x3E); mark = "√"; }
+            if (!r.Ok) { color = Color.FromRgb(0xFF, 0x4D, 0x4F); mark = "×"; }
+            else if (r.Error.Length > 0) { color = Color.FromRgb(0xFF, 0x4D, 0x4F); mark = "×"; }
+            else if (r.Status >= 200 && r.Status < 400) { color = Color.FromRgb(0x00, 0xB8, 0x94); mark = "√"; }
             else { color = Color.FromRgb(0xC8, 0x86, 0x00); mark = "!"; }
 
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
@@ -3543,7 +3807,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             row.Children.Add(new TextBlock
             {
                 Text = r.StageDetail(), FontSize = 11.5,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)),
                 VerticalAlignment = VerticalAlignment.Center, FontFamily = new FontFamily("Consolas")
             });
             PanelSiteResults.Children.Add(row);
@@ -3599,7 +3863,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         TxtGamePackets.Text = "";
         TxtGameGrade.Text = "…";
         BoxGameGrade.Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF2, 0xF8));
-        TxtGameGrade.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
+        TxtGameGrade.Foreground = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF));
         TxtGameVerdict.Text = $"正在测 {host}（{count} 包）…";
         SetDot(ImgDotGame, "wait");
         TxtGameStats.Text = "延迟 —   抖动 —   丢包 —";
@@ -3676,8 +3940,8 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 ? Color.FromRgb(0xE6, 0xF7, 0xEC)
                 : Color.FromRgb(0xFD, 0xEC, 0xEC));
             TxtGameGrade.Foreground = new SolidColorBrush(good
-                ? Color.FromRgb(0x18, 0x8A, 0x3E)
-                : Color.FromRgb(0xC0, 0x39, 0x2B));
+                ? Color.FromRgb(0x00, 0xB8, 0x94)
+                : Color.FromRgb(0xFF, 0x4D, 0x4F));
 
             TxtFoot.Text = stats.Avg < 0
                 ? $"× {host} 全部丢包"
@@ -3758,7 +4022,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                     Text = sec.Title,
                     FontSize = 12.5,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74)),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x73, 0x8B)),
                     Margin = new Thickness(0, host.Children.Count == 0 ? 0 : 14, 0, 6),
                 });
             }
@@ -3852,7 +4116,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             Text = "▸",
             FontSize = 11,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98)),
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)),
             Margin = new Thickness(8, 0, 2, 0),
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -4173,7 +4437,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         double peakUp = _upPoints.Count > 0 ? _upPoints.Max(p => p.Mbps) : 0;
         double maxY = NiceCeil(Math.Max(Math.Max(peakDown, peakUp) * 1.2, 5));
 
-        var axisBrush = new SolidColorBrush(Color.FromRgb(0xD5, 0xDB, 0xE5));
+        var axisBrush = new SolidColorBrush(Color.FromRgb(0xDB, 0xE6, 0xF3));
         var gridBrush = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF6));
         var textBrush = new SolidColorBrush(Color.FromRgb(0x8A, 0x93, 0xA3));
 
@@ -4228,8 +4492,8 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         }
 
         // 图例（安兔兔那种两根线：下载蓝、上传绿）
-        var lgBrushDown = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
-        var lgBrushUp = new SolidColorBrush(Color.FromRgb(0x1E, 0x8E, 0x5A));
+        var lgBrushDown = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF));
+        var lgBrushUp = new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94));
         AddLegend(left + 8, top + ph - 24, lgBrushDown, "下载");
         AddLegend(left + 78, top + ph - 24, lgBrushUp, "上传");
 
@@ -4255,14 +4519,14 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             ChartCanvas.Children.Add(new Line
             {
                 X1 = xd, Y1 = top, X2 = xd, Y2 = top + ph,
-                Stroke = new SolidColorBrush(Color.FromRgb(0xD5, 0xDB, 0xE5)),
+                Stroke = new SolidColorBrush(Color.FromRgb(0xDB, 0xE6, 0xF3)),
                 StrokeThickness = 1,
                 StrokeDashArray = new DoubleCollection { 3, 3 }
             });
             var lbl = new TextBlock
             {
                 Text = "上行开始", FontSize = 10.5,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA3, 0xB2))
+                Foreground = new SolidColorBrush(Color.FromRgb(0x9D, 0xAC, 0xC5))
             };
             Canvas.SetLeft(lbl, xd + 4);
             Canvas.SetTop(lbl, top + 2);
@@ -4328,7 +4592,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         var t = new TextBlock
         {
             Text = text, FontSize = 11.5,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x64, 0x74))
+            Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x73, 0x8B))
         };
         Canvas.SetLeft(t, x + 21);
         Canvas.SetTop(t, y);
@@ -4347,7 +4611,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private static TextBlock Hint(string text) => new()
     {
         Text = text,
-        Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x87, 0x98)),
+        Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)),
         FontSize = 12.5,
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(0, 8, 0, 0)

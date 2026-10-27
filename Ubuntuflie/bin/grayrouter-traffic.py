@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""每设备流量统计 —— 读 mac80211 的 station dump 累计计数器，只读、不发包、不碰数据面。
+"""每设备流量统计。
+
+数据来源（只管读，不发包，不改转发）：
+  1) nft 计数表 inet gray_acct（up4/down4 两个动态集合，每个 IP 自带 counter）
+     —— 覆盖所有 LAN：WiFi + 有线 + 静态 IP，因为统计点在 forward 链上
+  2) iw station dump —— 只用来补充 WiFi 信号强度
+  3) DHCP 租约 + ARP —— 把 IP 映射回 MAC / 主机名
 
 用法：
-  sample [n]   采一次样，把和上次的差值追加到当天 CSV（systemd timer 每小时跑）
+  sample [n]   采一次样，把差值追加到当天 CSV（systemd timer 每小时跑）
   summary [n]  汇总最近 n 天（默认 30），输出 JSON
   now [n]      先采样再汇总（面板手动刷新用这个）
 """
-import os, sys, json, time, glob, datetime, subprocess
+import os, sys, json, time, glob, datetime, subprocess, re
 
 BASE = os.environ.get("GR_TRAFFIC_DIR", "/var/lib/grayrouter/traffic")
 STATE = os.path.join(BASE, "state.json")
 DEVJSON = "/etc/grayrouter/devices.json"
 KEEP_DAYS = 32
+ACCT_TBL = "gray_acct"
 
 
 def run(args, timeout=10):
@@ -34,24 +41,50 @@ def lan_if():
 
 
 def stations(iface):
+    """WiFi 关联表：只取信号强度（字节数改用 nft 计数，覆盖有线）"""
     res, mac = {}, None
     for line in run(["iw", "dev", iface, "station", "dump"]).splitlines():
         s = line.strip()
         if line.startswith("Station "):
             mac = line.split()[1].lower()
-            res[mac] = {"rx": 0, "tx": 0, "signal": None}
-        elif mac and s.startswith("rx bytes:"):
-            res[mac]["rx"] = int(s.split()[2])
-        elif mac and s.startswith("tx bytes:"):
-            res[mac]["tx"] = int(s.split()[2])
+            res[mac] = {"signal": None}
         elif mac and s.startswith("signal:"):
             try: res[mac]["signal"] = int(s.split()[1])
             except Exception: pass
     return res
 
 
+def acct_counts():
+    """读 nft 计数表 → {ip: {'up': bytes, 'down': bytes}}；表不存在时返回 {}"""
+    out = {}
+    for name, key in (("up4", "up"), ("down4", "down")):
+        txt = run(["nft", "-j", "list", "set", "inet", ACCT_TBL, name])
+        got = False
+        if txt.strip():
+            try:
+                for item in json.loads(txt).get("nftables", []):
+                    st = item.get("set")
+                    if not st or st.get("name") != name:
+                        continue
+                    for e in st.get("elem", []):
+                        body = e.get("elem", {})
+                        ip = body.get("val")
+                        cnt = body.get("counter") or {}
+                        if ip:
+                            out.setdefault(ip, {"up": 0, "down": 0})[key] = int(cnt.get("bytes", 0))
+                            got = True
+            except Exception:
+                got = False
+        if not got:
+            # 纯文本兜底：elements = { 1.2.3.4 counter packets 1 bytes 2 }
+            txt = run(["nft", "list", "set", "inet", ACCT_TBL, name])
+            for ip, _p, _b, byt in re.findall(r"(\d+\.\d+\.\d+\.\d+)[^,}]*?packets\s+(\d+)\s+bytes\s+(\d+)", txt):
+                out.setdefault(ip, {"up": 0, "down": 0})[key] = int(byt)
+    return out
+
+
 def meta():
-    names, ips = {}, {}
+    names, ip2mac = {}, {}
     try:
         d = json.load(open(DEVJSON, encoding="utf-8")).get("devices", {})
         for m, v in d.items():
@@ -60,9 +93,21 @@ def meta():
         pass
     for line in run(["ip", "neigh"]).splitlines():
         p = line.split()
-        if len(p) >= 5 and "lladdr" in p:
-            ips[p[p.index("lladdr") + 1].lower()] = p[0]
-    return names, ips
+        if len(p) >= 5 and "lladdr" in p and p[-1].upper() not in ("FAILED", "INCOMPLETE"):
+            ip2mac[p[0]] = p[p.index("lladdr") + 1].lower()
+    # DHCP 租约补充（含已离线但租约仍在的）
+    for path in glob.glob("/var/lib/NetworkManager/dnsmasq-*.leases") + ["/var/lib/misc/dnsmasq.leases"]:
+        try:
+            for line in open(path, errors="replace"):
+                p = line.split()
+                if len(p) >= 4 and p[1] != "*":
+                    mac = p[1].lower()
+                    ip2mac.setdefault(p[2], mac)
+                    if p[3] != "*":
+                        names.setdefault(mac, p[3])
+        except Exception:
+            continue
+    return names, ip2mac
 
 
 def prune():
@@ -76,13 +121,13 @@ def prune():
 
 
 def sample():
-    iface = lan_if()
-    cur = stations(iface)
     state = {}
     try: state = json.load(open(STATE, encoding="utf-8"))
     except Exception: state = {}
 
-    names, ips = meta()
+    names, ip2mac = meta()
+    counts = acct_counts()
+    wifi = stations(lan_if())
     now = datetime.datetime.now()
     os.makedirs(BASE, exist_ok=True)
     path = os.path.join(BASE, now.strftime("%Y%m%d") + ".csv")
@@ -90,19 +135,23 @@ def sample():
 
     rows = 0
     lines = []
-    for mac, c in cur.items():
-        prev = state.get(mac, {})
-        if not prev:                 # 第一次见到这台设备：只记基线，不把历史会话量算进今天
-            drx = dtx = 0
+    for ip, c in counts.items():
+        mac = ip2mac.get(ip, "")
+        key = mac or ("ip:" + ip)
+        prev = state.get(key, {})
+        if not prev:                    # 第一次见：只记基线
+            dup = ddown = 0
         else:
-            drx = c["rx"] - int(prev.get("rx", 0))
-            dtx = c["tx"] - int(prev.get("tx", 0))
-        if drx < 0: drx = 0          # 设备重连 / AP 重启，计数器归零
-        if dtx < 0: dtx = 0
-        if drx or dtx or mac not in state:
-            lines.append(f"{now:%Y-%m-%d %H:%M:%S},{mac},{ips.get(mac,'')},{names.get(mac,'')},{drx},{dtx}")
+            dup = c["up"] - int(prev.get("up", 0))
+            ddown = c["down"] - int(prev.get("down", 0))
+        if dup < 0: dup = 0             # 计数表重建 → 归零，不写负数
+        if ddown < 0: ddown = 0
+        if dup or ddown or key not in state:
+            nm = names.get(mac, "") if mac else ""
+            lines.append(f"{now:%Y-%m-%d %H:%M:%S},{key},{ip},{nm},{ddown},{dup}")
             rows += 1
-        state[mac] = {"rx": c["rx"], "tx": c["tx"], "seen": int(time.time()), "signal": c["signal"]}
+        state[key] = {"up": c["up"], "down": c["down"], "ip": ip,
+                      "seen": int(time.time()), "mac": mac}
 
     with open(path, "a", encoding="utf-8") as f:
         if fresh:
@@ -112,12 +161,15 @@ def sample():
 
     json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False)
     prune()
-    print(f"采样 {len(cur)} 台在线，写入 {rows} 行 → {path}", file=sys.stderr)
+    print(f"采样 {len(counts)} 个 IP（表 {ACCT_TBL}），写入 {rows} 行 → {path}", file=sys.stderr)
 
 
 def summary(days=30):
-    names, ips = meta()
-    online = stations(lan_if())
+    names, ip2mac = meta()
+    counts = acct_counts()
+    wifi = stations(lan_if())
+    online_macs = set(wifi) | {ip2mac.get(ip, "") for ip in counts} | {ip2mac[ip] for ip in counts if ip in ip2mac}
+    online_macs |= {m for ip, m in ip2mac.items() if ip.startswith("192.168.") and m}
     today = datetime.date.today()
     start = today - datetime.timedelta(days=days - 1)
 
@@ -136,7 +188,7 @@ def summary(days=30):
         for line in body[1:]:
             p = line.split(",")
             if len(p) < 6: continue
-            mac = p[1].lower()
+            key = p[1].lower()
             try:
                 dn, up = int(p[4] or 0), int(p[5] or 0)
             except Exception:
@@ -149,25 +201,28 @@ def summary(days=30):
                         hours[hh][1] += up
                 except Exception:
                     pass
-            a = agg.setdefault(mac, {"d": 0, "u": 0, "td": 0, "tu": 0, "last": "", "name": ""})
+            a = agg.setdefault(key, {"d": 0, "u": 0, "td": 0, "tu": 0, "last": "", "name": "", "ip": ""})
             a["d"] += dn; a["u"] += up; a["last"] = p[0]
             if p[3]: a["name"] = p[3]
+            if p[2]: a["ip"] = p[2]
             if day == today: a["td"] += dn; a["tu"] += up
 
     out = []
-    for mac, a in agg.items():
-        on = mac in online
+    for key, a in agg.items():
+        mac = "" if key.startswith("ip:") else key
+        ip = a["ip"] or (key[3:] if key.startswith("ip:") else "")
+        cur = counts.get(ip, {})
         out.append({
             "mac": mac,
             "name": names.get(mac) or a["name"] or "",
-            "ip": ips.get(mac, ""),
-            "online": 1 if on else 0,
+            "ip": ip,
+            "online": 1 if (mac and mac in online_macs) or (ip in counts) else 0,
             "today_down": a["td"], "today_up": a["tu"],
             "span_down": a["d"], "span_up": a["u"],
             "last": a["last"],
-            "session_down": online.get(mac, {}).get("rx", 0),
-            "session_up": online.get(mac, {}).get("tx", 0),
-            "signal": online.get(mac, {}).get("signal"),
+            "session_down": cur.get("down", 0),
+            "session_up": cur.get("up", 0),
+            "signal": wifi.get(mac, {}).get("signal") if mac else None,
         })
     out.sort(key=lambda x: (x["online"], x["span_down"] + x["span_up"]), reverse=True)
     print(json.dumps({

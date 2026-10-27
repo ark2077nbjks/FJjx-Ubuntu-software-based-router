@@ -12,17 +12,29 @@ TBL=gray_dev
 JSON=/etc/grayrouter/devices.json
 LOG=/var/log/grayrouter-devices.log
 # LAN 口自动探测：优先 AP 模式网口，其次 192.168.x 地址的口，最后兜底 wlp2s0
-IFACE=${GR_LAN_IF:-}
-if [ -z "$IFACE" ] && [ -x /usr/local/bin/grayrouter-roles.sh ]; then
-  IFACE=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null | sed -n 's/^LAN_IF=//p')
-fi
-if [ -z "$IFACE" ]; then
-  for i in $(iw dev 2>/dev/null | sed -n 's/^Interface //p'); do
-    [ "$(iw dev "$i" info 2>/dev/null | awk '/type/{print $2}')" = "AP" ] && { IFACE=$i; break; }
-  done
-fi
-[ -z "$IFACE" ] && IFACE=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\./ {print $2; exit}')
-[ -z "$IFACE" ] && IFACE=wlp2s0
+# ---------- LAN 网口集合（不止一个） ----------
+# 因地制宜：凡是 NetworkManager 里 ipv4.method=shared 的活动连接，就是正在发 DHCP 的 LAN 口
+# （现在有 Gray-Router=wlp2s0 和 LAN-USB=enx…；以后再加 USB 网口也会自动认出）
+WAN_IF=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null | sed -n 's/^WAN_IF=//p')
+LAN_IFS=${GR_LAN_IF:-}
+lan_ifaces() {
+  local name dev type m out=""
+  while IFS=: read -r name dev type; do
+    [ -n "${dev:-}" ] || continue
+    case "$type" in 802-11-wireless|802-3-ethernet|802-11-wireless-mesh) ;; *) continue ;; esac
+    m=$(nmcli -g ipv4.method con show "$name" 2>/dev/null | head -1)
+    [ "$m" = "shared" ] && out="$out $dev"
+  done < <(nmcli -t -f NAME,DEVICE,TYPE con show --active 2>/dev/null)
+  if [ -z "${out// /}" ]; then   # 兜底：有内网地址、不是 WAN、不是 docker/veth
+    out=$(ip -4 -o addr show 2>/dev/null \
+          | awk '{print $2" "$4}' | grep -E ' (192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01]))\.' | awk '{print $1}' \
+          | grep -vE '^(docker|veth|br-|lo)' || true)
+  fi
+  echo "$out" | tr ' ' '\n' | grep -v '^$' | grep -vx "${WAN_IF:-__none__}" | sort -u | tr '\n' ' '
+}
+LAN_IFS=$(lan_ifaces)
+[ -z "${LAN_IFS// /}" ] && LAN_IFS=wlp2s0
+IFACE=${LAN_IFS%% *}   # 兼容旧逻辑（第一个 LAN 口）
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG" 2>/dev/null; }
 norm_mac() { printf '%s' "${1:-}" | tr 'A-Z' 'a-z' | tr -d ' '; }
@@ -142,19 +154,31 @@ do_unblock_all() {
 do_list() {
   ensure_table
   ensure_json
-  iw dev "$IFACE" station dump > /run/grayrouter-devices.sta 2>/dev/null || : > /run/grayrouter-devices.sta
+  : > /run/grayrouter-devices.sta
+  local i
+  for i in $LAN_IFS; do
+    [ -d "/sys/class/net/$i/wireless" ] && iw dev "$i" station dump >> /run/grayrouter-devices.sta 2>/dev/null
+  done
+  # 注意：ip neigh show dev X 的输出不含 dev 字段，所以一次读全表，按 LAN 口白名单过滤
+  ip neigh show > /run/grayrouter-devices.neigh 2>/dev/null || : > /run/grayrouter-devices.neigh
+  do_names > /run/grayrouter-devices.leases 2>/dev/null || : > /run/grayrouter-devices.leases
   nft list set inet $TBL blocked > /run/grayrouter-devices.set 2>/dev/null || : > /run/grayrouter-devices.set
-  python3 - "$JSON" /run/grayrouter-devices.sta /run/grayrouter-devices.set <<'PY'
-import json, re, sys
+  python3 - "$JSON" /run/grayrouter-devices.sta /run/grayrouter-devices.neigh \
+            /run/grayrouter-devices.leases /run/grayrouter-devices.set "$LAN_IFS" <<'PY'
+import json, re, sys, subprocess
+
+json_path, sta_path, neigh_path, lease_path, set_path = sys.argv[1:6]
+lan_set = set((sys.argv[6] if len(sys.argv) > 6 else "").split())
 
 try:
-    devs = json.load(open(sys.argv[1])).get("devices", {})
+    devs = json.load(open(json_path, encoding="utf-8")).get("devices", {})
 except Exception:
     devs = {}
 
+# --- 1) WiFi 关联表：信号 + 上下行字节 ---
 sta, cur = {}, None
 try:
-    for line in open(sys.argv[2], errors="replace"):
+    for line in open(sta_path, errors="replace"):
         line = line.strip()
         if line.startswith("Station "):
             cur = line.split()[1].lower()
@@ -173,25 +197,90 @@ try:
 except Exception:
     pass
 
-blocked = {b.lower() for b in re.findall(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", open(sys.argv[3], errors="replace").read())}
+# --- 2) ARP/邻居表（所有 LAN 口）：在线状态 + IP + 从哪个口进来 ---
+def read_acct():
+    """读 nft 计数表（gray_acct），覆盖 WiFi + 有线 + 静态 IP"""
+    up, dn = {}, {}
+    for name, tgt in (("up4", up), ("down4", dn)):
+        try:
+            txt = subprocess.run(["nft", "-j", "list", "set", "inet", "gray_acct", name],
+                                 capture_output=True, text=True, timeout=5).stdout
+            for it in json.loads(txt).get("nftables", []):
+                st = it.get("set")
+                if not st or st.get("name") != name:
+                    continue
+                for e in st.get("elem", []):
+                    body = e.get("elem", {})
+                    ip = body.get("val")
+                    if ip:
+                        tgt[ip] = int((body.get("counter") or {}).get("bytes", 0))
+        except Exception:
+            pass
+    return up, dn
+
+acct_up, acct_dn = read_acct()
+neigh_ip, neigh_if, neigh_st = {}, {}, {}
+try:
+    for line in open(neigh_path, errors="replace"):
+        p = line.split()
+        if len(p) >= 6 and "lladdr" in p and "dev" in p:
+            dev = p[p.index("dev") + 1]
+            if lan_set and dev not in lan_set:
+                continue
+            state = p[-1].upper()
+            if state in ("FAILED", "INCOMPLETE"):
+                continue
+            mac = p[p.index("lladdr") + 1].lower()
+            neigh_ip[mac] = p[0]
+            neigh_if[mac] = dev
+            neigh_st[mac] = state
+except Exception:
+    pass
+
+# --- 3) DHCP 租约：主机名 + 分配过的 IP ---
+leases = {}
+try:
+    for line in open(lease_path, errors="replace"):
+        p = line.rstrip("\n").split("\t")
+        if len(p) >= 3:
+            leases[p[0].lower()] = {"ip": p[1], "name": p[2].strip()}
+except Exception:
+    pass
+
+# --- 4) 黑名单 ---
+blocked = {b.lower() for b in re.findall(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}",
+           open(set_path, errors="replace").read())}
 for mac, e in devs.items():
     if e.get("blocked"):
-        blocked.add(mac.lower())
+        blocked.add(mac)
 
 out = []
-for mac in sorted(set(devs) | set(sta) | blocked):
+for mac in set(devs) | set(sta) | set(neigh_ip) | set(leases) | blocked:
     e = devs.get(mac, {})
     s = sta.get(mac, {})
+    L = leases.get(mac, {})
+    ip = neigh_ip.get(mac) or L.get("ip", "")
+    iface = neigh_if.get(mac, "")
+    online = (mac in sta) or (mac in neigh_ip)
+    kind = "wifi" if mac in sta else ("wired" if mac in neigh_ip else "")
+    # 清掉“没有任何信息”的幽灵条目（历史 JSON 里残留的假 MAC）
+    if not online and not ip and not (e.get("name") or L.get("name")) and mac not in blocked \
+       and not s.get("up") and not s.get("down"):
+        continue
     out.append({
         "mac": mac,
-        "name": e.get("name", ""),
+        "name": (e.get("name") or L.get("name") or "").strip(),
         "blocked": mac in blocked,
-        "online": mac in sta,
-        "up": s.get("up", 0),
-        "down": s.get("down", 0),
+        "online": online,
+        "ip": ip,
+        "iface": iface,
+        "kind": kind,
+        "state": neigh_st.get(mac, ""),
+        "up": int(acct_up.get(ip, s.get("up", 0))),
+        "down": int(acct_dn.get(ip, s.get("down", 0))),
         "signal": s.get("signal"),
     })
-out.sort(key=lambda x: (not x["online"], -(x["up"] + x["down"])))
+out.sort(key=lambda x: (not x["online"], -(x["up"] + x["down"]), x["mac"]))
 print(json.dumps({"devices": out}, ensure_ascii=False))
 PY
 }

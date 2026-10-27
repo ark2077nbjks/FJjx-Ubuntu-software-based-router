@@ -7,9 +7,9 @@
     Title="网络面板 NetPanel"
     Width="1200"
     Height="830"
-    MinWidth="980"
+    MinWidth="1120"
     MinHeight="640"
-    Background="#FFF5F6F8"
+    Background="#FFF5F7FB"
     FontFamily="Microsoft YaHei UI"
     FontSize="13"
     Icon="/icons/app.png"
@@ -43,13 +43,13 @@
                                 Margin="12,0,0,0"
                                 Padding="8,3"
                                 VerticalAlignment="Center"
-                                Background="#FFE8F0FE"
+                                Background="#FFE8F3FF"
                                 CornerRadius="4">
                                 <Border.Child>
                                     <TextBlock
                                         x:Name="TxtBadge"
                                         FontSize="11.5"
-                                        Foreground="#FF2F6FED"
+                                        Foreground="#FF2D8CFF"
                                         Text="日志设置" />
                                 </Border.Child>
                             </Border>
@@ -71,7 +71,7 @@
                             <TextBlock
                                 x:Name="TxtHint"
                                 VerticalAlignment="Center"
-                                Foreground="#FF7C8798"
+                                Foreground="#FF8A99B8"
                                 Text="数据目录已就绪" />
                         </StackPanel.Children>
                     </StackPanel>
@@ -116,8 +116,8 @@
                                                     Height="32"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="安装看门狗"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnWatchInstall"
                                                     Cursor="Hand"
@@ -141,8 +141,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="重启 AP"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnWatchRestart"
                                                     Cursor="Hand"
@@ -166,8 +166,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="自动执行开关"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnWatchAuto"
                                                     Cursor="Hand"
@@ -194,8 +194,8 @@
                                                     Height="32"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="一键网络诊断"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnDiagnose"
                                                     Cursor="Hand"
@@ -236,7 +236,7 @@
                                                     Height="32"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="刷新"
-                                                    Background="#FF2F6FED"
+                                                    Background="#FF2D8CFF"
                                                     BorderThickness="0"
                                                     Click="OnRefresh"
                                                     Cursor="Hand"
@@ -285,7 +285,7 @@
                                                             <TextBlock
                                                                 FontSize="13"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF2F6FED"
+                                                                Foreground="#FF2D8CFF"
                                                                 Text="本机（这台 Windows）" />
                                                         </StackPanel.Children>
                                                     </StackPanel>
@@ -302,7 +302,7 @@
                                                             <TextBlock
                                                                 FontSize="12.5"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF5B6474"
+                                                                Foreground="#FF64738B"
                                                                 Text="校园网出口" />
                                                         </StackPanel.Children>
                                                     </StackPanel>
@@ -331,7 +331,7 @@
                                                                     <TextBlock
                                                                         FontSize="13"
                                                                         FontWeight="SemiBold"
-                                                                        Foreground="#FF2F6FED"
+                                                                        Foreground="#FF2D8CFF"
                                                                         Text="远端软路由" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -340,22 +340,22 @@
                                                                 x:Name="BdMode"
                                                                 Margin="0,14,0,0"
                                                                 Padding="12,10"
-                                                                Background="#FFFAFBFD"
-                                                                BorderBrush="#FFE4E8EF"
+                                                                Background="#FFF7FAFE"
+                                                                BorderBrush="#FFE9EFF7"
                                                                 BorderThickness="1"
-                                                                CornerRadius="6">
+                                                                CornerRadius="8">
                                                                 <Border.Child>
                                                                     <StackPanel>
                                                                         <TextBlock
                                                                             FontSize="12.5"
                                                                             FontWeight="SemiBold"
-                                                                            Foreground="#FF5B6474"
+                                                                            Foreground="#FF64738B"
                                                                             Text="软路由模式" />
                                                                         <TextBlock
                                                                             x:Name="TxtModeNow"
                                                                             Margin="0,4,0,8"
                                                                             FontSize="12"
-                                                                            Foreground="#FF7C8798"
+                                                                            Foreground="#FF8A99B8"
                                                                             Text="当前：—"
                                                                             TextWrapping="Wrap" />
                                                                         <WrapPanel>
@@ -364,8 +364,8 @@
                                                                                 Height="30"
                                                                                 Padding="12,0"
                                                                                 AutomationProperties.Name="切到软路由"
-                                                                                Background="#FFEEF2F8"
-                                                                                BorderBrush="#FFD5DBE5"
+                                                                                Background="#FFF3F8FE"
+                                                                                BorderBrush="#FFDBE6F3"
                                                                                 BorderThickness="1"
                                                                                 Click="OnSwitchRouter"
                                                                                 Cursor="Hand"
@@ -395,8 +395,8 @@
                                                                                 Margin="8,0,0,0"
                                                                                 Padding="12,0"
                                                                                 AutomationProperties.Name="加固伪装"
-                                                                                Background="#FFEEF2F8"
-                                                                                BorderBrush="#FFD5DBE5"
+                                                                                Background="#FFF3F8FE"
+                                                                                BorderBrush="#FFDBE6F3"
                                                                                 BorderThickness="1"
                                                                                 Click="OnHarden"
                                                                                 Cursor="Hand"
@@ -409,7 +409,7 @@
                                                                             x:Name="TxtModeHint"
                                                                             Margin="0,8,0,0"
                                                                             FontSize="11.5"
-                                                                            Foreground="#FF9AA3B2"
+                                                                            Foreground="#FF9DACC5"
                                                                             Text="切模式会断网重连：切到软路由前，主力机要先注销校园网；回滚前，主力机要先开热点。"
                                                                             TextWrapping="Wrap" />
                                                                     </StackPanel>
@@ -423,8 +423,8 @@
                                                                 TextWrapping="Wrap" />
                                                             <TextBlock
                                                                 Margin="0,10,0,0"
-                                                                Foreground="#FF9AA3B2"
-                                                                Text="每 1 分钟自动刷新；插了新网卡点上方「刷新」会一起查出来，平时不轮询"
+                                                                Foreground="#FF9DACC5"
+                                                                Text="仅在本页可见时每 1 分钟刷新；离开页面即停。插了新网卡点上方「刷新」会一起查出来"
                                                                 TextWrapping="Wrap" />
                                                         </StackPanel.Children>
                                                     </StackPanel>
@@ -468,8 +468,8 @@
                                             Padding="14,0"
                                             VerticalAlignment="Center"
                                             AutomationProperties.Name="查校园网状态"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
+                                            Background="#FFF3F8FE"
+                                            BorderBrush="#FFDBE6F3"
                                             BorderThickness="1"
                                             Click="OnCampusStatus"
                                             Cursor="Hand"
@@ -495,7 +495,7 @@
                                             VerticalAlignment="Center"
                                             DockPanel.Dock="Left"
                                             FontSize="12"
-                                            Foreground="#FF9AA3B2"
+                                            Foreground="#FF9DACC5"
                                             Text="srun 认证 · 由 minipc 执行" />
                                     </DockPanel.Children>
                                 </DockPanel>
@@ -504,7 +504,7 @@
                                     Margin="0,0,0,10"
                                     Padding="16,14,16,14"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -516,7 +516,7 @@
                                                             Width="56"
                                                             VerticalAlignment="Center"
                                                             FontSize="12.5"
-                                                            Foreground="#FF5B6474"
+                                                            Foreground="#FF64738B"
                                                             Text="账号" />
                                                         <TextBox
                                                             x:Name="TxtCampusUser"
@@ -531,7 +531,7 @@
                                                             Margin="24,0,0,0"
                                                             VerticalAlignment="Center"
                                                             FontSize="12.5"
-                                                            Foreground="#FF5B6474"
+                                                            Foreground="#FF64738B"
                                                             Text="密码" />
                                                         <PasswordBox
                                                             x:Name="PwdCampus"
@@ -545,7 +545,7 @@
                                                             Margin="24,0,0,0"
                                                             VerticalAlignment="Center"
                                                             FontSize="12.5"
-                                                            Foreground="#FF5B6474"
+                                                            Foreground="#FF64738B"
                                                             Text="运营商" />
                                                         <ComboBox
                                                             x:Name="CmbCampusIsp"
@@ -577,7 +577,7 @@
                                                             Margin="24,0,0,0"
                                                             VerticalAlignment="Center"
                                                             FontSize="12.5"
-                                                            Foreground="#FF5B6474"
+                                                            Foreground="#FF64738B"
                                                             Text="网卡" />
                                                         <ComboBox
                                                             x:Name="CmbCampusIf"
@@ -599,7 +599,7 @@
                                                             Width="100"
                                                             Height="32"
                                                             AutomationProperties.Name="校园网登录"
-                                                            Background="#FF2F6FED"
+                                                            Background="#FF2D8CFF"
                                                             BorderThickness="0"
                                                             Click="OnCampusLogin"
                                                             Cursor="Hand"
@@ -625,8 +625,8 @@
                                                             Height="32"
                                                             Margin="8,0,0,0"
                                                             AutomationProperties.Name="校园网注销"
-                                                            Background="#FFEEF2F8"
-                                                            BorderBrush="#FFD5DBE5"
+                                                            Background="#FFF3F8FE"
+                                                            BorderBrush="#FFDBE6F3"
                                                             BorderThickness="1"
                                                             Click="OnCampusLogout"
                                                             Cursor="Hand">
@@ -660,7 +660,7 @@
                                 <Border
                                     Grid.Row="2"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -711,7 +711,7 @@
                                             VerticalAlignment="Center"
                                             FontSize="15"
                                             FontWeight="SemiBold"
-                                            Foreground="#FF2F6FED"
+                                            Foreground="#FF2D8CFF"
                                             Text="网址连通性" />
                                         <Image
                                             Width="16"
@@ -731,7 +731,7 @@
                                             Margin="8,0,0,0"
                                             Padding="14,0"
                                             AutomationProperties.Name="检测"
-                                            Background="#FF2F6FED"
+                                            Background="#FF2D8CFF"
                                             BorderThickness="0"
                                             Click="OnCheckSites"
                                             Cursor="Hand"
@@ -756,8 +756,8 @@
                                             Margin="8,0,0,0"
                                             Padding="14,0"
                                             AutomationProperties.Name="测全部常用"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
+                                            Background="#FFF3F8FE"
+                                            BorderBrush="#FFDBE6F3"
                                             BorderThickness="1"
                                             Click="OnCheckAllPresets"
                                             Cursor="Hand">
@@ -779,8 +779,8 @@
                                             Margin="8,0,0,0"
                                             Padding="14,0"
                                             AutomationProperties.Name="导出结果"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
+                                            Background="#FFF3F8FE"
+                                            BorderBrush="#FFDBE6F3"
                                             BorderThickness="1"
                                             Click="OnExportSites"
                                             Cursor="Hand"
@@ -804,19 +804,19 @@
                                         <TextBlock
                                             Margin="0,0,0,5"
                                             FontSize="12"
-                                            Foreground="#FF7C8798"
+                                            Foreground="#FF8A99B8"
                                             Text="国内常用（点一个就测它）" />
                                         <WrapPanel x:Name="PanelPresetsCn" Margin="0,0,0,6" />
                                         <TextBlock
                                             Margin="0,0,0,5"
                                             FontSize="12"
-                                            Foreground="#FF7C8798"
+                                            Foreground="#FF8A99B8"
                                             Text="国外常用" />
                                         <WrapPanel x:Name="PanelPresetsForeign" Margin="0,0,0,6" />
                                         <TextBlock
                                             Margin="0,0,0,5"
                                             FontSize="12"
-                                            Foreground="#FF7C8798"
+                                            Foreground="#FF8A99B8"
                                             Text="GitHub 相关（主站和 CDN 在国内表现差很多）" />
                                         <WrapPanel x:Name="PanelPresetsGitHub" />
                                     </StackPanel.Children>
@@ -826,13 +826,13 @@
                                     Grid.Row="2"
                                     Margin="0,6,0,8"
                                     FontSize="12"
-                                    Foreground="#FF9AA3B2"
+                                    Foreground="#FF9DACC5"
                                     Text="一行一个可批量；结果显示状态码与各段耗时" />
                                 <Border
                                     Grid.Row="3"
                                     Padding="14,10"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -860,179 +860,180 @@
                         </TabItem.Header>
                         <Grid>
                             <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
                             <Grid.Children>
                                 <StackPanel
                                     Grid.Row="0"
-                                    Margin="0,0,0,4"
+                                    Margin="0,0,0,10"
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
                                         <TextBlock
                                             VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
-                                            Text="启用 / 禁用网卡" />
-                                        <Button
-                                            Width="96"
-                                            Height="32"
-                                            Margin="16,0,0,0"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
-                                            BorderThickness="1"
-                                            Click="OnRefreshNics"
-                                            Cursor="Hand">
-                                            <StackPanel Orientation="Horizontal">
-                                                <StackPanel.Children>
-                                                    <Image
-                                                        Width="15"
-                                                        Height="15"
-                                                        Margin="0,0,6,0"
-                                                        VerticalAlignment="Center"
-                                                        Source="/icons/refresh.png" />
-                                                    <TextBlock VerticalAlignment="Center" Text="刷新列表" />
-                                                </StackPanel.Children>
-                                            </StackPanel>
-                                        </Button>
-                                    </StackPanel.Children>
-                                </StackPanel>
-                                <StackPanel Grid.Row="1" Margin="0,0,0,10">
-                                    <StackPanel.Children>
+                                            Text="线路与故障转移" />
                                         <TextBlock
+                                            x:Name="TxtWanFailInfo"
+                                            Margin="14,0,0,0"
+                                            VerticalAlignment="Center"
                                             FontSize="12"
-                                            Foreground="#FF7C8798"
-                                            Text="所有操作都会先弹确认框；禁用无线网卡会立刻断网，请看清提示。" />
-                                        <TextBlock
-                                            x:Name="TxtNicNotice"
-                                            Margin="0,6,0,0"
-                                            FontSize="12.5"
-                                            FontWeight="SemiBold"
-                                            Foreground="#FFC88600"
-                                            TextWrapping="Wrap" />
+                                            Foreground="#FF8A99B8"
+                                            Text="" />
                                     </StackPanel.Children>
                                 </StackPanel>
+
+                                <Border
+                                    Grid.Row="1"
+                                    Margin="0,0,0,10"
+                                    Padding="12,10,12,10"
+                                    Background="#FFFFFFFF"
+                                    BorderBrush="#FFE9EFF7"
+                                    BorderThickness="1"
+                                    CornerRadius="10">
+                                    <Border.Child>
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="170" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="48" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" FontSize="11.5" Foreground="#FF8A94A6" Text="网口" />
+                                                <TextBlock Grid.Column="1" FontSize="11.5" Foreground="#FF8A94A6" Text="类型" />
+                                                <TextBlock Grid.Column="2" FontSize="11.5" Foreground="#FF8A94A6" Text="地址" />
+                                                <TextBlock Grid.Column="3" FontSize="11.5" Foreground="#FF8A94A6" Text="状态" />
+                                                <TextBlock Grid.Column="4" FontSize="11.5" Foreground="#FF8A94A6" Text="延迟" />
+                                                <TextBlock Grid.Column="5" FontSize="11.5" Foreground="#FF8A94A6" Text="优先级" />
+                                                <TextBlock Grid.Column="6" FontSize="11.5" Foreground="#FF8A94A6" Text="操作" />
+                                            </Grid>
+                                            <StackPanel x:Name="PanelWanRows" />
+                                            <TextBlock
+                                                x:Name="TxtWanEmpty"
+                                                Margin="0,6,0,0"
+                                                FontSize="12"
+                                                Foreground="#FF8A99B8"
+                                                Text=""
+                                                TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border.Child>
+                                </Border>
+
                                 <Border
                                     Grid.Row="2"
                                     Margin="0,0,0,10"
                                     Padding="12,10,12,10"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
-                                    CornerRadius="4">
+                                    CornerRadius="10">
                                     <Border.Child>
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <Grid.Children>
-                                                <StackPanel Grid.Row="0" Orientation="Horizontal">
-                                                    <StackPanel.Children>
-                                                        <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Foreground="#FF374151" Text="网口角色" />
-                                                        <TextBlock x:Name="TxtRoleInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF7C8798" Text="" />
-                                                        <TextBlock VerticalAlignment="Center" Margin="18,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="出口 WAN" />
-                                                        <ComboBox x:Name="CmbRoleWan" Width="200" Height="26" VerticalContentAlignment="Center" />
-                                                        <TextBlock VerticalAlignment="Center" Margin="14,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="热点 LAN" />
-                                                        <ComboBox x:Name="CmbRoleLan" Width="200" Height="26" VerticalContentAlignment="Center" />
-                                                        <Button x:Name="BtnRoleSave" Height="26" Margin="14,0,0,0" Padding="12,0" Click="OnRoleSave">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="保存为手动" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                        <Button x:Name="BtnRoleAuto" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnRoleAuto" ToolTip="恢复「出口/热点」按网口自动识别（取消手动钉）">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="自动识别" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                    </StackPanel.Children>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock
+                                                    Margin="0,0,16,0"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="12.5"
+                                                    FontWeight="SemiBold"
+                                                    Text="故障转移策略" />
+                                                <Button
+                                                    x:Name="BtnWanFailToggle"
+                                                    Height="26"
+                                                    Margin="12,0,0,0"
+                                                    Padding="12,0"
+                                                    Click="OnWanFailToggle"
+                                                    ToolTip="开启后每 15 秒探测一次，当前出口连续失败达到次数就换下一条" />
+                                                <Button
+                                                    x:Name="BtnRestoreSystem"
+                                                    Height="26"
+                                                    Margin="8,0,0,0"
+                                                    Padding="12,0"
+                                                    Click="OnRestoreSystem"
+                                                    Content="恢复系统路由"
+                                                    ToolTip="清除面板加的路由，交回 NetworkManager；会同时关闭自动切换" />
+                                            </StackPanel>
+                                            <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#FF55647A" Text="当前出口连续失败" />
+                                                <ComboBox x:Name="CmbFailN" Width="60" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center" SelectionChanged="OnWanThresholdChanged" />
+                                                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#FF55647A" Text="次切走 · 更高优先级连续恢复" />
+                                                <ComboBox x:Name="CmbOkN" Width="60" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center" SelectionChanged="OnWanThresholdChanged" />
+                                                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#FF55647A" Text="次切回" />
+                                            </StackPanel>
+                                            <Expander Margin="0,10,0,0" Header="高级（静态兜底 / 网口角色 / USB 激活）">
+                                                <StackPanel Margin="0,8,0,0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#FF55647A" Text="静态兜底 IP" />
+                                                        <TextBox x:Name="TxtStaticIp" Width="130" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center" FontSize="12" />
+                                                        <TextBlock VerticalAlignment="Center" Margin="10,0,4,0" FontSize="12" Foreground="#FF55647A" Text="网关" />
+                                                        <TextBox x:Name="TxtStaticGw" Width="130" Height="24" VerticalContentAlignment="Center" FontSize="12" />
+                                                        <Button x:Name="BtnStaticSave" Height="24" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave" Content="保存网段" ToolTip="DHCP 拿不到地址时的兜底网段，不会覆盖主线路由" />
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                                                        <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#FF55647A" Text="WAN 角色" ToolTip="脚本自动发现的依据，不是立即换出口" />
+                                                        <ComboBox x:Name="CmbRoleWan" Width="200" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center" ToolTip="决定脚本把哪块网卡当出口（自动发现用）。临时换出口请点上面线路表里的「设为出口」" />
+                                                        <TextBlock VerticalAlignment="Center" Margin="12,0,4,0" FontSize="12" Foreground="#FF55647A" Text="LAN 角色" ToolTip="开热点的那块网卡" />
+                                                        <ComboBox x:Name="CmbRoleLan" Width="200" Height="24" VerticalContentAlignment="Center" ToolTip="哪块网卡负责开热点" />
+                                                        <Button x:Name="BtnRoleSave" Height="24" Margin="10,0,0,0" Padding="12,0" Click="OnRoleSave" Content="保存为手动" />
+                                                        <Button x:Name="BtnRoleAuto" Height="24" Margin="6,0,0,0" Padding="12,0" Click="OnRoleAuto" Content="自动识别" ToolTip="恢复按网口自动识别出口与热点（取消手动钉）" />
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                                                        <Button x:Name="BtnUsbNow" Height="24" Padding="12,0" Click="OnUsbNow" Content="立即激活 USB 网卡" ToolTip="立刻给所有 USB / 手机共享网口建连接并要地址" />
+                                                        <TextBlock x:Name="TxtRoleInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF8A99B8" Text="" />
+                                                    </StackPanel>
+                                                    <TextBlock x:Name="TxtLanUsb" Margin="0,6,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF8A99B8" Text="" TextWrapping="Wrap" />
                                                 </StackPanel>
-                                                <TextBlock Grid.Row="1" Margin="0,8,0,0" FontSize="12" Foreground="#FF7C8798" TextWrapping="Wrap" Text="自动：出口 = 默认路由所在网口；热点 = AP 模式网口（没有就取 192.168.x 那个）。手动指定后，模式切换、热点、设备流量、看门狗、校园网默认网卡都跟着走。" />
-                                            </Grid.Children>
-                                        </Grid>
+                                            </Expander>
+                                        </StackPanel>
                                     </Border.Child>
                                 </Border>
+
                                 <Border
                                     Grid.Row="3"
-                                    Margin="0,0,0,10"
                                     Padding="12,10,12,10"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
-                                    CornerRadius="4">
+                                    CornerRadius="10">
                                     <Border.Child>
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
                                             </Grid.RowDefinitions>
                                             <Grid.Children>
-                                                <StackPanel Grid.Row="0" Orientation="Horizontal">
-                                                    <StackPanel.Children>
-                                                        <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Foreground="#FF374151" Text="多 WAN 故障转移" />
-                                                        <TextBlock x:Name="TxtWanFailInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="#FF7C8798" Text="" />
-                                                        <Button x:Name="BtnWanFailToggle" Height="26" Margin="14,0,0,0" Padding="12,0" Click="OnWanFailToggle" ToolTip="开启后每 15 秒探测一次，当前出口连续 3 次失败自动换下一条">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="开启自动切换" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                        <ComboBox x:Name="CmbWanPrefer" Width="200" Height="26" Margin="12,0,0,0" VerticalContentAlignment="Center" />
-                                                        <Button x:Name="BtnWanToBackup" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFFDF6E3" BorderBrush="#FFEEDFB0" Click="OnWanToBackup" ToolTip="先探活再切；探不通直接拒绝，不会把网切死">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="切到所选" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                        <Button x:Name="BtnWanToPrimary" Height="26" Margin="8,0,0,0" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnWanToPrimary" ToolTip="清除面板加的路由，交回 NetworkManager 管理；会同时关闭自动切换">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="恢复系统路由" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                    </StackPanel.Children>
+                                                <StackPanel Grid.Row="0" Margin="0,0,0,6" Orientation="Horizontal">
+                                                    <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="本机网卡" />
+                                                    <Button
+                                                        Height="26"
+                                                        Margin="12,0,0,0"
+                                                        Padding="12,0"
+                                                        Background="#FFF3F8FE"
+                                                        BorderBrush="#FFDBE6F3"
+                                                        BorderThickness="1"
+                                                        Click="OnRefreshNics"
+                                                        Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <StackPanel.Children>
+                                                                <Image Width="14" Height="14" Margin="0,0,6,0" Source="/icons/n_refresh.png" />
+                                                                <TextBlock Text="刷新列表" />
+                                                            </StackPanel.Children>
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <TextBlock x:Name="TxtNicNotice" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="11.5" Foreground="#FF8A94A6" Text="所有操作都会先弹确认框" />
                                                 </StackPanel>
-                                                <StackPanel Grid.Row="2" Margin="0,8,0,0" Orientation="Horizontal">
-                                                    <StackPanel.Children>
-                                                        <Button x:Name="BtnUsbNow" Height="26" Padding="12,0" Background="#FFEEF2F8" BorderBrush="#FFD5DBE5" Click="OnUsbNow" ToolTip="立刻给所有 USB / 手机共享网口建连接并要地址">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="立即激活 USB 网卡" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                        <TextBlock VerticalAlignment="Center" Margin="16,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="静态兜底 IP" />
-                                                        <TextBox x:Name="TxtStaticIp" Width="120" Height="24" VerticalContentAlignment="Center" FontSize="12" />
-                                                        <TextBlock VerticalAlignment="Center" Margin="8,0,4,0" FontSize="12" Foreground="#FF4B5563" Text="网关" />
-                                                        <TextBox x:Name="TxtStaticGw" Width="120" Height="24" VerticalContentAlignment="Center" FontSize="12" />
-                                                        <Button x:Name="BtnStaticSave" Height="26" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave" ToolTip="保存 DHCP 拿不到地址时用的兜底网段（不会覆盖主线路由）">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
-                                                                    <TextBlock VerticalAlignment="Center" Text="保存网段" />
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
-                                                        </Button>
-                                                    </StackPanel.Children>
-                                                </StackPanel>
-                                                <TextBlock Grid.Row="1" Margin="0,8,0,0" FontSize="12" Foreground="#FF7C8798" TextWrapping="Wrap"
-                                                           Text="自动发现所有能当出口的网口（有线 / USB 网卡 / 手机共享 / 无线 STA），按优先级排列；当前出口连续 3 次探测失败就换下一条，更高优先级的线连续 2 次恢复就切回去。探测只读（ICMP + HTTP 204），不触发切换就不动路由。默认关闭，需手动开启。" />
+                                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                                    <StackPanel x:Name="PanelNics" />
+                                                </ScrollViewer>
                                             </Grid.Children>
                                         </Grid>
                                     </Border.Child>
                                 </Border>
-                                <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="PanelNics" />
-                                </ScrollViewer>
                             </Grid.Children>
                         </Grid>
                     </TabItem>
@@ -1077,7 +1078,7 @@
                                                     VerticalAlignment="Center"
                                                     AutomationProperties.Name="深度扫描">
                                                     深度扫描
-                                                    <CheckBox.Foreground>#FF4B5563</CheckBox.Foreground>
+                                                    <CheckBox.Foreground>#FF55647A</CheckBox.Foreground>
                                                     <CheckBox.ToolTip>快速模式：读邻居表 + 问路由器要名字 + 每台 1 个 ping（很轻） 深度扫描：对整段 254 个地址 ping，16 并发限速，更全但慢（约 10 秒）</CheckBox.ToolTip>
                                                 </CheckBox>
                                                 <Image
@@ -1102,7 +1103,7 @@
                                                     Margin="10,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="扫描设备"
-                                                    Background="#FF2F6FED"
+                                                    Background="#FF2D8CFF"
                                                     BorderThickness="0"
                                                     Click="OnScanDevices"
                                                     Cursor="Hand"
@@ -1128,8 +1129,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="停止扫描"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnStopScan"
                                                     Cursor="Hand"
@@ -1152,8 +1153,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="全部解除"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnDevUnblockAll"
                                                     Cursor="Hand">
@@ -1175,8 +1176,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="导出设备"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnExportDevices"
                                                     Cursor="Hand">
@@ -1201,13 +1202,13 @@
                                     Grid.Row="1"
                                     Margin="0,0,0,8"
                                     FontSize="12"
-                                    Foreground="#FF7C8798"
+                                    Foreground="#FF8A99B8"
                                     Text="点「扫描」看当前网段有哪些设备。快速模式：读邻居表 + 问路由器要名字 + 每台发 1 个 ping 测延迟（约 2 秒）"
                                     TextWrapping="Wrap" />
                                 <Border
                                     Grid.Row="2"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -1220,40 +1221,46 @@
                                             FontSize="12"
                                             GridLinesVisibility="Horizontal"
                                             HeadersVisibility="Column"
-                                            HorizontalGridLinesBrush="#FFEDF0F5"
+                                            HorizontalGridLinesBrush="#FFEDF2F8"
                                             IsReadOnly="True"
                                             RowHeight="30"
+                                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                             SelectionMode="Single">
                                             <DataGrid.Columns>
                                                 <DataGridTextColumn
-                                                    Width="130"
+                                                    Width="110"
                                                     Binding="{Binding Ip}"
                                                     Header="IP 地址" />
                                                 <DataGridTextColumn
-                                                    Width="150"
+                                                    Width="120"
                                                     Binding="{Binding Mac}"
                                                     Header="MAC" />
                                                 <DataGridTextColumn
-                                                    Width="1.4*"
+                                                    Width="*"
+                                                    MinWidth="150"
                                                     Binding="{Binding Name}"
                                                     Header="名称" />
                                                 <DataGridTextColumn
-                                                    Width="250"
+                                                    Width="140"
                                                     Binding="{Binding Conn}"
                                                     Header="连接" />
                                                 <DataGridTextColumn
-                                                    Width="80"
+                                                    Width="52"
                                                     Binding="{Binding State}"
                                                     Header="状态" />
                                                 <DataGridTextColumn
-                                                    Width="80"
+                                                    Width="96"
+                                                    Binding="{Binding Rate}"
+                                                    Header="实时 ↑/↓" />
+                                                <DataGridTextColumn
+                                                    Width="52"
                                                     Binding="{Binding Rtt}"
                                                     Header="延迟" />
                                                 <DataGridTextColumn
-                                                    Width="152"
+                                                    Width="84"
                                                     Binding="{Binding Traffic}"
                                                     Header="流量 ↑/↓" />
-                                                <DataGridTemplateColumn Width="92" Header="操作">
+                                                <DataGridTemplateColumn Width="64" Header="操作">
                                                     <DataGridTemplateColumn.CellTemplate>
                                                         <DataTemplate>
                                                             <Button
@@ -1261,8 +1268,8 @@
                                                                 Height="22"
                                                                 Padding="6,0"
                                                                 AutomationProperties.Name="设备操作"
-                                                                Background="#FFEEF2F8"
-                                                                BorderBrush="#FFD5DBE5"
+                                                                Background="#FFF3F8FE"
+                                                                BorderBrush="#FFDBE6F3"
                                                                 BorderThickness="1"
                                                                 Click="OnDevAction"
                                                                 Content="{Binding ActionText}"
@@ -1312,7 +1319,7 @@
                                             Width="80"
                                             Height="32"
                                             Margin="16,0,0,0"
-                                            Background="#FF2F6FED"
+                                            Background="#FF2D8CFF"
                                             BorderThickness="0"
                                             Click="OnScanWifi"
                                             Cursor="Hand"
@@ -1336,8 +1343,8 @@
                                             Width="96"
                                             Height="32"
                                             Margin="8,0,0,0"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
+                                            Background="#FFF3F8FE"
+                                            BorderBrush="#FFDBE6F3"
                                             BorderThickness="1"
                                             Click="OnDisconnectWifi"
                                             Cursor="Hand">
@@ -1357,8 +1364,8 @@
                                             Width="118"
                                             Height="32"
                                             Margin="8,0,0,0"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
+                                            Background="#FFF3F8FE"
+                                            BorderBrush="#FFDBE6F3"
                                             BorderThickness="1"
                                             Click="OnOpenLocation"
                                             Cursor="Hand">
@@ -1381,7 +1388,7 @@
                                     Grid.Row="1"
                                     Margin="0,0,0,10"
                                     FontSize="12"
-                                    Foreground="#FF7C8798"
+                                    Foreground="#FF8A99B8"
                                     Text="Windows 11 要求「位置服务」开着才能扫到 WiFi 列表。"
                                     TextWrapping="Wrap" />
                                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -1456,7 +1463,7 @@
                                             Height="32"
                                             Margin="8,0,0,0"
                                             AutomationProperties.Name="开始检测"
-                                            Background="#FF2F6FED"
+                                            Background="#FF2D8CFF"
                                             BorderThickness="0"
                                             Click="OnStartGamePing"
                                             Cursor="Hand"
@@ -1482,8 +1489,8 @@
                                             Height="32"
                                             Margin="8,0,0,0"
                                             AutomationProperties.Name="停止检测"
-                                            Background="#FFEEF2F8"
-                                            BorderBrush="#FFD5DBE5"
+                                            Background="#FFF3F8FE"
+                                            BorderBrush="#FFDBE6F3"
                                             BorderThickness="1"
                                             Click="OnStopGamePing"
                                             Cursor="Hand"
@@ -1507,7 +1514,7 @@
                                     Grid.Row="1"
                                     Margin="0,0,0,10"
                                     FontSize="12"
-                                    Foreground="#FF7C8798"
+                                    Foreground="#FF8A99B8"
                                     Text="选一个目标（或在右边填 IP）后点「开始检测」。预置的香港节点就是 CS2 亚服线路。"
                                     TextWrapping="Wrap" />
                                 <StackPanel
@@ -1519,14 +1526,14 @@
                                             x:Name="BoxGameGrade"
                                             Padding="14,8"
                                             VerticalAlignment="Center"
-                                            Background="#FFEEF2F8"
-                                            CornerRadius="6">
+                                            Background="#FFF3F8FE"
+                                            CornerRadius="8">
                                             <Border.Child>
                                                 <TextBlock
                                                     x:Name="TxtGameGrade"
                                                     FontSize="18"
                                                     FontWeight="Bold"
-                                                    Foreground="#FF2F6FED"
+                                                    Foreground="#FF2D8CFF"
                                                     Text="—" />
                                             </Border.Child>
                                         </Border>
@@ -1553,7 +1560,7 @@
                                                     Margin="0,4,0,0"
                                                     FontFamily="Consolas"
                                                     FontSize="12.5"
-                                                    Foreground="#FF5B6474"
+                                                    Foreground="#FF64738B"
                                                     Text="延迟 —   抖动 —   丢包 —" />
                                             </StackPanel.Children>
                                         </StackPanel>
@@ -1563,7 +1570,7 @@
                                     Grid.Row="3"
                                     Padding="14,12,14,12"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -1573,7 +1580,7 @@
                                                     <TextBlock
                                                         Margin="0,0,0,8"
                                                         FontSize="12"
-                                                        Foreground="#FF7C8798"
+                                                        Foreground="#FF8A99B8"
                                                         Text="每个包的往返时间（ms，× 表示丢包）" />
                                                     <TextBlock
                                                         x:Name="TxtGamePackets"
@@ -1654,7 +1661,7 @@
                                                     Height="32"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="开始测速"
-                                                    Background="#FF2F6FED"
+                                                    Background="#FF2D8CFF"
                                                     BorderThickness="0"
                                                     Click="OnStartSpeed"
                                                     Cursor="Hand"
@@ -1680,8 +1687,8 @@
                                                     Height="32"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="停止测速"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnStopSpeed"
                                                     Cursor="Hand"
@@ -1704,8 +1711,8 @@
                                                     Height="32"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="导出本次结果"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnExportSpeed"
                                                     Cursor="Hand"
@@ -1729,7 +1736,7 @@
                                                 <TextBlock
                                                     VerticalAlignment="Center"
                                                     FontSize="12.5"
-                                                    Foreground="#FF7C8798"
+                                                    Foreground="#FF8A99B8"
                                                     Text="自定义地址" />
                                                 <TextBox
                                                     x:Name="TxtCustomUrl"
@@ -1756,7 +1763,7 @@
                                     Margin="0,0,0,10"
                                     Padding="10,6,14,8"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -1781,13 +1788,13 @@
                                                             StrokeThickness="16" />
                                                         <Path
                                                             x:Name="PthGaugeFg"
-                                                            Stroke="#FF2F6FED"
+                                                            Stroke="#FF2D8CFF"
                                                             StrokeEndLineCap="Round"
                                                             StrokeStartLineCap="Round"
                                                             StrokeThickness="16" />
                                                         <Line
                                                             x:Name="LneNeedle"
-                                                            Stroke="#FF2F6FED"
+                                                            Stroke="#FF2D8CFF"
                                                             StrokeEndLineCap="Round"
                                                             StrokeStartLineCap="Round"
                                                             StrokeThickness="3"
@@ -1804,7 +1811,7 @@
                                                             Canvas.Top="171"
                                                             Width="18"
                                                             Height="18"
-                                                            Fill="#FF2F6FED" />
+                                                            Fill="#FF2D8CFF" />
                                                         <TextBlock
                                                             x:Name="TxtGaugeBig"
                                                             Canvas.Left="0"
@@ -1820,7 +1827,7 @@
                                                             Canvas.Top="148"
                                                             Width="360"
                                                             FontSize="13"
-                                                            Foreground="#FF7C8798"
+                                                            Foreground="#FF8A99B8"
                                                             Text="Mbps"
                                                             TextAlignment="Center" />
                                                         <TextBlock
@@ -1844,7 +1851,7 @@
                                                             Width="360"
                                                             FontSize="12.5"
                                                             FontWeight="SemiBold"
-                                                            Foreground="#FF2FB86B"
+                                                            Foreground="#FF00B894"
                                                             Text="待机"
                                                             TextAlignment="Center" />
                                                     </Canvas.Children>
@@ -1871,7 +1878,7 @@
                                                             <StackPanel.Children>
                                                                 <TextBlock
                                                                     FontSize="12"
-                                                                    Foreground="#FF7C8798"
+                                                                    Foreground="#FF8A99B8"
                                                                     Text="下载" />
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <StackPanel.Children>
@@ -1879,13 +1886,13 @@
                                                                             x:Name="TxtDown"
                                                                             FontSize="24"
                                                                             FontWeight="Bold"
-                                                                            Foreground="#FF2F6FED"
+                                                                            Foreground="#FF2D8CFF"
                                                                             Text="—" />
                                                                         <TextBlock
                                                                             Margin="2,0,0,4"
                                                                             VerticalAlignment="Bottom"
                                                                             FontSize="12"
-                                                                            Foreground="#FF7C8798"
+                                                                            Foreground="#FF8A99B8"
                                                                             Text="Mbps" />
                                                                     </StackPanel.Children>
                                                                 </StackPanel>
@@ -1898,7 +1905,7 @@
                                                             <StackPanel.Children>
                                                                 <TextBlock
                                                                     FontSize="12"
-                                                                    Foreground="#FF7C8798"
+                                                                    Foreground="#FF8A99B8"
                                                                     Text="上传" />
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <StackPanel.Children>
@@ -1906,13 +1913,13 @@
                                                                             x:Name="TxtUp"
                                                                             FontSize="24"
                                                                             FontWeight="Bold"
-                                                                            Foreground="#FF2FB86B"
+                                                                            Foreground="#FF00B894"
                                                                             Text="—" />
                                                                         <TextBlock
                                                                             Margin="2,0,0,4"
                                                                             VerticalAlignment="Bottom"
                                                                             FontSize="12"
-                                                                            Foreground="#FF7C8798"
+                                                                            Foreground="#FF8A99B8"
                                                                             Text="Mbps" />
                                                                     </StackPanel.Children>
                                                                 </StackPanel>
@@ -1922,7 +1929,7 @@
                                                             <StackPanel.Children>
                                                                 <TextBlock
                                                                     FontSize="12"
-                                                                    Foreground="#FF7C8798"
+                                                                    Foreground="#FF8A99B8"
                                                                     Text="延迟" />
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <StackPanel.Children>
@@ -1936,7 +1943,7 @@
                                                                             Margin="2,0,0,3"
                                                                             VerticalAlignment="Bottom"
                                                                             FontSize="12"
-                                                                            Foreground="#FF7C8798"
+                                                                            Foreground="#FF8A99B8"
                                                                             Text="ms" />
                                                                     </StackPanel.Children>
                                                                 </StackPanel>
@@ -1946,7 +1953,7 @@
                                                             <StackPanel.Children>
                                                                 <TextBlock
                                                                     FontSize="12"
-                                                                    Foreground="#FF7C8798"
+                                                                    Foreground="#FF8A99B8"
                                                                     Text="抖动 / 丢包" />
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <StackPanel.Children>
@@ -1960,7 +1967,7 @@
                                                                             Margin="2,0,0,3"
                                                                             VerticalAlignment="Bottom"
                                                                             FontSize="12"
-                                                                            Foreground="#FF7C8798"
+                                                                            Foreground="#FF8A99B8"
                                                                             Text="ms" />
                                                                     </StackPanel.Children>
                                                                 </StackPanel>
@@ -1972,7 +1979,7 @@
                                                             Grid.ColumnSpan="2"
                                                             Margin="0,8,0,0"
                                                             FontSize="12"
-                                                            Foreground="#FF5B6474"
+                                                            Foreground="#FF64738B"
                                                             Text="平均 —" />
                                                         <TextBlock
                                                             x:Name="TxtSrcInfo"
@@ -1991,7 +1998,7 @@
                                 <Border
                                     Grid.Row="2"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2039,15 +2046,15 @@
                                                     Margin="0,0,14,0"
                                                     VerticalAlignment="Center"
                                                     FontSize="12"
-                                                    Foreground="#FF2F6FED"
+                                                    Foreground="#FF2D8CFF"
                                                     Text="采样中…" />
                                                 <Button
                                                     x:Name="BtnTrafficRefresh"
                                                     Height="32"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="刷新流量"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnTrafficRefresh"
                                                     Cursor="Hand">
@@ -2069,8 +2076,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="导出流量数据"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     Click="OnTrafficExport">
                                                     <StackPanel Orientation="Horizontal">
                                                         <StackPanel.Children>
@@ -2103,14 +2110,14 @@
                                     Grid.Row="1"
                                     Margin="0,0,0,8"
                                     FontSize="12"
-                                    Foreground="#FF7C8798"
+                                    Foreground="#FF8A99B8"
                                     Text="每 1 分钟记一次网卡收发量。只读系统计数器，不发包、不影响网速。"
                                     TextWrapping="Wrap" />
                                 <Border
                                     Grid.Row="2"
                                     Padding="12,10,12,6"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2127,33 +2134,33 @@
                                                     <StackPanel.Children>
                                                         <TextBlock
                                                             FontSize="12"
-                                                            Foreground="#FF4B5563"
+                                                            Foreground="#FF55647A"
                                                             Text="今天每小时用量（所有设备合计）" />
                                                         <Rectangle
                                                             Width="10"
                                                             Height="10"
                                                             Margin="16,0,5,0"
                                                             VerticalAlignment="Center"
-                                                            Fill="#FF2FB86B"
+                                                            Fill="#FF00B894"
                                                             RadiusX="2"
                                                             RadiusY="2" />
                                                         <TextBlock
                                                             VerticalAlignment="Center"
                                                             FontSize="12"
-                                                            Foreground="#FF4B5563"
+                                                            Foreground="#FF55647A"
                                                             Text="下行" />
                                                         <Rectangle
                                                             Width="10"
                                                             Height="10"
                                                             Margin="12,0,5,0"
                                                             VerticalAlignment="Center"
-                                                            Fill="#FF2F6FED"
+                                                            Fill="#FF2D8CFF"
                                                             RadiusX="2"
                                                             RadiusY="2" />
                                                         <TextBlock
                                                             VerticalAlignment="Center"
                                                             FontSize="12"
-                                                            Foreground="#FF4B5563"
+                                                            Foreground="#FF55647A"
                                                             Text="上行" />
                                                     </StackPanel.Children>
                                                 </StackPanel>
@@ -2171,7 +2178,7 @@
                                     Margin="0,10,0,0"
                                     Padding="12,10,12,8"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2188,14 +2195,14 @@
                                                     <StackPanel.Children>
                                                         <TextBlock
                                                             FontSize="12"
-                                                            Foreground="#FF4B5563"
+                                                            Foreground="#FF55647A"
                                                             Text="设备流量（软路由 · 每小时自动记一次 · 只读计数器不发包）" />
                                                         <TextBlock
                                                             x:Name="TxtDevTrafficInfo"
                                                             Margin="12,0,0,0"
                                                             VerticalAlignment="Center"
                                                             FontSize="12"
-                                                            Foreground="#FF2F6FED"
+                                                            Foreground="#FF2D8CFF"
                                                             Text="" />
                                                         
                                                     </StackPanel.Children>
@@ -2211,40 +2218,41 @@
                                                     FontSize="12"
                                                     GridLinesVisibility="Horizontal"
                                                     HeadersVisibility="Column"
-                                                    HorizontalGridLinesBrush="#FFEDF0F5"
+                                                    HorizontalGridLinesBrush="#FFEDF2F8"
                                                     IsReadOnly="True"
                                                     RowHeight="28">
                                                     <DataGrid.Columns>
                                                         <DataGridTextColumn
-                                                            Width="210"
+                                                            Width="1.5*"
+                                                            MinWidth="110"
                                                             Binding="{Binding Name}"
                                                             Header="设备" />
                                                         <DataGridTextColumn
-                                                            Width="120"
+                                                            Width="112"
                                                             Binding="{Binding Ip}"
                                                             Header="IP" />
                                                         <DataGridTextColumn
-                                                            Width="58"
+                                                            Width="52"
                                                             Binding="{Binding State}"
                                                             Header="状态" />
                                                         <DataGridTextColumn
-                                                            Width="70"
+                                                            Width="56"
                                                             Binding="{Binding Share}"
                                                             Header="占比" />
                                                         <DataGridTextColumn
-                                                            Width="95"
+                                                            Width="80"
                                                             Binding="{Binding TodayUp}"
                                                             Header="今日 ↑" />
                                                         <DataGridTextColumn
-                                                            Width="95"
+                                                            Width="80"
                                                             Binding="{Binding TodayDown}"
                                                             Header="今日 ↓" />
                                                         <DataGridTextColumn
-                                                            Width="105"
+                                                            Width="86"
                                                             Binding="{Binding SpanUp}"
                                                             Header="近30天 ↑" />
                                                         <DataGridTextColumn
-                                                            Width="105"
+                                                            Width="86"
                                                             Binding="{Binding SpanDown}"
                                                             Header="近30天 ↓" />
                                                         <DataGridTextColumn
@@ -2292,8 +2300,8 @@
                                                     Margin="0,0,8,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="刷新状态"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnConnRefresh"
                                                     Cursor="Hand">
@@ -2315,8 +2323,8 @@
                                                     Margin="0,0,8,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="自动探测"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnAutoDetect"
                                                     Cursor="Hand"
@@ -2338,7 +2346,7 @@
                                                     Height="32"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="测试连接"
-                                                    Background="#FF2F6FED"
+                                                    Background="#FF2D8CFF"
                                                     BorderThickness="0"
                                                     Click="OnTestRemote"
                                                     Cursor="Hand"
@@ -2366,7 +2374,7 @@
                                     Grid.Row="1"
                                     Padding="16,12"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2439,8 +2447,8 @@
                                                             Height="32"
                                                             Margin="8,0,0,0"
                                                             Padding="12,0"
-                                                            Background="#FFEEF2F8"
-                                                            BorderBrush="#FFD5DBE5"
+                                                            Background="#FFF3F8FE"
+                                                            BorderBrush="#FFDBE6F3"
                                                             BorderThickness="1"
                                                             Click="OnPickPackage"
                                                             Cursor="Hand">
@@ -2452,8 +2460,8 @@
                                                             Margin="8,0,0,0"
                                                             Padding="12,0"
                                                             AutomationProperties.Name="上传安装包"
-                                                            Background="#FFEEF2F8"
-                                                            BorderBrush="#FFD5DBE5"
+                                                            Background="#FFF3F8FE"
+                                                            BorderBrush="#FFDBE6F3"
                                                             BorderThickness="1"
                                                             Click="OnUploadPackage"
                                                             Cursor="Hand">
@@ -2477,7 +2485,7 @@
                                                             Margin="0,0,190,0"
                                                             VerticalAlignment="Center"
                                                             FontSize="12"
-                                                            Foreground="#FF7C8798"
+                                                            Foreground="#FF8A99B8"
                                                             Text="密码不会保存：登录方式选「密码」时，部署会弹出终端窗口，密码在那个窗口里输入，本程序看不到。"
                                                             TextWrapping="Wrap" />
                                                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
@@ -2488,8 +2496,8 @@
                                                                     Height="32"
                                                                     Padding="12,0"
                                                                     AutomationProperties.Name="打开终端"
-                                                                    Background="#FFEEF2F8"
-                                                                    BorderBrush="#FFD5DBE5"
+                                                                    Background="#FFF3F8FE"
+                                                                    BorderBrush="#FFDBE6F3"
                                                                     BorderThickness="1"
                                                                     Click="OnOpenTerminal"
                                                                     Cursor="Hand">
@@ -2512,7 +2520,7 @@
                                                                     Margin="8,0,0,0"
                                                                     Padding="12,0"
                                                                     AutomationProperties.Name="开始部署"
-                                                                    Background="#FF2F6FED"
+                                                                    Background="#FF2D8CFF"
                                                                     BorderThickness="0"
                                                                     Click="OnDeploy"
                                                                     Cursor="Hand"
@@ -2544,7 +2552,7 @@
                                     Grid.Row="2"
                                     Margin="0,10,0,0"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2555,7 +2563,7 @@
                                             BorderThickness="0"
                                             FontFamily="Consolas"
                                             FontSize="12"
-                                            Foreground="#FF2B3444"
+                                            Foreground="#FF2B3A4F"
                                             IsReadOnly="True"
                                             TextWrapping="Wrap"
                                             VerticalScrollBarVisibility="Auto" />
@@ -2595,7 +2603,7 @@
                                                     Height="32"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="开始检测"
-                                                    Background="#FF2F6FED"
+                                                    Background="#FF2D8CFF"
                                                     BorderThickness="0"
                                                     Click="OnProxyCheck"
                                                     Cursor="Hand"
@@ -2622,8 +2630,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="复制结果"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnProxyCopy"
                                                     Cursor="Hand">
@@ -2648,7 +2656,7 @@
                                     Margin="0,0,0,10"
                                     Padding="14,10"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2673,7 +2681,7 @@
                                 <Border
                                     Grid.Row="2"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2684,7 +2692,7 @@
                                             BorderThickness="0"
                                             FontFamily="Consolas"
                                             FontSize="12"
-                                            Foreground="#FF2B3444"
+                                            Foreground="#FF2B3A4F"
                                             HorizontalScrollBarVisibility="Auto"
                                             IsReadOnly="True"
                                             TextWrapping="NoWrap"
@@ -2726,7 +2734,7 @@
                                                     Margin="12,0,0,0"
                                                     VerticalAlignment="Center"
                                                     FontSize="12"
-                                                    Foreground="#FF7C8798" />
+                                                    Foreground="#FF8A99B8" />
                                             </StackPanel.Children>
                                         </StackPanel>
                                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
@@ -2736,7 +2744,7 @@
                                                     Height="32"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="刷新日志"
-                                                    Background="#FF2F6FED"
+                                                    Background="#FF2D8CFF"
                                                     BorderThickness="0"
                                                     Click="OnRefreshLog"
                                                     Cursor="Hand"
@@ -2761,8 +2769,8 @@
                                                     Height="32"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnClearLog"
                                                     Cursor="Hand"
@@ -2786,8 +2794,8 @@
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="导出日志"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnExportLog"
                                                     Cursor="Hand"
@@ -2833,8 +2841,8 @@
                                                     Height="32"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
-                                                    Background="#FFEEF2F8"
-                                                    BorderBrush="#FFD5DBE5"
+                                                    Background="#FFF3F8FE"
+                                                    BorderBrush="#FFDBE6F3"
                                                     BorderThickness="1"
                                                     Click="OnOpenLogDir"
                                                     Cursor="Hand"
@@ -2858,7 +2866,7 @@
                                 <Border
                                     Grid.Row="1"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE4E8EF"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
                                     CornerRadius="4">
                                     <Border.Child>
@@ -2869,7 +2877,7 @@
                                             BorderThickness="0"
                                             FontFamily="Consolas"
                                             FontSize="12"
-                                            Foreground="#FF2B3444"
+                                            Foreground="#FF2B3A4F"
                                             HorizontalScrollBarVisibility="Auto"
                                             IsReadOnly="True"
                                             TextWrapping="NoWrap"
@@ -2912,7 +2920,7 @@
                                             Margin="12,0,0,0"
                                             VerticalAlignment="Center"
                                             FontSize="12"
-                                            Foreground="#FF9AA3B2"
+                                            Foreground="#FF9DACC5"
                                             Text="软路由 AP 的射频状态 · 每 3 秒刷新" />
                                     </StackPanel.Children>
                                 </StackPanel>
@@ -2922,34 +2930,34 @@
                                             <Border
                                                 Padding="16"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE7EAF0"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
-                                                CornerRadius="8">
+                                                CornerRadius="10">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
                                                             <TextBlock
                                                                 FontSize="14"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF1F2733"
+                                                                Foreground="#FF1E2A3B"
                                                                 Text="当前射频" />
                                                             <TextBlock
                                                                 x:Name="TxtApHint"
                                                                 Margin="0,4,0,10"
                                                                 FontSize="12"
-                                                                Foreground="#FF9AA3B2"
+                                                                Foreground="#FF9DACC5"
                                                                 Text="正在读取…" />
                                                             <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
                                                                 <StackPanel.Children>
                                                                     <TextBlock
                                                                         Width="96"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="频段" />
                                                                     <TextBlock
                                                                         x:Name="TxtApBand"
                                                                         FontSize="13"
-                                                                        Foreground="#FF1F2733"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -2958,12 +2966,12 @@
                                                                     <TextBlock
                                                                         Width="96"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="信道" />
                                                                     <TextBlock
                                                                         x:Name="TxtApCh"
                                                                         FontSize="13"
-                                                                        Foreground="#FF1F2733"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -2972,12 +2980,12 @@
                                                                     <TextBlock
                                                                         Width="96"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="带宽" />
                                                                     <TextBlock
                                                                         x:Name="TxtApWidth"
                                                                         FontSize="13"
-                                                                        Foreground="#FF1F2733"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -2986,12 +2994,12 @@
                                                                     <TextBlock
                                                                         Width="96"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="发射功率" />
                                                                     <TextBlock
                                                                         x:Name="TxtApPower"
                                                                         FontSize="13"
-                                                                        Foreground="#FF1F2733"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -3000,12 +3008,12 @@
                                                                     <TextBlock
                                                                         Width="96"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="SSID" />
                                                                     <TextBlock
                                                                         x:Name="TxtApSsid"
                                                                         FontSize="13"
-                                                                        Foreground="#FF1F2733"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -3014,12 +3022,12 @@
                                                                     <TextBlock
                                                                         Width="96"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="客户端" />
                                                                     <TextBlock
                                                                         x:Name="TxtApSta"
                                                                         FontSize="13"
-                                                                        Foreground="#FF1F2733"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -3031,16 +3039,16 @@
                                                 Margin="0,10,0,0"
                                                 Padding="16"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE7EAF0"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
-                                                CornerRadius="8">
+                                                CornerRadius="10">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
                                                             <TextBlock
                                                                 FontSize="14"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF1F2733"
+                                                                Foreground="#FF1E2A3B"
                                                                 Text="连接的设备" />
                                                             <StackPanel x:Name="StkApSta" Margin="0,10,0,0" />
                                                         </StackPanel.Children>
@@ -3051,21 +3059,21 @@
                                                 Margin="0,10,0,0"
                                                 Padding="16"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE7EAF0"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
-                                                CornerRadius="8">
+                                                CornerRadius="10">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
                                                             <TextBlock
                                                                 FontSize="14"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF1F2733"
+                                                                Foreground="#FF1E2A3B"
                                                                 Text="切换频段" />
                                                             <TextBlock
                                                                 Margin="0,4,0,12"
                                                                 FontSize="12"
-                                                                Foreground="#FF9AA3B2"
+                                                                Foreground="#FF9DACC5"
                                                                 Text="切换时 WiFi 会断 15~25 秒，本面板也会短暂失去连接；远端有 150 秒死手保险，5G 起不来会自动回滚到 2.4G。重启后回到 2.4G（AP 配置由 netplan 管理）。"
                                                                 TextWrapping="Wrap" />
                                                             <StackPanel Orientation="Horizontal">
@@ -3074,7 +3082,7 @@
                                                                         Margin="0,0,8,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="频段" />
                                                                     <ComboBox
                                                                         x:Name="CmbApBand"
@@ -3087,7 +3095,7 @@
                                                                         Margin="18,0,8,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="13"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="信道" />
                                                                     <ComboBox
                                                                         x:Name="CmbApCh"
@@ -3122,7 +3130,7 @@
                                                                 x:Name="TxtApProgress"
                                                                 Margin="0,10,0,0"
                                                                 FontSize="12"
-                                                                Foreground="#FF6B7482"
+                                                                Foreground="#FF7C8BA6"
                                                                 Text=""
                                                                 TextWrapping="Wrap" />
                                                         </StackPanel.Children>
@@ -3133,13 +3141,13 @@
                                                 Margin="0,10,0,0"
                                                 Padding="14"
                                                 Background="#FFF7F9FC"
-                                                BorderBrush="#FFE7EAF0"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
-                                                CornerRadius="8">
+                                                CornerRadius="10">
                                                 <Border.Child>
                                                     <TextBlock
                                                         FontSize="12"
-                                                        Foreground="#FF6B7482"
+                                                        Foreground="#FF7C8BA6"
                                                         Text="单块网卡同一时刻只能在 2.4 GHz 或 5 GHz 之一工作，两个频段不能同时广播。"
                                                         TextWrapping="Wrap" />
                                                 </Border.Child>
@@ -3183,7 +3191,7 @@
                                             Margin="12,0,0,0"
                                             VerticalAlignment="Center"
                                             FontSize="12"
-                                            Foreground="#FF9AA3B2"
+                                            Foreground="#FF9DACC5"
                                             Text="关于、文件入口、运行环境" />
                                     </StackPanel.Children>
                                 </StackPanel>
@@ -3194,7 +3202,7 @@
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3211,14 +3219,14 @@
                                                                         VerticalAlignment="Center"
                                                                         FontSize="13"
                                                                         FontWeight="SemiBold"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         Text="版本更新" />
                                                                     <TextBlock
                                                                         Grid.Column="1"
                                                                         Margin="10,0,0,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="11.5"
-                                                                        Foreground="#FF9AA3B2"
+                                                                        Foreground="#FF9DACC5"
                                                                         Text="从 GitHub Release 检查并下载新版本（下载完会重启面板）"
                                                                         TextWrapping="Wrap" />
                                                                 </Grid.Children>
@@ -3228,7 +3236,7 @@
                                                                     <TextBlock
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="当前版本" />
                                                                     <TextBlock
                                                                         x:Name="TxtUpdCur"
@@ -3236,28 +3244,28 @@
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
                                                                         FontWeight="SemiBold"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         Text="—" />
                                                                     <TextBlock
                                                                         Margin="24,0,0,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF6B7482"
+                                                                        Foreground="#FF7C8BA6"
                                                                         Text="最新版本" />
                                                                     <TextBlock
                                                                         x:Name="TxtUpdLatest"
                                                                         Margin="8,0,0,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         Text="—" />
                                                                     <Button
                                                                         x:Name="BtnUpdCheck"
                                                                         Height="30"
                                                                         Margin="24,0,0,0"
                                                                         Padding="14,0"
-                                                                        Background="#FFEEF2F8"
-                                                                        BorderBrush="#FFD5DBE5"
+                                                                        Background="#FFF3F8FE"
+                                                                        BorderBrush="#FFDBE6F3"
                                                                         BorderThickness="1"
                                                                         Click="OnCheckUpdate"
                                                                         Cursor="Hand"
@@ -3293,7 +3301,7 @@
                                                                 x:Name="TxtUpdTip"
                                                                 Margin="0,9,0,0"
                                                                 FontSize="11.5"
-                                                                Foreground="#FF9AA3B2"
+                                                                Foreground="#FF9DACC5"
                                                                 Text=""
                                                                 TextWrapping="Wrap" />
                                                         </StackPanel.Children>
@@ -3304,7 +3312,7 @@
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3322,14 +3330,14 @@
                                                                         VerticalAlignment="Center"
                                                                         FontSize="13"
                                                                         FontWeight="SemiBold"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         Text="内存优化" />
                                                                     <TextBlock
                                                                         Grid.Column="1"
                                                                         Margin="12,0,0,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="11.5"
-                                                                        Foreground="#FF9AA3B2"
+                                                                        Foreground="#FF9DACC5"
                                                                         Text="清工作集 · 刷修改页 · 清待机列表（原理同 PCL2 百宝箱）"
                                                                         TextTrimming="CharacterEllipsis" />
                                                                     <Button
@@ -3340,7 +3348,7 @@
                                                                         Click="OnMemOptimize">
                                                                         优化内存
                                                                         <Button.FontSize>12.5</Button.FontSize>
-                                                                        <Button.Background>#FF2F6FED</Button.Background>
+                                                                        <Button.Background>#FF2D8CFF</Button.Background>
                                                                         <Button.Foreground>#FFFFFFFF</Button.Foreground>
                                                                         <Button.BorderThickness>0</Button.BorderThickness>
                                                                         <Button.Cursor>Hand</Button.Cursor>
@@ -3351,7 +3359,7 @@
                                                                 x:Name="TxtMemAvail"
                                                                 Margin="0,0,0,6"
                                                                 FontSize="12.5"
-                                                                Foreground="#FF5B6474" />
+                                                                Foreground="#FF64738B" />
                                                             <TextBlock
                                                                 x:Name="TxtMemResult"
                                                                 FontSize="12.5"
@@ -3365,7 +3373,7 @@
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3375,7 +3383,7 @@
                                                                 Margin="0,0,0,10"
                                                                 FontSize="13"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF2B3444"
+                                                                Foreground="#FF2B3A4F"
                                                                 Text="关于本软件" />
                                                             <Grid>
                                                                 <Grid.ColumnDefinitions>
@@ -3395,7 +3403,7 @@
                                                                         Margin="0,0,12,8"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="版本" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherVer"
@@ -3403,14 +3411,14 @@
                                                                         Grid.Column="1"
                                                                         Margin="0,0,0,8"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444" />
+                                                                        Foreground="#FF2B3A4F" />
                                                                     <TextBlock
                                                                         Grid.Row="1"
                                                                         Grid.Column="0"
                                                                         Margin="0,0,12,8"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="程序位置" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherExe"
@@ -3418,7 +3426,7 @@
                                                                         Grid.Column="1"
                                                                         Margin="0,0,0,8"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         TextTrimming="CharacterEllipsis" />
                                                                     <Button
                                                                         Grid.Row="1"
@@ -3430,7 +3438,7 @@
                                                                         <Button.FontSize>12</Button.FontSize>
                                                                         <Button.Background>#FFF5F7FA</Button.Background>
                                                                         <Button.BorderThickness>1</Button.BorderThickness>
-                                                                        <Button.BorderBrush>#FFD5DBE5</Button.BorderBrush>
+                                                                        <Button.BorderBrush>#FFDBE6F3</Button.BorderBrush>
                                                                         <Button.Cursor>Hand</Button.Cursor>
                                                                     </Button>
                                                                     <TextBlock
@@ -3439,14 +3447,14 @@
                                                                         Margin="0,0,12,0"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="数据目录" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherData"
                                                                         Grid.Row="2"
                                                                         Grid.Column="1"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         TextTrimming="CharacterEllipsis" />
                                                                     <Button
                                                                         Grid.Row="2"
@@ -3458,7 +3466,7 @@
                                                                         <Button.FontSize>12</Button.FontSize>
                                                                         <Button.Background>#FFF5F7FA</Button.Background>
                                                                         <Button.BorderThickness>1</Button.BorderThickness>
-                                                                        <Button.BorderBrush>#FFD5DBE5</Button.BorderBrush>
+                                                                        <Button.BorderBrush>#FFDBE6F3</Button.BorderBrush>
                                                                         <Button.Cursor>Hand</Button.Cursor>
                                                                     </Button>
                                                                 </Grid.Children>
@@ -3471,7 +3479,7 @@
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3481,7 +3489,7 @@
                                                                 Margin="0,0,0,10"
                                                                 FontSize="13"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF2B3444"
+                                                                Foreground="#FF2B3A4F"
                                                                 Text="常用文件" />
                                                             <WrapPanel>
                                                                 <WrapPanel.Children>
@@ -3490,8 +3498,8 @@
                                                                         Height="32"
                                                                         Margin="0,0,8,8"
                                                                         Padding="14,0"
-                                                                        Background="#FFEEF2F8"
-                                                                        BorderBrush="#FFD5DBE5"
+                                                                        Background="#FFF3F8FE"
+                                                                        BorderBrush="#FFDBE6F3"
                                                                         BorderThickness="1"
                                                                         Click="OnOpenLogFile"
                                                                         Cursor="Hand"
@@ -3512,8 +3520,8 @@
                                                                         Height="32"
                                                                         Margin="0,0,8,8"
                                                                         Padding="14,0"
-                                                                        Background="#FFEEF2F8"
-                                                                        BorderBrush="#FFD5DBE5"
+                                                                        Background="#FFF3F8FE"
+                                                                        BorderBrush="#FFDBE6F3"
                                                                         BorderThickness="1"
                                                                         Click="OnOpenSettingsFile"
                                                                         Cursor="Hand"
@@ -3534,8 +3542,8 @@
                                                                         Height="32"
                                                                         Margin="0,0,8,8"
                                                                         Padding="14,0"
-                                                                        Background="#FFEEF2F8"
-                                                                        BorderBrush="#FFD5DBE5"
+                                                                        Background="#FFF3F8FE"
+                                                                        BorderBrush="#FFDBE6F3"
                                                                         BorderThickness="1"
                                                                         Click="OnOpenExportDir"
                                                                         Cursor="Hand"
@@ -3556,8 +3564,8 @@
                                                                         Height="32"
                                                                         Margin="0,0,8,8"
                                                                         Padding="14,0"
-                                                                        Background="#FFEEF2F8"
-                                                                        BorderBrush="#FFD5DBE5"
+                                                                        Background="#FFF3F8FE"
+                                                                        BorderBrush="#FFDBE6F3"
                                                                         BorderThickness="1"
                                                                         Click="OnOpenUninstaller"
                                                                         Cursor="Hand"
@@ -3584,7 +3592,7 @@
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3594,7 +3602,7 @@
                                                                 Margin="0,0,0,10"
                                                                 FontSize="13"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF2B3444"
+                                                                Foreground="#FF2B3A4F"
                                                                 Text="日志" />
                                                             <Grid>
                                                                 <Grid.ColumnDefinitions>
@@ -3610,7 +3618,7 @@
                                                                         HorizontalAlignment="Right"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="保存位置" />
                                                                     <TextBlock
                                                                         x:Name="TxtLogDir"
@@ -3618,7 +3626,7 @@
                                                                         Margin="0,0,12,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444"
+                                                                        Foreground="#FF2B3A4F"
                                                                         TextTrimming="CharacterEllipsis" />
                                                                     <Button
                                                                         Grid.Column="2"
@@ -3627,9 +3635,9 @@
                                                                         Click="OnChangeLogDir">
                                                                         更改…
                                                                         <Button.FontSize>12</Button.FontSize>
-                                                                        <Button.Background>#FFEEF2F8</Button.Background>
+                                                                        <Button.Background>#FFF3F8FE</Button.Background>
                                                                         <Button.BorderThickness>1</Button.BorderThickness>
-                                                                        <Button.BorderBrush>#FFD5DBE5</Button.BorderBrush>
+                                                                        <Button.BorderBrush>#FFDBE6F3</Button.BorderBrush>
                                                                         <Button.Cursor>Hand</Button.Cursor>
                                                                         <Button.Margin>0,0,8,0</Button.Margin>
                                                                     </Button>
@@ -3642,7 +3650,7 @@
                                                                         <Button.FontSize>12</Button.FontSize>
                                                                         <Button.Background>#FFF5F7FA</Button.Background>
                                                                         <Button.BorderThickness>1</Button.BorderThickness>
-                                                                        <Button.BorderBrush>#FFD5DBE5</Button.BorderBrush>
+                                                                        <Button.BorderBrush>#FFDBE6F3</Button.BorderBrush>
                                                                         <Button.Cursor>Hand</Button.Cursor>
                                                                     </Button>
                                                                 </Grid.Children>
@@ -3660,7 +3668,7 @@
                                                                         HorizontalAlignment="Right"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="清空" />
                                                                     <TextBlock
                                                                         x:Name="TxtLogSize"
@@ -3668,7 +3676,7 @@
                                                                         Margin="0,0,12,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF5B6474" />
+                                                                        Foreground="#FF64738B" />
                                                                     <Button
                                                                         Grid.Column="2"
                                                                         Height="28"
@@ -3692,7 +3700,7 @@
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3702,7 +3710,7 @@
                                                                 Margin="0,0,0,10"
                                                                 FontSize="13"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF2B3444"
+                                                                Foreground="#FF2B3A4F"
                                                                 Text="运行环境" />
                                                             <Grid>
                                                                 <Grid.ColumnDefinitions>
@@ -3722,7 +3730,7 @@
                                                                         Margin="0,0,12,8"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="系统" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherOs"
@@ -3730,14 +3738,14 @@
                                                                         Grid.Column="1"
                                                                         Margin="0,0,0,8"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444" />
+                                                                        Foreground="#FF2B3A4F" />
                                                                     <TextBlock
                                                                         Grid.Row="1"
                                                                         Grid.Column="0"
                                                                         Margin="0,0,12,8"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text=".NET" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherNet"
@@ -3745,14 +3753,14 @@
                                                                         Grid.Column="1"
                                                                         Margin="0,0,0,8"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444" />
+                                                                        Foreground="#FF2B3A4F" />
                                                                     <TextBlock
                                                                         Grid.Row="2"
                                                                         Grid.Column="0"
                                                                         Margin="0,0,12,8"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="已运行" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherUp"
@@ -3760,21 +3768,21 @@
                                                                         Grid.Column="1"
                                                                         Margin="0,0,0,8"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444" />
+                                                                        Foreground="#FF2B3A4F" />
                                                                     <TextBlock
                                                                         Grid.Row="3"
                                                                         Grid.Column="0"
                                                                         Margin="0,0,12,0"
                                                                         HorizontalAlignment="Right"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF7C8798"
+                                                                        Foreground="#FF8A99B8"
                                                                         Text="内存占用" />
                                                                     <TextBlock
                                                                         x:Name="TxtOtherMem"
                                                                         Grid.Row="3"
                                                                         Grid.Column="1"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF2B3444" />
+                                                                        Foreground="#FF2B3A4F" />
                                                                 </Grid.Children>
                                                             </Grid>
                                                         </StackPanel.Children>
@@ -3784,7 +3792,7 @@
                                             <Border
                                                 Padding="16,14"
                                                 Background="#FFFFFFFF"
-                                                BorderBrush="#FFE4E8EF"
+                                                BorderBrush="#FFE9EFF7"
                                                 BorderThickness="1"
                                                 CornerRadius="4">
                                                 <Border.Child>
@@ -3794,7 +3802,7 @@
                                                                 Margin="0,0,0,10"
                                                                 FontSize="13"
                                                                 FontWeight="SemiBold"
-                                                                Foreground="#FF2B3444"
+                                                                Foreground="#FF2B3A4F"
                                                                 Text="项目地址" />
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
@@ -3802,7 +3810,7 @@
                                                                         x:Name="TxtOtherRepo"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
-                                                                        Foreground="#FF5B6474" />
+                                                                        Foreground="#FF64738B" />
                                                                     <Button
                                                                         Height="28"
                                                                         Margin="12,0,0,0"
@@ -3810,9 +3818,9 @@
                                                                         Click="OnOpenRepo">
                                                                         在浏览器打开
                                                                         <Button.FontSize>12</Button.FontSize>
-                                                                        <Button.Background>#FFEEF2F8</Button.Background>
+                                                                        <Button.Background>#FFF3F8FE</Button.Background>
                                                                         <Button.BorderThickness>1</Button.BorderThickness>
-                                                                        <Button.BorderBrush>#FFD5DBE5</Button.BorderBrush>
+                                                                        <Button.BorderBrush>#FFDBE6F3</Button.BorderBrush>
                                                                         <Button.Cursor>Hand</Button.Cursor>
                                                                     </Button>
                                                                 </StackPanel.Children>
@@ -3834,7 +3842,7 @@
                 Grid.Row="2"
                 Margin="2,10,0,0"
                 FontSize="12"
-                Foreground="#FF7C8798"
+                Foreground="#FF8A99B8"
                 Text="正在初始化…" />
         </Grid.Children>
     </Grid>

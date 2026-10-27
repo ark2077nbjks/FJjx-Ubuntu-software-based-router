@@ -5,7 +5,7 @@
     xmlns:local="clr-namespace:NetPanel">
     <Application.Resources>
         <Style x:Key="{x:Type TextBlock}" TargetType="{x:Type TextBlock}">
-            <Setter Property="TextElement.Foreground" Value="#FF1F2430" />
+            <Setter Property="TextElement.Foreground" Value="#FF1E2A3B" />
         </Style>
         <Style x:Key="{x:Type TabItem}" TargetType="{x:Type TabItem}">
             <Setter Property="Control.Padding" Value="18,8" />
@@ -14,19 +14,19 @@
         <Style x:Key="Mono" TargetType="{x:Type TextBlock}">
             <Setter Property="TextElement.FontFamily" Value="Consolas, 等线" />
             <Setter Property="TextElement.FontSize" Value="13.2" />
-            <Setter Property="TextElement.Foreground" Value="#FF2B3444" />
+            <Setter Property="TextElement.Foreground" Value="#FF2B3A4F" />
             <Setter Property="TextBlock.TextWrapping" Value="Wrap" />
         </Style>
         <Style x:Key="PageTitle" TargetType="{x:Type TextBlock}">
             <Setter Property="TextElement.FontSize" Value="15" />
             <Setter Property="TextElement.FontWeight" Value="SemiBold" />
-            <Setter Property="TextElement.Foreground" Value="#FF26303F" />
+            <Setter Property="TextElement.Foreground" Value="#FF23324A" />
             <Setter Property="FrameworkElement.VerticalAlignment" Value="Center" />
         </Style>
         <Style x:Key="Head" TargetType="{x:Type TextBlock}">
             <Setter Property="TextElement.FontSize" Value="13" />
             <Setter Property="TextElement.FontWeight" Value="SemiBold" />
-            <Setter Property="TextElement.Foreground" Value="#FF2F6FED" />
+            <Setter Property="TextElement.Foreground" Value="#FF2D8CFF" />
             <Setter Property="FrameworkElement.Margin" Value="0,0,0,6" />
         </Style>
         <Style x:Key="NavText" TargetType="{x:Type TextBlock}">
@@ -35,7 +35,7 @@
             <Setter Property="TextElement.Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}" />
         </Style>
         <Style x:Key="NavTab" TargetType="{x:Type TabItem}">
-            <Setter Property="TextElement.Foreground" Value="#FF5B6474" />
+            <Setter Property="TextElement.Foreground" Value="#FF64738B" />
             <Setter Property="FrameworkElement.Height" Value="46" />
             <Setter Property="FrameworkElement.Margin" Value="8,2,8,2" />
             <Setter Property="Control.Template">
@@ -45,7 +45,7 @@
                             x:Name="Bd"
                             Padding="14,0,10,0"
                             Background="#00FFFFFF"
-                            CornerRadius="6">
+                            CornerRadius="8">
                             <Border.Child>
                                 <Grid>
                                     <Grid.Children>
@@ -66,16 +66,16 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="TabItem.IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Panel.Background" Value="#FFE8F0FE" />
-                                <Setter TargetName="Accent" Property="Shape.Fill" Value="#FF2F6FED" />
-                                <Setter Property="TextElement.Foreground" Value="#FF2F6FED" />
+                                <Setter TargetName="Bd" Property="Panel.Background" Value="#FFE8F3FF" />
+                                <Setter TargetName="Accent" Property="Shape.Fill" Value="#FF2D8CFF" />
+                                <Setter Property="TextElement.Foreground" Value="#FF2D8CFF" />
                             </Trigger>
                             <MultiTrigger>
                                 <MultiTrigger.Conditions>
                                     <Condition Property="UIElement.IsMouseOver" Value="True" />
                                     <Condition Property="TabItem.IsSelected" Value="False" />
                                 </MultiTrigger.Conditions>
-                                <Setter TargetName="Bd" Property="Panel.Background" Value="#FFF1F5FC" />
+                                <Setter TargetName="Bd" Property="Panel.Background" Value="#FFF2F7FE" />
                             </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -94,10 +94,10 @@
                             <Grid.Children>
                                 <Border
                                     Padding="0,10"
-                                    Background="#FFFAFBFD"
-                                    BorderBrush="#FFE7EAF0"
+                                    Background="#FFF7FAFE"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
-                                    CornerRadius="6">
+                                    CornerRadius="8">
                                     <Border.Child>
                                         <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1" />
                                     </Border.Child>
@@ -107,9 +107,9 @@
                                     Margin="10,0,0,0"
                                     Padding="16"
                                     Background="#FFFFFFFF"
-                                    BorderBrush="#FFE7EAF0"
+                                    BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
-                                    CornerRadius="6">
+                                    CornerRadius="8">
                                     <Border.Child>
                                         <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" />
                                     </Border.Child>
