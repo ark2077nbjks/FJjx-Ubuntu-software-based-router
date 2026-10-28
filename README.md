@@ -55,7 +55,7 @@
 
 ## 快速开始（Ubuntu）
 
-1. 把 `Ubuntuflie/GrayRouter-1.39.zip` 拷到 Ubuntu 上，右键「解压到此处」。
+1. 从 **Releases** 下载 `GrayRouter-<版本>.zip`（当前 1.50），拷到 Ubuntu 上右键「解压到此处」。
 2. 双击 **`GrayRouter-安装.desktop`**（第一次可能要点「标记为可信」或右键「允许启动」）。
 3. 向导里选拓扑、填热点名和密码 → 确认 → 输一次 sudo 密码。
 4. 装完手机/电脑连 `Gray-Router` 就能上网。
@@ -166,7 +166,7 @@ sudo bash uninstall.sh -y                 # 全部清理干净
 
 ## Windows 面板（可选，但好用）
 
-面板是单文件程序（从 **Releases** 下载 `NetPanel.exe`，仓库不再存构建产物），双击即用（会请求管理员权限，因为要读网卡和 WiFi 信息）。需要 **.NET 10 桌面运行时**；不想装运行时的，用 Release 里的 `NetPanel-selfcontained-*.exe`（约 73 MB，双击即用）。
+面板是单文件程序（从 **Releases** 下载 `NetPanel.exe`，仓库不再存构建产物），双击即用（会请求管理员权限，因为要读网卡和 WiFi 信息）。需要 **.NET 10 桌面运行时**；不想装运行时的，可以自己 `dotnet publish -r win-x64 --self-contained true` 出一个自包含版本。
 
 十四个栏目（v1.35）：
 
@@ -227,9 +227,9 @@ Ubuntuflie/
   准备.sh                            给脚本加执行权限
   grayrouter-doctor.sh               只读体检
   lib/                               探测与日志库
-  bin/                               7 个运行时脚本（up/down/status/harden/info/mode）
+  bin/                               运行时脚本（枚举/流量/遥控/多 WAN/看门狗/快照…）+ udev 规则
   docs/说明.txt
-  GrayRouter-1.0.1.zip               打包好的双击安装包
+  （发布用的 zip 不打进仓库，走 Releases）
 Windowsfile/
   NetPanel.exe                       Windows 面板
   说明.txt
