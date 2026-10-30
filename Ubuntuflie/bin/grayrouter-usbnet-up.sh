@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 手机 USB 共享 / USB 网卡插上后：自动建连接 + 要 DHCP 地址
 #   关键：ipv4.never-default=yes —— 它永远不会自己抢默认路由
-#   想用它当出口，只能由 grayrrouter-wanfail.sh 显式加路由（切不通会被拒）
+#   想用它当出口，只能由 grayrouter-wanfail.sh 显式加路由（切不通会被拒）
 # 由 udev 触发（grayrouter-usbnet@<iface>.service）
 set -uo pipefail
 IF="${1:-}"

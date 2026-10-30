@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  grayrrouter-acct.sh —— 每设备流量计数表（nft 动态集合 + 计数器）
+#  grayrouter-acct.sh —— 每设备流量计数表（nft 动态集合 + 计数器）
 #    apply    按当前 LAN 网段重建计数表（开机/安装时跑）
 #    status   看当前各 IP 的累计字节
 #    reset    清零计数器（不动历史 CSV）

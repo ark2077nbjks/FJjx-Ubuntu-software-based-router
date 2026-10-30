@@ -6,8 +6,8 @@ rm -f /etc/modprobe.d/rtw88-stable.conf
 CONF=/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf
 BAK=$(ls -1t "$CONF".bak_* 2>/dev/null | head -1)
 [ -n "${BAK:-}" ] && cp -a "$BAK" "$CONF"
-systemctl disable --now grayrrouter-beacon.timer 2>/dev/null
-systemctl disable grayrrouter-boot.service 2>/dev/null
+systemctl disable --now grayrouter-beacon.timer 2>/dev/null
+systemctl disable grayrouter-boot.service 2>/dev/null
 rm -f /etc/systemd/system/grayrouter-beacon.service /etc/systemd/system/grayrouter-beacon.timer \
       /etc/systemd/system/grayrouter-boot.service \
       /usr/local/bin/grayrouter-beacon-watch.sh /usr/local/bin/grayrouter-boot-up.sh

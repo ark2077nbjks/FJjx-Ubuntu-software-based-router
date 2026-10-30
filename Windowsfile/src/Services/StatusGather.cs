@@ -308,6 +308,7 @@ public static class StatusGather
         var rc = RemoteConfig.Load();
         mini.AppendLine("【远端软路由】");
         var secMini = new StatusSection { Title = "" };
+        var kvInfo = new Dictionary<string, string>();   // 远端 KEY=VALUE（系统健康段要用）
         if (!rc.IsConfigured)
         {
             mini.AppendLine("  还没配置");
@@ -360,6 +361,7 @@ public static class StatusGather
             snap.RemoteNics = nics;
 
             var d = ParseKv(out2);
+            kvInfo = d;
             bool anyKey = d.ContainsKey("TOPOLOGY") || d.ContainsKey("AP_TYPE");
 
             if (rc2 == 0 && anyKey)
@@ -456,6 +458,51 @@ public static class StatusGather
         }
 
         snap.MiniSections.Add(secMini);
+
+        // ---------------- 最近设备事件（来自 data\events.csv，最多 3 条） ----------------
+        var evs = DeviceEvents.Recent(3);
+        if (evs.Count > 0)
+        {
+            var secEv = new StatusSection { Title = "最近设备事件" };
+            foreach (var e in evs) secEv.Rows.Add(new StatusRow { Label = "", Value = e });
+            snap.MiniSections.Add(secEv);
+        }
+
+        // ---------------- 系统健康（远端 CPU 负载 / 内存 / 温度 / 磁盘） ----------------
+        if (kvInfo.ContainsKey("MEM_TOTAL_MB") && int.TryParse(kvInfo.GetValueOrDefault("MEM_TOTAL_MB"), out var memTotal) && memTotal > 0)
+        {
+            var secSys = new StatusSection { Title = "系统" };
+            int.TryParse(kvInfo.GetValueOrDefault("MEM_USED_MB"), out var memUsed);
+            int.TryParse(kvInfo.GetValueOrDefault("MEM_PCT"), out var memPct);
+            int.TryParse(kvInfo.GetValueOrDefault("TEMP_C"), out var tempC);
+
+            secSys.Rows.Add(new StatusRow
+            {
+                Label = "负载",
+                Value = $"{kvInfo.GetValueOrDefault("LOAD1", "—")} · {kvInfo.GetValueOrDefault("CORES", "—")} 核",
+            });
+            secSys.Rows.Add(new StatusRow
+            {
+                Label = "内存",
+                Value = $"{memUsed / 1024.0:F1} / {memTotal / 1024.0:F1} GB（{memPct}%）",
+            });
+            if (tempC > 0)
+                secSys.Rows.Add(new StatusRow
+                {
+                    Label = "温度",
+                    Value = tempC >= 80 ? $"{tempC} ℃（偏高，风扇/散热看一眼）" : $"{tempC} ℃",
+                });
+
+            var diskPct = kvInfo.GetValueOrDefault("DISK_PCT", "");
+            if (diskPct.Length > 0)
+                secSys.Rows.Add(new StatusRow
+                {
+                    Label = "磁盘",
+                    Value = $"{diskPct} 已用 · 剩 {kvInfo.GetValueOrDefault("DISK_FREE", "—")}",
+                });
+
+            snap.MiniSections.Add(secSys);
+        }
 
         // ---------------- 远端网卡清单（含 USB 网卡，热插拔后刷新即可见） ----------------
         if (snap.RemoteNics.Count > 0)

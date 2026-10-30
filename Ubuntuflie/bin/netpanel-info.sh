@@ -42,6 +42,18 @@ EGRESS=$(curl -s -m 5 http://ip.3322.net 2>/dev/null)
 FWD=$(sysctl -n net.ipv4.ip_forward 2>/dev/null)
 UPTIME=$(uptime -p 2>/dev/null | sed 's/^up //')
 
+# —— 系统健康（CPU 负载 / 内存 / 温度 / 磁盘）——
+LOAD1=$(awk '{print $1}' /proc/loadavg 2>/dev/null)
+CORES=$(nproc 2>/dev/null || echo 1)
+MEM_LINE=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{if(t>0){u=t-a; printf "%d %d %d", u/1024, t/1024, u*100/t}}' /proc/meminfo 2>/dev/null)
+MEM_USED=${MEM_LINE%% *}
+_rest=${MEM_LINE#* }; MEM_TOTAL=${_rest%% *}; MEM_PCT=${_rest#* }
+[ "$MEM_LINE" = "$MEM_PCT" ] && MEM_PCT=""
+TEMP_MILLI=$(for z in /sys/class/thermal/thermal_zone*/temp; do cat "$z" 2>/dev/null; done | sort -n | tail -1)
+TEMP_C=$(( ${TEMP_MILLI:-0} / 1000 ))
+DISK_PCT=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
+DISK_FREE=$(df -h / 2>/dev/null | awk 'NR==2{print $4}')
+
 echo "WAN_IF=$WAN_IF"
 echo "LAN_IF=$LAN_IF"
 echo "WAN_IP=$WAN_IP"
@@ -58,6 +70,14 @@ echo "HTTPS=$HTTPS"
 echo "EGRESS=$EGRESS"
 echo "FWD=$FWD"
 echo "UPTIME=$UPTIME"
+echo "LOAD1=${LOAD1:-}"
+echo "CORES=${CORES:-}"
+echo "MEM_USED_MB=${MEM_USED:-}"
+echo "MEM_TOTAL_MB=${MEM_TOTAL:-}"
+echo "MEM_PCT=${MEM_PCT:-}"
+echo "TEMP_C=${TEMP_C:-}"
+echo "DISK_PCT=${DISK_PCT:-}"
+echo "DISK_FREE=${DISK_FREE:-}"
 
 # —— 看门狗状态（grayrouter-watch）——
 WJ=/run/grayrouter/watch.json

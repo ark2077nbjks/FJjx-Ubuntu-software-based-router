@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  grayrrouter-watch.sh v2 —— 本地自愈看门狗（60 秒一轮）
+#  grayrouter-watch.sh v2 —— 本地自愈看门狗（60 秒一轮）
 #    只在本机跑，不依赖面板/网络连接
 #    检查：LAN IP / AP 模式 / SSH 22 / 默认路由 / 外网 204 / 假在线
 #    自愈：重启热点 → 重启 ssh → 跑 rescue → 重启 NetworkManager → 回滚快照

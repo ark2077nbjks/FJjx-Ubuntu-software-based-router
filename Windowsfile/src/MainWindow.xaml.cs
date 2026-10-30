@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using NetPanel.Services;
+using NetPanel.Controls;
 using Microsoft.Win32;
 using System.IO.Compression;
 
@@ -22,8 +23,13 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _nicPoll = new() { Interval = TimeSpan.FromSeconds(8) };
     // 线路表自动刷新（10 秒；只在网卡页跑，离页停）
     private readonly DispatcherTimer _wanPoll = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _sqmStatPoll = new() { Interval = TimeSpan.FromSeconds(2) };
+    private long _sqmUpPrev = -1, _sqmDownPrev = -1;
+    private DateTime _sqmPrevAt = DateTime.MinValue;
     private readonly DispatcherTimer _devTick = new() { Interval = TimeSpan.FromSeconds(3) };   // 设备页实时速率（只在页面可见时跑）
     private readonly Dictionary<string, (long Up, long Down, DateTime At)> _devRatePrev = new();
+    private readonly Dictionary<string, bool> _onlinePrev = new(StringComparer.OrdinalIgnoreCase);
+    private bool _eventDirty;
     private bool _devRateBusy;
     private DateTime _rateLogAt = DateTime.MinValue;
     private bool _wanLoading;
@@ -74,6 +80,9 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        if (Environment.GetCommandLineArgs().Contains("--snapdiff"))
+            Dispatcher.BeginInvoke(new Action(() => new SnapshotDiffWindow { Owner = this }.ShowDialog()));
+
         InitializeComponent();
         AppPaths.Ensure();
         RestoreWindowState();          // 记住上次大小/位置
@@ -82,7 +91,7 @@ public partial class MainWindow : Window
 
         Loaded += async (_, _) =>
         {
-            TxtFoot.Text = "正在初始化…";
+                        TxtFoot.Text = "正在初始化…";
             TxtFoot.ToolTip = $"数据目录：{AppPaths.DataDir}";
             await RefreshAsync();
             await LoadSavedWifiAsync();
@@ -99,6 +108,7 @@ public partial class MainWindow : Window
         };
         _timer.Tick += async (_, _) => { _timer.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(60)); await RefreshAsync(); };
         _wanPoll.Tick += async (_, _) => { _wanPoll.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(10)); await LoadWanFailAsync(); };
+        _sqmStatPoll.Tick += async (_, _) => await TickSqmStatAsync();
         _devTick.Tick += async (_, _) => { _devTick.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(3), 60); await PollDevRateAsync(); };
 
         _nicPoll.Tick += async (_, _) => await PollAdaptersAsync();   // 已停用（网卡页改手动），保留以免空引用
@@ -129,7 +139,8 @@ public partial class MainWindow : Window
             var sp = spRaw.Trim();
             sp = sp.ToLowerInvariant() switch
             {
-                "ap" or "wifi" => "无线频段",
+                "ap" or "wifi" or "无线频段" => "无线",
+                "网址检测" or "代理检测" or "游戏延迟" or "diag" => "诊断",
                 "other" => "其他",
                 "status" => "状态",
                 "log" or "logs" => "日志",
@@ -931,8 +942,33 @@ public partial class MainWindow : Window
             else TxtTrafficLive.Text = "本机空闲";
 
             if (++_trafficCount % 4 == 0) RefreshTrafficView();   // 图 1 分钟重绘一次，省 CPU
+            _ = LoadUsageAsync();                                  // 本月合计：5 分钟最多读一次
         }
         catch (Exception ex) { AppPaths.Log("[流量] 采样异常: " + ex.Message); }
+    }
+
+    private DateTime _usageAt = DateTime.MinValue;
+
+    /// <summary>本月流量合计（软路由按天落盘，只读汇总）</summary>
+    private async Task LoadUsageAsync(bool force = false)
+    {
+        if (!force && (DateTime.Now - _usageAt).TotalSeconds < 300) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtUsageSummary.Text = ""; return; }
+
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "traffic-report 30");
+        if (!ok) { TxtUsageSummary.Text = ""; return; }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            long mu = doc.RootElement.GetProperty("month_up").GetInt64();
+            long md = doc.RootElement.GetProperty("month_down").GetInt64();
+            int fc = doc.RootElement.TryGetProperty("file_count", out var f) ? f.GetInt32() : 0;
+            TxtUsageSummary.Text = $"本月 ↑ {Traffic.SizeText(mu / 1048576.0)} / ↓ {Traffic.SizeText(md / 1048576.0)} · 共 {fc} 天记录";
+            _usageAt = DateTime.Now;
+        }
+        catch { TxtUsageSummary.Text = "汇总解析失败"; }
     }
 
     private void RefreshTrafficView()
@@ -1242,6 +1278,11 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _scanCts;
     private List<LanDevice> _devices = new();
 
+    // 静态租约缓存：MAC → IP（每次扫描后后台刷一次，点「固定」时不用等）
+    private readonly System.Collections.Generic.Dictionary<string, string> _pins =
+        new(StringComparer.OrdinalIgnoreCase);
+
+
     private bool _cidrUserEdited;     // 用户手动改过网段就不再自动覆盖
     private bool _settingCidr;        // 程序自己写文本框时的护栏
     private bool _cidrHooked;
@@ -1323,11 +1364,15 @@ public partial class MainWindow : Window
         {
             var list = await LanScan.ScanAsync(cidr, cfg, deep, msg =>
             {
-                Dispatcher.Invoke(() => TxtScanInfo.Text = msg);
+                AppPaths.Log($"[固定] 读到 {_pins.Count} 条，设备 {_devices.Count} 台");
+            Dispatcher.Invoke(() => TxtScanInfo.Text = msg);
             }, _scanCts.Token);
 
+            if (cfg.IsConfigured) await LoadPinsAsync(cfg);   // 先拿固定表（约 0.5~1 秒），再填列
             _devices = list;
+            ApplyPinsToDevices();
             DgDevices.ItemsSource = list;
+            UpdateDevEmpty();
 
             var online = list.Count(x => x.State == "在线");
             TxtScanInfo.Text = $"√ 共 {list.Count} 台，{online} 台在线" +
@@ -1337,6 +1382,7 @@ public partial class MainWindow : Window
                 TxtScanInfo.Text += $"　← 本机在 {string.Join("、", locals)}，网段是不是填错了";
             await RefreshDevStateAsync();
             TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
+            Toast($"扫描完成：{list.Count} 台设备（{online} 在线）");
             AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
         }
         catch (OperationCanceledException)
@@ -1361,6 +1407,139 @@ public partial class MainWindow : Window
     {
         _scanCts?.Cancel();
         TxtScanInfo.Text = "正在停止 …";
+    }
+
+    /// <summary>读一次静态租约表 → _pins（失败静默，返回是否成功）</summary>
+    private async Task<bool> LoadPinsAsync(RemoteConfig cfg)
+    {
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "lease-list");
+            if (!ok) return false;
+            lock (_pins)
+            {
+                _pins.Clear();
+                foreach (var line in detail.Split('\n'))
+                {
+                    var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 2 && parts[0].Contains(':') && System.Net.IPAddress.TryParse(parts[1], out _))
+                        _pins[parts[0]] = parts[1];
+                }
+            }
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>把 _pins 里的固定标记刷到当前设备列表（本地操作，不发请求）</summary>
+    private void ApplyPinsToDevices()
+    {
+        foreach (var dv in _devices)
+        {
+            if (!_pins.TryGetValue(dv.Mac, out var ip)) { dv.PinText = ""; continue; }
+            // 网段不一致时 dnsmasq 会忽略这条固定，必须显式提醒
+            var same = dv.Ip.Length == 0 || SameSubnet24(ip, dv.Ip);
+            dv.PinText = same ? "✓ " + ip : "⚠ " + ip + " 异段";
+        }
+    }
+
+    /// <summary>两个 IPv4 是否同一 /24</summary>
+    private static bool SameSubnet24(string a, string b)
+    {
+        var pa = a.Split('.');
+        var pb = b.Split('.');
+        return pa.Length == 4 && pb.Length == 4 && pa[0] == pb[0] && pa[1] == pb[1] && pa[2] == pb[2];
+    }
+
+    /// <summary>清空全部静态租约</summary>
+    private async void OnDevPinsClear(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtScanInfo.Text = "× 「连接」页还没配远端地址"; return; }
+        if (MessageBox.Show("清空所有静态租约？\n（不影响上网，点「生效」才会重连 AP）", "清空固定",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        BtnClearPins.IsEnabled = false;
+        try
+        {
+            TxtScanInfo.Text = "正在清空…";
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "lease-clear");
+            TxtScanInfo.Text = ok ? "√ 已清空全部固定" : "× " + detail;
+            if (ok)
+            {
+                _pins.Clear();
+                foreach (var dv in _devices) dv.PinText = "";
+                DgDevices.ItemsSource = null;
+                DgDevices.ItemsSource = _devices;
+                UpdateDevEmpty();
+            }
+        }
+        finally { BtnClearPins.IsEnabled = true; }
+    }
+
+    /// <summary>固定某台设备的 IP（写 dnsmasq 静态租约）</summary>
+    private async void OnDevPin(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not LanDevice d || string.IsNullOrWhiteSpace(d.Mac)) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtScanInfo.Text = "× 「连接」页还没配远端地址"; return; }
+
+        // 用扫描时缓存的固定表，不再先发一次遥控请求（否则要点下去等好几秒）
+        var pinned = _pins.TryGetValue(d.Mac, out var p) ? p : null;
+
+        var shown = string.IsNullOrWhiteSpace(d.Name) ? d.Ip : d.Name;
+        var dlg = new IpPinDialog(d.Mac, shown, d.Ip, pinned) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+
+        if (dlg.Ip.Length == 0)
+        {
+            TxtScanInfo.Text = "正在取消固定…";
+            var (dok, ddetail) = await RouterCtl.RunAsync(cfg, $"lease-del {d.Mac}");
+            TxtScanInfo.Text = dok ? $"√ 已取消 {d.Mac} 的固定" : "× " + ddetail;
+            if (dok)
+            {
+                _pins.Remove(d.Mac);
+                d.PinText = "";
+                var cur = DgDevices.ItemsSource; DgDevices.ItemsSource = null; DgDevices.ItemsSource = cur ?? _devices;
+            }
+            return;
+        }
+
+        if (!SameSubnet24(dlg.Ip, d.Ip))
+        {
+            MessageBox.Show(
+                $"固定的 IP 要和设备现在同一网段。\n\n设备当前：{d.Ip}\n你输入：{dlg.Ip}\n\n" +
+                "填错网段的话 dnsmasq 会静默忽略，不报错但不生效。",
+                "固定 IP", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var name = new string(dlg.DeviceName.Where(c => !char.IsWhiteSpace(c) && c != ',' && c != '=').ToArray());
+        var cmd = $"lease-set {d.Mac} {dlg.Ip}" + (name.Length > 0 ? $" {name}" : "");
+        TxtScanInfo.Text = "正在写入静态租约…";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, cmd);
+        if (!ok)
+        {
+            MessageBox.Show("写入失败：\n" + detail, "固定 IP", MessageBoxButton.OK, MessageBoxImage.Warning);
+            TxtScanInfo.Text = "× 写入失败";
+            return;
+        }
+        _pins[d.Mac] = dlg.Ip;
+        d.PinText = "✓ " + dlg.Ip;
+        { var cur = DgDevices.ItemsSource; DgDevices.ItemsSource = null; DgDevices.ItemsSource = cur ?? _devices; }
+
+        var ask = MessageBox.Show(
+            $"已写入：{d.Mac} → {dlg.Ip}\n\n要现在生效吗？\n（会重启共享连接，无线会断 5~10 秒）",
+            "固定 IP", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (ask != MessageBoxResult.Yes)
+        {
+            TxtScanInfo.Text = "√ 已写入，下次重连 AP 后生效";
+            return;
+        }
+
+        TxtScanInfo.Text = "正在让静态租约生效…";
+        var (aok, adetail) = await RouterCtl.RunAsync(cfg, "lease-apply");
+        TxtScanInfo.Text = aok ? "√ 静态租约已生效" : "× 生效失败：" + adetail;
     }
 
     private async void OnDevAction(object sender, RoutedEventArgs e)
@@ -1486,6 +1665,7 @@ public partial class MainWindow : Window
 
             if (quiet) DgDevices.Items.Refresh();
             else { DgDevices.ItemsSource = null; DgDevices.ItemsSource = _devices; }
+            UpdateDevEmpty();
 
             var blocked = _devices.Count(x => x.Blocked);
             if (blocked > 0) TxtScanInfo.Text += $"　（已拉黑 {blocked} 台）";
@@ -1495,6 +1675,25 @@ public partial class MainWindow : Window
             AppPaths.Log("[设备] 解析 dev-list 失败：" + ex.Message + " 原文=" + detail);
             TxtScanInfo.Text += "　（流量/黑名单读取失败，看日志）";
         }
+        // —— 上下线事件（只记变化，不弹窗） ——
+        foreach (var dv in _devices)
+        {
+            if (string.IsNullOrWhiteSpace(dv.Mac)) continue;
+            var online = dv.State == "在线";
+            if (_onlinePrev.TryGetValue(dv.Mac, out var was) && was != online)
+            {
+                DeviceEvents.Record(dv.Mac, string.IsNullOrWhiteSpace(dv.Name) ? dv.Ip : dv.Name, online);
+                _eventDirty = true;
+            }
+            _onlinePrev[dv.Mac] = online;
+        }
+        if (_eventDirty)
+        {
+            DeviceEvents.TrimIfNeeded();
+            _eventDirty = false;
+        }
+
+        ApplyPinsToDevices();
     }
 
     /// <summary>进设备页先采两次（间隔 1.2 秒）：第一次建基线，第二次出速率</summary>
@@ -1524,10 +1723,11 @@ public partial class MainWindow : Window
     {
         var page = CurrentPage;
         if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(60); _timer.Start(); _ = RefreshAsync(); }
-        if (page == "网卡") { _wanPoll.Interval = TimeSpan.FromSeconds(10); _wanPoll.Start(); }
-        if (page == "设备") { _devTick.Interval = TimeSpan.FromSeconds(3); _devTick.Start(); _ = PrimeDevRateAsync(); }
-        if (page == "无线频段") _apTick.Start();
-        if (page == "代理检测") { _proxyLocalTick.Start(); _proxyRemoteTick.Start(); }
+                if (page == "流量") _ = LoadUsageAsync(true);
+if (page == "网卡") { _wanPoll.Interval = TimeSpan.FromSeconds(10); _wanPoll.Start(); }
+        if (page == "设备") { _devTick.Interval = TimeSpan.FromSeconds(3); _devTick.Start(); _ = PrimeDevRateAsync(); UpdateDevEmpty(); }
+        if (page == "无线" && WifiTabs.SelectedIndex == 0) _apTick.Start();
+        if (page == "诊断" && DiagTabs.SelectedIndex == 1) { _proxyLocalTick.Start(); _proxyRemoteTick.Start(); }
         _pageTick.Start();
     }
 
@@ -1648,7 +1848,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     private async void OnNavChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.Source is not TabControl) return;
+        if (!ReferenceEquals(e.Source, NavTabs)) return;   // 子页签（诊断/无线）也会冒泡，必须只认导航栏
         var page = CurrentPage;
 
         // 状态页：切进来顺手查一次远端网口（一次 ssh，不常驻）
@@ -1659,11 +1859,12 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(60); _timer.Start(); }
         else _timer.Stop();
 
-        if (page == "代理检测") StartProxyWatch();
+        // 诊断页 · 代理与出口 子页签：可见才起实时刷新
+        if (page == "诊断" && DiagTabs.SelectedIndex == 1) StartProxyWatch();
         else StopProxyWatch();
 
-        // 无线频段页：进页开始 2 秒热检测，离页立刻停
-        if (page == "无线频段") StartApWatch();
+        // 无线页 · AP 设置 子页签：进页开始 2 秒热检测，离页立刻停
+        if (page == "无线" && WifiTabs.SelectedIndex == 0) StartApWatch();
         else StopApWatch();
 
         // 流量页：进来读一次设备流量汇总（不采样，秒出）
@@ -1676,13 +1877,22 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             _devTick.Start();
             _ = PrimeDevRateAsync();          // 立刻采两次，进页面就有速率，不用等 3 秒
             _ = RefreshScanCidrAsync(false);
+            UpdateDevEmpty();                 // 列表为空时立刻给出空状态，不留白板
         }
         else { _devTick.Stop(); _devRatePrev.Clear(); }
 
         // 网卡页：只在看得见时做热插拔轮询（8 秒一次本地查询），切走立刻停
         _nicPoll.Stop();                       // 网卡页：只进页查一次，手动刷新
         _wanPoll.Stop();
-        if (page == "网卡") { _ = PollAdaptersAsync(); _ = LoadRolesAsync(); _ = LoadWanFailAsync(); _wanPoll.Start(); }
+        _sqmStatPoll.Stop();
+        SqmChart?.Reset();                     // 离页清空曲线，回来重新采样
+        if (page == "网卡")
+        {
+            _ = PollAdaptersAsync(); _ = LoadRolesAsync(); _ = LoadWanFailAsync(); _ = LoadSqmAsync();
+            _wanPoll.Start();
+            _sqmUpPrev = -1; _sqmDownPrev = -1; _sqmPrevAt = DateTime.MinValue;
+            _sqmStatPoll.Start();
+        }
 
         // 校园网页：第一次进来，账号空着就从 minipc 的 Config.yaml 读一份（只读，不动配置）
         if (page == "校园网" && TxtCampusUser.Text.Trim().Length == 0 && !_campusPrefilled)
@@ -1697,6 +1907,24 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         if (page != "连接" || _detectTried) return;
         _detectTried = true;
         await DetectRemoteAsync(silent: true);
+    }
+
+    /// <summary>诊断页内部切页签：代理实时刷新跟着起停</summary>
+    private void OnDiagTabChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.Source, DiagTabs)) return;
+        if (CurrentPage != "诊断") return;
+        if (DiagTabs.SelectedIndex == 1) StartProxyWatch();
+        else StopProxyWatch();
+    }
+
+    /// <summary>无线页内部切页签：AP 热检测跟着起停</summary>
+    private void OnWifiTabChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.Source, WifiTabs)) return;
+        if (CurrentPage != "无线") return;
+        if (WifiTabs.SelectedIndex == 0) StartApWatch();
+        else StopApWatch();
     }
 
     private CancellationTokenSource? _detectCts;
@@ -2041,7 +2269,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             $"切换到 {target}？\n\n" +
             "过程：先上 150 秒死手保险 → 改参数 → 重启 AP。WiFi 会断 15~25 秒，本面板也会短暂失去连接。\n" +
             "5 GHz 起不来时，远端会自动回滚到备份的原设置。",
-            "无线频段", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+            "无线", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
         if (ask != MessageBoxResult.OK) return;
 
         _apSwitchBusy = true;
@@ -2822,6 +3050,157 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         catch (Exception ex) { MessageBox.Show("清空失败：" + ex.Message, "日志", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
+    /// <summary>导出配置备份：远端只读打包 → scp 拉回本机</summary>
+    private void OnSnapshotDiff(object sender, RoutedEventArgs e)
+    {
+        if (!RemoteConfig.Load().IsConfigured)
+        {
+            MessageBox.Show("先去「连接」页配置软路由地址。", "快照对比", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        new SnapshotDiffWindow { Owner = this }.ShowDialog();
+    }
+
+    private async void OnExportBackup(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured)
+        {
+            MessageBox.Show("先去「连接」页配置软路由地址。", "导出配置", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dlg = new SaveFileDialog
+        {
+            Title = "保存配置备份",
+            Filter = "压缩包 (*.tar.gz)|*.tar.gz|所有文件 (*.*)|*.*",
+            FileName = $"grayrouter-backup-{DateTime.Now:yyyyMMdd-HHmmss}.tar.gz",
+            InitialDirectory = Directory.Exists(AppPaths.DataDir) ? AppPaths.DataDir : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        };
+        if (dlg.ShowDialog() != true) return;
+        var local = dlg.FileName;
+
+        using var busy = UiFeedback.Busy(sender as Button ?? new Button(), "导出中…");
+        try
+        {
+            var (rc, outp, errp) = await Remote.RunAsync("ssh.exe",
+                $"-o ConnectTimeout=6 -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 -p {cfg.Port} {cfg.Target} " +
+                "\"bash ~/grayrouter-backup.sh\"", 60);
+            var remote = outp.Split('\n').Select(x => x.Trim())
+                             .LastOrDefault(x => x.StartsWith("/") && x.EndsWith(".tar.gz"));
+            if (rc != 0 || remote == null)
+            {
+                MessageBox.Show("远端打包失败：\n" + (errp + outp).Trim(), "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var (src, _, serr) = await Remote.RunAsync("scp.exe",
+                $"-P {cfg.Port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 {cfg.Target}:{remote} \"{local}\"", 120);
+            if (src != 0 || !File.Exists(local) || new FileInfo(local).Length < 512)
+            {
+                MessageBox.Show("下载失败：\n" + serr.Trim(), "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var kb = new FileInfo(local).Length / 1024;
+            AppPaths.Log($"[备份] 已导出 {local}（{kb} KB）");
+            _ = Remote.RunAsync("ssh.exe",
+                $"-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 -p {cfg.Port} {cfg.Target} \"rm -f {remote}\"", 20);
+
+            Toast($"已导出 {kb} KB → {System.IO.Path.GetFileName(local)}");
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[备份] 失败：" + ex.Message);
+            MessageBox.Show("导出失败：" + ex.Message, "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>从备份包恢复配置：上传 → ctl 恢复（远端自带 pre-restore 备份与自检）</summary>
+    private async void OnRestoreBackup(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured)
+        {
+            MessageBox.Show("先去「连接」页配置软路由地址。", "恢复配置", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dlg = new OpenFileDialog
+        {
+            Title = "选择配置备份包",
+            Filter = "备份包 (*.tar.gz)|*.tar.gz|所有文件 (*.*)|*.*",
+        };
+        if (dlg.ShowDialog() != true) return;
+        var file = dlg.FileName;
+        if (!File.Exists(file) || new FileInfo(file).Length < 200)
+        {
+            MessageBox.Show("这个文件太小，不像备份包。", "恢复配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var warn = MessageBox.Show(
+            $"将用这个包覆盖软路由的配置：\n{file}\n\n" +
+            "远端会先把当前配置备份一份，再覆盖并自检；出问题可以用那份备份恢复。\n\n继续？",
+            "恢复配置", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (warn != MessageBoxResult.Yes) return;
+
+        var remoteName = "grayrouter-restore-upload.tar.gz";
+        try
+        {
+            var (src, _, serr) = await Remote.RunAsync("scp.exe",
+                $"-P {cfg.Port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 \"{file}\" {cfg.Target}:~/{remoteName}", 180);
+            if (src != 0)
+            {
+                MessageBox.Show("上传失败：\n" + serr.Trim(), "恢复配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 取远端绝对路径（ctl 只接受 /home/... 形式）
+            var (prc, pout, _) = await Remote.RunAsync("ssh.exe",
+                $"-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 -p {cfg.Port} {cfg.Target} \"readlink -f ~/{remoteName}\"", 30);
+            var path = pout.Trim();
+            if (prc != 0 || !path.StartsWith("/home/"))
+            {
+                MessageBox.Show("拿不到远端路径：" + pout.Trim(), "恢复配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "restore-file " + path);
+            AppPaths.Log($"[恢复] {path} → {(ok ? "成功" : "失败")}");
+            MessageBox.Show((ok ? "恢复完成：\n\n" : "恢复失败：\n\n") + detail, "恢复配置",
+                MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            if (ok)
+                MessageBox.Show("配置已恢复。要让静态租约立即生效，去「设备」页点「清空固定」旁边的操作，或在远端执行 lease-apply。",
+                    "恢复配置", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[恢复] 异常：" + ex.Message);
+            MessageBox.Show("恢复出错：" + ex.Message, "恢复配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _ = Remote.RunAsync("ssh.exe",
+                $"-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 -p {cfg.Port} {cfg.Target} \"rm -f ~/{remoteName}\"", 20);
+        }
+    }
+
+    /// <summary>检查配置漂移（对比最近快照，只读）</summary>
+    private async void OnDriftCheck(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured)
+        {
+            MessageBox.Show("先去「连接」页配置软路由地址。", "配置漂移", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "drift-check");
+        AppPaths.Log($"[漂移] {(ok ? "完成" : "失败")}");
+        MessageBox.Show(detail, "配置漂移", MessageBoxButton.OK,
+            ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
+
     private void OnOpenUninstaller(object sender, RoutedEventArgs e)
     {
         var exe = System.IO.Path.Combine(AppPaths.BaseDir, "..", "卸载程序.exe");
@@ -3171,6 +3550,227 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         finally { _nicPolling = false; }
     }
 
+    // ── 智能队列（cake）：开关 / 测速填带宽 ─────────────────────────────
+    private bool _sqmBusy;
+
+    private void SetSqmBusy(bool busy)
+    {
+        _sqmBusy = busy;
+        BtnSqmApply.IsEnabled = !busy;
+        BtnSqmClear.IsEnabled = !busy;
+        BtnSqmMeasure.IsEnabled = !busy;
+        BtnSqmMeasure.Content = busy ? "测量中…" : "测一下带宽";
+    }
+
+    /// <summary>cake 实时读数（只在「网卡」页跑，每 2 秒一次，只读）</summary>
+    private async Task TickSqmStatAsync()
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtSqmStat.Text = ""; SqmChart?.Reset(); return; }
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "sqm-stats");
+        if (!ok) { TxtSqmStat.Text = "实时读数不可用：" + detail; return; }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            var rootEl = doc.RootElement;
+            if (!rootEl.TryGetProperty("enabled", out var en) || en.GetInt32() != 1)
+            {
+                TxtSqmStat.Text = "（未开启整形，没有实时读数）";
+                SqmChart?.Reset();
+                _sqmUpPrev = -1; _sqmDownPrev = -1;
+                return;
+            }
+
+            long upB = rootEl.TryGetProperty("up_bytes", out var u) ? u.GetInt64() : 0;
+            long downB = rootEl.TryGetProperty("down_bytes", out var d) ? d.GetInt64() : 0;
+            long upDrop = rootEl.TryGetProperty("up_drops", out var ud) ? ud.GetInt64() : 0;
+            long downDrop = rootEl.TryGetProperty("down_drops", out var dd) ? dd.GetInt64() : 0;
+            long upBack = rootEl.TryGetProperty("up_backlog", out var ub) ? ub.GetInt64() : 0;
+            long downBack = rootEl.TryGetProperty("down_backlog", out var db) ? db.GetInt64() : 0;
+
+            var now = DateTime.UtcNow;
+            if (_sqmUpPrev >= 0 && _sqmPrevAt != DateTime.MinValue)
+            {
+                var sec = Math.Max(0.5, (now - _sqmPrevAt).TotalSeconds);
+                var upMb = (upB - _sqmUpPrev) * 8 / 1_000_000.0 / sec;
+                var downMb = (downB - _sqmDownPrev) * 8 / 1_000_000.0 / sec;
+                if (upMb < 0) upMb = 0;
+                if (downMb < 0) downMb = 0;
+                SqmChart?.Push(downMb, upMb);
+                TxtSqmStat.Text =
+                    $"实时：↑ {upMb:F1} / ↓ {downMb:F1} Mbit/s · 队列 ↑{upBack / 1024} / ↓{downBack / 1024} KB" +
+                    (_sqmOrZero(upDrop) + _sqmOrZero(downDrop) > 0 ? $" · 丢包 ↑{upDrop} ↓{downDrop}" : " · 丢包 0");
+            }
+            else
+            {
+                TxtSqmStat.Text = "实时：采集中…";
+            }
+
+            _sqmUpPrev = upB; _sqmDownPrev = downB; _sqmPrevAt = now;
+        }
+        catch { TxtSqmStat.Text = "实时读数解析失败"; }
+    }
+
+    private static long _sqmOrZero(long v) => v < 0 ? 0 : v;
+
+    /// <summary>路由追踪 / 路径 MTU（并进诊断页，温和发包）</summary>
+    private async void OnNetDiagTrace(object sender, RoutedEventArgs e) => await RunNetDiagAsync("trace");
+    private async void OnNetDiagMtu(object sender, RoutedEventArgs e) => await RunNetDiagAsync("mtu");
+
+    private async Task RunNetDiagAsync(string mode)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtNetDiagHint.Text = "× 先配远端地址"; return; }
+
+        var host = (TxtNetDiagHost.Text ?? "").Trim();
+        if (host.Length == 0) host = "223.5.5.5";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(host, @"^[A-Za-z0-9.:_-]+$"))
+        {
+            TxtNetDiagHint.Text = "× 主机名只能是字母、数字、.:-_";
+            return;
+        }
+
+        TxtNetDiagHint.Text = mode == "trace" ? "追踪中（最多 60 秒）…" : "探测中（约 10 个包）…";
+        TxtNetDiagOut.Text = "";
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, $"netdiag-{mode} {host}");
+            TxtNetDiagOut.Text = detail;
+            TxtNetDiagOut.ScrollToHome();
+            TxtNetDiagHint.Text = ok ? "√ 完成" : "× 失败";
+            AppPaths.Log($"[网络诊断] {mode} {host} → {(ok ? "ok" : "fail")}");
+        }
+        catch (Exception ex)
+        {
+            TxtNetDiagHint.Text = "× " + ex.Message;
+        }
+    }
+
+    private async Task LoadSqmAsync()
+    {
+        if (_sqmBusy) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtSqmState.Text = "软路由没连上"; return; }
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "sqm-get");
+            if (!ok) { TxtSqmState.Text = "× " + detail; return; }
+
+            string? json = null;
+            foreach (var raw in detail.Split('\n'))
+                if (raw.TrimStart().StartsWith("{")) json = raw.Trim();
+            if (json == null) { TxtSqmState.Text = "读不到状态"; return; }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            int enabled = r.TryGetProperty("enabled", out var e1) ? e1.GetInt32() : 0;
+            int down = r.TryGetProperty("down", out var d1) ? d1.GetInt32() : 0;
+            int up = r.TryGetProperty("up", out var u1) ? u1.GetInt32() : 0;
+            string wan = r.TryGetProperty("wan", out var w1) ? (w1.GetString() ?? "") : "";
+            bool upOn = r.TryGetProperty("up_on", out var o1) && o1.GetInt32() == 1;
+            bool downOn = r.TryGetProperty("down_on", out var o2) && o2.GetInt32() == 1;
+
+            if (down > 0 && !TxtSqmDown.IsKeyboardFocusWithin) TxtSqmDown.Text = (down / 1000).ToString();
+            if (up > 0 && !TxtSqmUp.IsKeyboardFocusWithin) TxtSqmUp.Text = (up / 1000).ToString();
+
+            if (enabled == 1 && upOn && downOn)
+            {
+                TxtSqmState.Text = $"已开启 · 下 {down / 1000} / 上 {up / 1000} Mbit · {wan}";
+                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94));
+            }
+            else if (enabled == 1)
+            {
+                TxtSqmState.Text = $"配置已开但没挂上（上行 {(upOn ? "✓" : "×")} / 下行 {(downOn ? "✓" : "×")}）";
+                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F));
+            }
+            else
+            {
+                TxtSqmState.Text = "未开启";
+                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8));
+            }
+        }
+        catch (Exception ex) { TxtSqmState.Text = "× " + ex.Message; }
+    }
+
+    private async void OnSqmApply(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtSqmState.Text = "软路由没连上"; return; }
+        if (!int.TryParse(TxtSqmDown.Text.Trim(), out int d) || d <= 0 || d > 10000)
+        { TxtSqmState.Text = "下行要填 1~10000 之间的整数"; return; }
+        if (!int.TryParse(TxtSqmUp.Text.Trim(), out int u) || u <= 0 || u > 10000)
+        { TxtSqmState.Text = "上行要填 1~10000 之间的整数"; return; }
+
+        var ask = MessageBox.Show(
+            $"按 下行 {d} Mbit / 上行 {u} Mbit 启用智能队列？\n\n立即生效、不会断网。填大了没效果，填小了会限速。",
+            "启用智能队列", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (ask != MessageBoxResult.OK) return;
+
+        SetSqmBusy(true);
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, $"sqm-apply {d} {u}");
+            if (!ok) { TxtSqmState.Text = "× " + detail; Toast("启用失败：" + detail, false); }
+            else Toast($"智能队列已启用：↓{d} / ↑{u} Mbit");
+        }
+        finally { SetSqmBusy(false); }
+        await LoadSqmAsync();
+    }
+
+    private async void OnSqmClear(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtSqmState.Text = "软路由没连上"; return; }
+        var ask = MessageBox.Show("关闭智能队列，恢复系统默认排队？\n\n立即生效，不会断网。",
+            "关闭智能队列", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (ask != MessageBoxResult.OK) return;
+
+        SetSqmBusy(true);
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "sqm-clear");
+            if (!ok) { TxtSqmState.Text = "× " + detail; Toast("关闭失败：" + detail, false); }
+            else Toast("已关闭整形，恢复系统默认排队");
+        }
+        finally { SetSqmBusy(false); }
+        await LoadSqmAsync();
+    }
+
+    private async void OnSqmMeasure(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtSqmState.Text = "软路由没连上"; return; }
+        SetSqmBusy(true);
+        TxtSqmState.Text = "测速中，约 10 秒…";
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "sqm-measure");
+            if (!ok) { TxtSqmState.Text = "× " + detail; return; }
+
+            string? rec = null, real = null;
+            foreach (var raw in detail.Split('\n'))
+            {
+                var line = raw.Trim();
+                int i = line.IndexOf("实测下行：", StringComparison.Ordinal);
+                if (i >= 0) real = line.Substring(i + 5).Trim();
+                i = line.IndexOf("建议整形值：", StringComparison.Ordinal);
+                if (i >= 0) rec = line.Substring(i + 6).Trim();
+            }
+            var digits = new string((rec ?? "").TakeWhile(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out int kbit) && kbit > 0)
+            {
+                int mbit = Math.Max(1, kbit / 1000);
+                TxtSqmDown.Text = mbit.ToString();
+                TxtSqmUp.Text = mbit.ToString();
+                TxtSqmState.Text = $"实测 {real}，已填 {mbit} Mbit，点「应用」生效";
+                Toast($"实测 {real}，已填入 {mbit} Mbit");
+            }
+            else TxtSqmState.Text = "测速没拿到结果，手工填吧";
+        }
+        finally { SetSqmBusy(false); }
+    }
+
     private async Task RefreshNicsAsync()
     {
         var list = await StatusGather.GetPhysicalAdaptersAsync();
@@ -3295,12 +3895,45 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
 
     /// <summary>按钮内容：小图标 + 文字</summary>
+    // 旧版 Win10 风格图标名 → Lucide 开源图标名（统一走 icons/ui_*.png，按 24/32 两档渲染）
+    private static readonly Dictionary<string, string> LegacyIconMap = new()
+    {
+        ["link_w"] = "link",
+        ["link"] = "link",
+        ["shield_check_w"] = "shield-check",
+        ["shield_check"] = "shield-check",
+        ["shield_x"] = "shield-x",
+    };
+
+    private static string UiIconTone(string icon, Color? color)
+    {
+        if (icon.EndsWith("_w")) return "white";
+        if (color is Color c)
+        {
+            if (c.R > 190 && c.G < 120) return "red";
+            if (c.B > c.R + 40) return "blue";
+            if (c.R > 235 && c.G > 235 && c.B > 235) return "white";
+        }
+        return "dark";
+    }
+
     private static UIElement IconText(string icon, string text, Color? color = null, double iconSize = 15)
     {
         var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        ImageSource src;
+        if (LegacyIconMap.TryGetValue(icon, out var lucide))
+        {
+            int px = iconSize <= 24 ? 24 : 32;
+            string tone = UiIconTone(icon, color);
+            src = new BitmapImage(new Uri($"pack://application:,,,/icons/ui_{lucide}_{px}_{tone}.png"));
+        }
+        else
+        {
+            src = new BitmapImage(new Uri($"pack://application:,,,/icons/{icon}.png"));
+        }
         sp.Children.Add(new Image
         {
-            Source = new BitmapImage(new Uri($"pack://application:,,,/icons/{icon}.png")),
+            Source = src,
             Width = iconSize,
             Height = iconSize,
             Margin = new Thickness(0, 0, 5, 0),
@@ -3650,6 +4283,16 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         TxtSites.Text = string.IsNullOrWhiteSpace(_cfg.Sites) ? "baidu.com" : _cfg.Sites;
     }
 
+
+    /// <summary>右下角轻提示（成功/失败），3 秒自动消失。</summary>
+    private void Toast(string text, bool ok = true, int seconds = 3) => UiFeedback.Toast(this, text, ok, seconds);
+
+    private void UpdateDevEmpty()
+    {
+        if (TxtDevEmpty == null) return;
+        TxtDevEmpty.Visibility = (_devices == null || _devices.Count == 0)
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void FillPresets(Panel target, string[] sites)
     {

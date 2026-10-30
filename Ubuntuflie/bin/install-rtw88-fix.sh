@@ -41,11 +41,11 @@ fi
 
 echo "⑤ 重载 systemd"
 systemctl daemon-reload; sleep 1
-systemctl enable --now grayrrouter-beacon.timer  >/dev/null 2>&1
-systemctl enable grayrrouter-boot.service        >/dev/null 2>&1
-echo -n "   信标定时器："; systemctl is-enabled grayrrouter-beacon.timer 2>&1
-echo -n "   信标定时器运行："; systemctl is-active grayrrouter-beacon.timer 2>&1
-echo -n "   开机单元："; systemctl is-enabled grayrrouter-boot.service 2>&1
+systemctl enable --now grayrouter-beacon.timer  >/dev/null 2>&1
+systemctl enable grayrouter-boot.service        >/dev/null 2>&1
+echo -n "   信标定时器："; systemctl is-enabled grayrouter-beacon.timer 2>&1
+echo -n "   信标定时器运行："; systemctl is-active grayrouter-beacon.timer 2>&1
+echo -n "   开机单元："; systemctl is-enabled grayrouter-boot.service 2>&1
 echo -n "   模式标记："; cat /etc/grayrouter/boot-mode 2>/dev/null || echo 无
 
 echo

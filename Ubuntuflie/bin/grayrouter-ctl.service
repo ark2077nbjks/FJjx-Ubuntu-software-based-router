@@ -1,0 +1,11 @@
+ [Unit]
+Description=GrayRouter 面板遥控（执行一条来自面板的命令）
+# 面板高频轮询（2~3 秒一次）会频繁触发，必须关掉启动频率限制
+StartLimitIntervalSec=0
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-ctl.sh
+TimeoutStartSec=900
+Nice=5

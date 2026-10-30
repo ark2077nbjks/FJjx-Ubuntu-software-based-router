@@ -25,6 +25,8 @@ echo "   请求文件："$(ls -l /run/grayrouter/request | awk '{print $1, $3}')
 
 echo "① 装脚本"
 install -m 755 "$DIR/grayrouter-devices.sh" /usr/local/bin/grayrouter-devices.sh || exit 1
+install -m 755 "$DIR/grayrouter-sqm.sh" /usr/local/bin/grayrouter-sqm.sh || exit 1
+install -m 644 "$DIR/grayrouter-sqm.service" /etc/systemd/system/grayrouter-sqm.service || exit 1
 
 install -m 755 "$DIR/grayrouter-roles.sh" /usr/local/bin/grayrouter-roles.sh || exit 1
 
@@ -86,8 +88,8 @@ for n in $(ls /sys/class/net | grep -E '^(enx|usb|rndis|wwan)'); do
   systemctl start --no-block "grayrouter-usbnet@$n.service" 2>/dev/null || true
 done
 
-systemctl enable --now grayrrouter-wanfail.timer >/dev/null 2>&1 || true
-systemctl restart grayrrouter-wanfail.timer >/dev/null 2>&1 || true
+systemctl enable --now grayrouter-wanfail.timer >/dev/null 2>&1 || true
+systemctl restart grayrouter-wanfail.timer >/dev/null 2>&1 || true
 
 echo "④ 清掉调试残留规则"
 nft delete table inet dbgprobe 2>/dev/null && echo "   删了 dbgprobe" || true
@@ -96,6 +98,11 @@ nft delete table inet gray_dev 2>/dev/null && echo "   重建 gray_dev" || true
 echo "⑤ 生效"
 systemctl daemon-reload
 systemctl enable grayrouter-devices.service >/dev/null 2>&1
+systemctl enable grayrouter-sqm.service >/dev/null 2>&1
+
+# 面板遥控通道（缺了它面板一个按钮都点不动）
+install -m 644 "$DIR/grayrouter-ctl.service" /etc/systemd/system/grayrouter-ctl.service || exit 1
+install -m 644 "$DIR/grayrouter-ctl.path" /etc/systemd/system/grayrouter-ctl.path || exit 1
 bash /usr/local/bin/grayrouter-devices.sh apply || exit 1
 
 echo ""
@@ -103,15 +110,17 @@ echo "④.5 有线 LAN（USB 网卡）开机规则"
 install -m 755 "$DIR/lan-usb.sh" /usr/local/bin/lan-usb.sh || exit 1
 install -m 644 "$DIR/grayrouter-lan2.service" /etc/systemd/system/grayrouter-lan2.service || exit 1
 systemctl daemon-reload
-systemctl enable --now grayrrouter-lan2.service >/dev/null 2>&1 || true
-echo "   有线 LAN：$(systemctl is-active grayrrouter-lan2.service 2>/dev/null || echo 未知)"
+systemctl enable --now grayrouter-lan2.service >/dev/null 2>&1 || true
+echo "   有线 LAN：$(systemctl is-active grayrouter-lan2.service 2>/dev/null || echo 未知)"
 
 install -m 644 "$DIR/grayrouter-watch.service" /etc/systemd/system/grayrouter-watch.service || true
+install -m 644 "$DIR/grayrouter-watch.timer" /etc/systemd/system/grayrouter-watch.timer || true
 
 echo "⑤.5 看门狗 + 快照"
-systemctl enable --now grayrrouter-watch.timer >/dev/null 2>&1 || true
-systemctl restart grayrrouter-watch.timer >/dev/null 2>&1 || true
-echo "   看门狗：$(systemctl is-active grayrrouter-watch.timer 2>/dev/null || echo 未知)"
+systemctl enable --now grayrouter-ctl.path >/dev/null 2>&1 || true
+systemctl enable --now grayrouter-watch.timer >/dev/null 2>&1 || true
+systemctl restart grayrouter-watch.timer >/dev/null 2>&1 || true
+echo "   看门狗：$(systemctl is-active grayrouter-watch.timer 2>/dev/null || echo 未知)"
 ls -1t /var/lib/grayrouter/snapshots/*.tar.gz 2>/dev/null | head -3 | sed 's/^/   快照：/'
 
 echo "⑥ 验证"
