@@ -1,0 +1,14 @@
+[Unit]
+Description=GrayRouter 开机自动恢复软路由（仅软路由模式）
+After=NetworkManager.service docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/grayrouter/boot-mode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-boot-up.sh
+TimeoutStartSec=300
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -55,7 +55,7 @@
 
 ## 快速开始（Ubuntu）
 
-1. 从 **Releases** 下载 `GrayRouter-<版本>.zip`（当前 1.50），拷到 Ubuntu 上右键「解压到此处」。
+1. 从 **Releases** 下载 `GrayRouter-<版本>.zip`（当前 1.50.1），拷到 Ubuntu 上右键「解压到此处」。
 2. 双击 **`GrayRouter-安装.desktop`**（第一次可能要点「标记为可信」或右键「允许启动」）。
 3. 向导里选拓扑、填热点名和密码 → 确认 → 输一次 sudo 密码。
 4. 装完手机/电脑连 `Gray-Router` 就能上网。

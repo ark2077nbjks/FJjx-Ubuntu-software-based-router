@@ -1,0 +1,7 @@
+[Unit]
+Description=GrayRouter 信标自愈（rtw88 AP 模式假在线）
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-beacon-watch.sh

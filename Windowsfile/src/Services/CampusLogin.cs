@@ -100,6 +100,32 @@ public static class CampusLogin
     }
 
     // ---------------- 登录 ----------------
+
+    /// <summary>校园网地址段判断：只有 10.149/16、10.150/16 才可能在做校园网认证。</summary>
+    public static bool IsCampusIp(string ip)
+        => !string.IsNullOrWhiteSpace(ip)
+           && (ip.StartsWith("10.149.") || ip.StartsWith("10.150."));
+
+    /// <summary>预检：这个网卡现在是不是校园网环境。只读，不发认证、不改配置。</summary>
+    public static async Task<(bool IsCampus, string Ip, string Reason)> CheckCampusAsync(RemoteConfig rc, string iface)
+    {
+        if (string.IsNullOrWhiteSpace(iface)) iface = "eno1";
+        await Remote.ResolveAsync(rc);
+        var (code, outp, err) = await Remote.RunAsync("ssh.exe",
+            $"-o ConnectTimeout=4 -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 " +
+            $"-p {rc.Port} {rc.Target} \"ip -4 -br addr show dev {iface} 2>/dev/null\"", 10);
+        var line = (outp ?? "").Split('\n').FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? "";
+        var ip = System.Text.RegularExpressions.Regex.Match(line, @"\b(\d+\.\d+\.\d+\.\d+)\b").Groups[1].Value;
+        if (string.IsNullOrWhiteSpace(ip))
+            // 连不上远端 = 预检本身没跑通，放行（后续登录会自己快速报错），不因为预检失败拦人
+            if (code != 0)
+                return (true, "", $"预检没跑通（{(err ?? "").Split('\n').FirstOrDefault()?.Trim()}），直接尝试");
+            return (false, "", $"网卡 {iface} 没有 IPv4 地址（没插线 / 没连通）");
+        if (IsCampusIp(ip))
+            return (true, ip, "");
+        return (false, ip, $"网卡 {iface} 的地址是 {ip}，不在校园网段（10.149 / 10.150）");
+    }
+
     public static async Task<(bool Ok, string Msg)> LoginAsync(string user, string password, string iface, string userType = "unicom")
     {
         var rc = RemoteConfig.Load();
@@ -107,6 +133,14 @@ public static class CampusLogin
         if (string.IsNullOrWhiteSpace(user) || string.IsNullOrEmpty(password)) return (false, "账号或密码是空的");
 
         await Remote.ResolveAsync(rc);
+
+        // 预检：不是校园网就直接返回，绝不写 Config.yaml
+        var pre = await CheckCampusAsync(rc, iface);
+        if (!pre.IsCampus)
+        {
+            AppPaths.Log($"[校园网] 预检跳过：{pre.Reason}");
+            return (false, $"当前不是校园网，已跳过（配置未改动）：{pre.Reason}");
+        }
 
         var old = await ReadRemoteConfigAsync(rc);
         if (string.IsNullOrWhiteSpace(old)) return (false, "远端读不到 ~/Config.yaml，先跑一次部署");
@@ -196,6 +230,11 @@ public static class CampusLogin
             $"-p {rc.Port} {rc.Target} \"ip -4 route get 1.1.1.1 2>/dev/null\"", 12);
         var ip = Regex.Match(ipOut, @"src\s+(\d+\.\d+\.\d+\.\d+)").Groups[1].Value;
         if (string.IsNullOrEmpty(ip)) return (false, "读不到远端 WAN IP，可能没连上网");
+        if (!IsCampusIp(ip))
+        {
+            AppPaths.Log($"[校园网] 注销跳过：当前出口 {ip} 不是校园网");
+            return (false, $"当前出口不是校园网（{ip}），无需注销。");
+        }
 
         // sign 在远端算（时间戳必须和请求一致，避免两台机器时差）
         long ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -249,6 +288,8 @@ public static class CampusLogin
         var dm = Regex.Match(yml, @"domain\s*:\s*([^\s""]+)").Groups[1].Value;
         var un = Regex.Match(yml, @"username\s*:\s*[""']?([^""'\s]+)").Groups[1].Value;
         var (onl, wanIp) = await QueryOnlineAsync(rc, dm, un);
+        if (!string.IsNullOrWhiteSpace(wanIp) && !IsCampusIp(wanIp))
+            return $"当前出口不是校园网（{wanIp}），认证不适用\n{addrs}";
         var online = onl ? $"在线（门户确认，{wanIp}）" : $"未在线（门户查不到 {wanIp} 的会话）";
         return $"{online}\n{addrs}";
     }

@@ -171,14 +171,19 @@ public static class StatusGather
                     .FirstOrDefault() ?? "-";
             }
 
+            // 169.254.x.x 是系统自配地址，说明 DHCP 没拿到 IP，别当成正常地址显示
+            var ipText = v4.Count > 0 ? string.Join(", ", v4) : "无";
+            if (v4.Count > 0 && v4.All(x => x.StartsWith("169.254.")))
+                ipText = $"未获取到 IP（{string.Join(", ", v4)}）";
+
             local.AppendLine($"  {a.Name}   [{LocalStatus(a.Status, a.IsDisabled)}]   {a.LinkSpeed}");
-            local.AppendLine($"    IP {(v4.Count > 0 ? string.Join(", ", v4) : "无")}   网关 {gw}");
+            local.AppendLine($"    IP {ipText}   网关 {gw}");
             local.AppendLine($"    {a.Description}");
 
             if (secNic.Rows.Count > 0) secNic.Rows.Add(new StatusRow { Label = "", Value = "" });
             secNic.Rows.Add(new StatusRow { Label = a.Name, Value = $"[{LocalStatus(a.Status, a.IsDisabled)}] {a.LinkSpeed}" });
-            secNic.Rows.Add(new StatusRow { Label = "IP", Value = v4.Count > 0 ? string.Join(", ", v4) : "无" });
-            secNic.Rows.Add(new StatusRow { Label = "网关", Value = gw });
+            secNic.Rows.Add(new StatusRow { Label = "IP", Value = ipText });
+            secNic.Rows.Add(new StatusRow { Label = "网关", Value = gw == "-" ? "—" : gw });
             secNic.Rows.Add(new StatusRow { Label = "型号", Value = a.Description, Sub = true });
         }
 
@@ -223,23 +228,9 @@ public static class StatusGather
         local.AppendLine();
         local.AppendLine("【无线连接】");
         var secWifi = new StatusSection { Title = "无线连接" };
-        var profiles = await GetWifiProfilesAsync();
-        if (profiles.Count == 0)
-        {
-            local.AppendLine("  （当前没有已连接的无线网络）");
-            secWifi.Rows.Add(new StatusRow { Label = "状态", Value = "当前没有已连接的无线网络" });
-        }
-        foreach (var pf in profiles)
-        {
-            local.AppendLine($"  SSID {pf.Name}    接口 {pf.Alias}");
-            secWifi.Rows.Add(new StatusRow { Label = "SSID", Value = pf.Name });
-            secWifi.Rows.Add(new StatusRow { Label = "接口", Value = pf.Alias });
-        }
-
+        // 只看「当前实际连接的无线」，不再把保存过的配置文件当 SSID 显示
         var w = await Proc.CmdAsync("netsh wlan show interfaces");
-        string[] wifiKeys = { "SSID", "BSSID", "Signal", "Receive rate", "Transmit rate", "State",
-                              "信号", "接收速率", "传输速率", "状态" };
-        bool got = false;
+        var wd = new Dictionary<string, string>();
         foreach (var raw in w.Output.Split('\n'))
         {
             var t = raw.Trim();
@@ -247,17 +238,41 @@ public static class StatusGather
             if (i <= 0) continue;
             var k = t[..i].Trim();
             var v = t[(i + 1)..].Trim();
-            if (wifiKeys.Any(x => k == x))
-            {
-                local.AppendLine($"  {k,-13}: {v}");
-                secWifi.Rows.Add(new StatusRow { Label = WifiLabel(k), Value = v });
-                got = true;
-            }
+            if (k.Length > 0 && v.Length > 0) wd[k] = v;
         }
-        if (!got)
+        var stateRaw = wd.GetValueOrDefault("状态") ?? wd.GetValueOrDefault("State") ?? "";
+        var stateCn = stateRaw.ToLowerInvariant() switch
         {
-            local.AppendLine("  信号强度读不到：需要「管理员权限 + 系统位置服务开启」");
-            secWifi.Rows.Add(new StatusRow { Label = "信号", Value = "读不到（需要管理员权限 + 位置服务）", Sub = true });
+            "connected" or "已连接" => "已连接",
+            "disconnected" or "已断开连接" => "未连接",
+            "authenticating" or "正在验证身份" => "正在认证",
+            "associating" or "正在关联" => "正在关联",
+            "" => "",
+            _ => stateRaw,
+        };
+        var ssidVal = wd.GetValueOrDefault("SSID") ?? "";
+        if (stateCn != "已连接" || ssidVal.Length == 0)
+        {
+            var radioOff = w.Output.Contains("软件 关") || w.Output.Contains("Software Off", StringComparison.OrdinalIgnoreCase);
+            local.AppendLine("  （没有连接无线网络）");
+            secWifi.Rows.Add(new StatusRow
+            {
+                Label = "状态",
+                Value = (string.IsNullOrEmpty(stateCn) ? "未连接" : stateCn) + (radioOff ? "（无线开关是关的）" : ""),
+            });
+        }
+        else
+        {
+            secWifi.Rows.Add(new StatusRow { Label = "SSID", Value = ssidVal });
+            foreach (var kv in new[] { ("BSSID", "BSSID"), ("信号", "信号"), ("Signal", "信号"),
+                                       ("接收速率", "接收速率"), ("Receive rate", "接收速率"),
+                                       ("传输速率", "传输速率"), ("Transmit rate", "传输速率") })
+            {
+                if (!wd.TryGetValue(kv.Item1, out var vv) || string.IsNullOrWhiteSpace(vv)) continue;
+                if (secWifi.Rows.Count(r => r.Label == kv.Item2) > 0) continue;
+                local.AppendLine($"  {kv.Item2,-6}: {vv}");
+                secWifi.Rows.Add(new StatusRow { Label = kv.Item2, Value = vv });
+            }
         }
         snap.LocalSections.Add(secWifi);
 
@@ -288,20 +303,6 @@ public static class StatusGather
         campus.AppendLine($"  公网出口 IP  : {egress}");
         secOut.Rows.Add(new StatusRow { Label = "公网出口", Value = egress });
         snap.CampusSections.Add(secOut);
-
-        campus.AppendLine();
-        campus.AppendLine("【判定】");
-        campus.AppendLine("  204 = 已认证可上网；超时/失败 = 没认证或网断了");
-        campus.AppendLine("  （认证可到左侧「校园网」页填账号密码，由 minipc 执行）");
-        snap.CampusSections.Add(new StatusSection
-        {
-            Title = "判定",
-            Rows =
-            {
-                new StatusRow { Label = "", Value = "204 = 已认证可上网；超时/失败 = 没认证或网断了", Sub = true },
-                new StatusRow { Label = "", Value = "认证去左侧「校园网」页：填账号密码 → minipc 自动登录 / 注销", Sub = true },
-            }
-        });
 
         // ---------------- 远端软路由 ----------------
         var rc = RemoteConfig.Load();
@@ -420,7 +421,7 @@ public static class StatusGather
                         + $"{(d.GetValueOrDefault("CARRIER") == "1" ? "已插线" : "没插线")}  {d.GetValueOrDefault("SPEED")} Mb/s" });
                     secMini.Rows.Add(new StatusRow { Label = "无线", Value = $"{d.GetValueOrDefault("AP_TYPE")} / {d.GetValueOrDefault("AP_SSID")}  {d.GetValueOrDefault("AP_IP")}" });
                     secMini.Rows.Add(new StatusRow { Label = "客户端", Value = $"{ClientCn(d.GetValueOrDefault("CLIENTS"))} · 转发 ip_forward={d.GetValueOrDefault("FWD")}" });
-                    secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTPS {d.GetValueOrDefault("HTTPS")} · 出口 {d.GetValueOrDefault("EGRESS")}" });
+                    secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTPS {d.GetValueOrDefault("HTTPS")}" });
 
                     // 伪装层（旧版采集脚本不带这项时显示“—”，不误报未运行）
                     var ua3fCn2 = !d.ContainsKey("UA3F")
@@ -460,6 +461,7 @@ public static class StatusGather
         if (snap.RemoteNics.Count > 0)
         {
             var secRnic = new StatusSection { Title = "网卡" };
+            var nicKids = new List<StatusRow>();
             foreach (var nic in snap.RemoteNics)
             {
                 var isWifi = nic.Name.StartsWith("wl") || nic.Bus == "usb" && nic.Model.Contains("Wireless");
@@ -470,7 +472,7 @@ public static class StatusGather
                 if (nic.Bus == "usb") st += "（USB）";
 
                 var ipTxt = string.IsNullOrWhiteSpace(nic.Ip) || nic.Ip == "-" ? "" : $" · {nic.Ip}";
-                secRnic.Rows.Add(new StatusRow
+                nicKids.Add(new StatusRow
                 {
                     Icon = icon,
                     Label = nic.Name,
@@ -482,8 +484,10 @@ public static class StatusGather
                         nic.Bus == "usb" ? "USB" : "" }
                     .Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
                 if (!string.IsNullOrWhiteSpace(meta))
-                    secRnic.Rows.Add(new StatusRow { Label = "", Value = meta, Sub = true });
+                    nicKids.Add(new StatusRow { Label = "", Value = meta, Sub = true });
             }
+            // 明细整块折起来：主界面只留「线路」两行，IP/速率不再重复占屏
+            secRnic.Rows.Add(new StatusRow { Label = "网卡明细", Value = $"{snap.RemoteNics.Count} 块", Children = nicKids });
             // 远端虚拟网卡：集中成一个可折叠组，默认收起
             if (snap.RemoteVnics.Count > 0)
             {

@@ -478,6 +478,12 @@ fi
 nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "$LAN_CON" \
   && ok "LAN 连接处于活动状态" || { bad "LAN 连接没起来"; FAIL=1; }
 
+# ---- rtw88 假在线修复：驱动参数 + 信标自愈 + 开机自启 ----
+if [ -x "$HERE/bin/install-rtw88-fix.sh" ]; then
+  echo
+  bash "$HERE/bin/install-rtw88-fix.sh" || warn "rtw88 稳定化没装全（不影响上网）"
+fi
+
 echo
 if [ "$FAIL" = 0 ]; then
   printf "${C_G}安装完成。${C_N}手机/电脑连 WiFi「%s」或用网线接 LAN 口即可上网。\n" "${WIFI_SSID:-$LAN_CON}"
