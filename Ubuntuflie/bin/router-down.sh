@@ -6,6 +6,8 @@
 set -u
 GR_ETC=${GR_ETC:-/etc/grayrouter}
 GR_OPT=${GR_OPT:-/opt/grayrouter}
+mkdir -p "$GR_ETC" 2>/dev/null || true
+echo hotspot > "$GR_ETC/boot-mode" 2>/dev/null || true
 [ -r "$GR_ETC/config.env" ] && . "$GR_ETC/config.env"
 
 TOPO=${TOPO:-A}

@@ -781,29 +781,66 @@ public partial class MainWindow : Window
             using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
             var rows = new List<DevTrafficRow>();
             var pending = new List<(string Mac, string Ip)>();
-            foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
+
+            // ---- 合并重复设备 ----
+            // 老流量记录里没写 MAC 的会以空 MAC 出现；同一个 IP 会同时有「有 MAC」「没 MAC」两条。
+            // 先按 IP 补齐 MAC，再按 MAC 合并（同一个 MAC 换个 IP 也并成一条）。
+            var rawDevs = doc.RootElement.GetProperty("devices").EnumerateArray().ToList();
+            var ip2macLive = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var el in rawDevs)
             {
-                var mac = el.GetProperty("mac").GetString() ?? "";
-                var name = (el.GetProperty("name").GetString() ?? "").Trim();
-                if (name.Length == 0)
-                    name = (_devices.FirstOrDefault(x => string.Equals(x.Mac, mac,
-                        StringComparison.OrdinalIgnoreCase))?.Name ?? "").Trim();
-                if (name.Length == 0 && _devNames.TryGetValue(mac, out var cachedName)) name = cachedName;
-                var ipv = el.GetProperty("ip").GetString() ?? "";
-                if (name.Length == 0 && ipv.Length > 0) pending.Add((mac, ipv));
+                var m = (el.GetProperty("mac").GetString() ?? "").Trim();
+                var i2 = (el.GetProperty("ip").GetString() ?? "").Trim();
+                if (m.Length > 0 && i2.Length > 0) ip2macLive[i2] = m;
+            }
+            var merged = new Dictionary<string, (string Mac, string Ip, int Online, long Td, long Tu, long Sd, long Su, string Last)>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+            foreach (var el in rawDevs)
+            {
+                var mac = (el.GetProperty("mac").GetString() ?? "").Trim();
+                var ipv = (el.GetProperty("ip").GetString() ?? "").Trim();
                 var online = el.GetProperty("online").GetInt32() == 1;
+                var td = el.GetProperty("today_down").GetInt64();
+                var tu = el.GetProperty("today_up").GetInt64();
+                var sd = el.GetProperty("span_down").GetInt64();
+                var su = el.GetProperty("span_up").GetInt64();
+                var last = el.GetProperty("last").GetString() ?? "";
+
+                if (mac.Length == 0 && ipv.Length > 0 && ip2macLive.TryGetValue(ipv, out var m2)) mac = m2;
+                var key = mac.Length > 0 ? "m:" + mac.ToLowerInvariant() : "i:" + ipv;
+                if (!merged.TryGetValue(key, out var a))
+                {
+                    merged[key] = (mac, ipv, online ? 1 : 0, td, tu, sd, su, last);
+                    order.Add(key);
+                }
+                else
+                {
+                    merged[key] = (a.Mac, a.Ip.Length > 0 ? a.Ip : ipv, Math.Max(a.Online, online ? 1 : 0),
+                                   a.Td + td, a.Tu + tu, a.Sd + sd, a.Su + su,
+                                   string.CompareOrdinal(last, a.Last) > 0 ? last : a.Last);
+                }
+            }
+
+            foreach (var key in order)
+            {
+                var a = merged[key];
+                var mac = a.Mac;
+                var name = (_devices.FirstOrDefault(x => string.Equals(x.Mac, mac,
+                    StringComparison.OrdinalIgnoreCase))?.Name ?? "").Trim();
+                if (name.Length == 0 && mac.Length > 0 && _devNames.TryGetValue(mac.ToLowerInvariant(), out var cachedName)) name = cachedName;
+                if (name.Length == 0 && a.Ip.Length > 0) pending.Add((mac, a.Ip));
                 rows.Add(new DevTrafficRow
                 {
-                    Name = name.Length > 0 ? name : mac,
-                    Mac = mac,
-                    Ip = ipv,
-                    State = online ? "在线" : "离线",
-                    TodayUp = FmtShort(el.GetProperty("today_up").GetInt64()),
-                    TodayDown = FmtShort(el.GetProperty("today_down").GetInt64()),
-                    SpanUp = FmtShort(el.GetProperty("span_up").GetInt64()),
-                    SpanDown = FmtShort(el.GetProperty("span_down").GetInt64()),
-                    Last = el.GetProperty("last").GetString() ?? "",
-                    _todayBytes = el.GetProperty("today_down").GetInt64() + el.GetProperty("today_up").GetInt64(),
+                    Name = name.Length > 0 ? name : (mac.Length > 0 ? mac : a.Ip),
+                    Mac = mac.Length > 0 ? mac : "—",
+                    Ip = a.Ip,
+                    State = a.Online == 1 ? "在线" : "离线",
+                    TodayUp = FmtShort(a.Tu),
+                    TodayDown = FmtShort(a.Td),
+                    SpanUp = FmtShort(a.Su),
+                    SpanDown = FmtShort(a.Sd),
+                    Last = a.Last,
+                    _todayBytes = a.Td + a.Tu,
                 });
             }
             if (pending.Count > 0)
@@ -2941,7 +2978,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
         BtnCampusLogin.IsEnabled = false;
         BtnCampusLogout.IsEnabled = false;
-        TxtCampusLog.Text = "正在登录：先把凭据写到 minipc 的 ~/Config.yaml，再执行 bitsrun…";
+        TxtCampusLog.Text = "正在预检网卡…（不是校园网会直接跳过，不改配置）";
         try
         {
             var (ok, msg) = await CampusLogin.LoginAsync(user, pwd, CampusIface, CampusUserType);

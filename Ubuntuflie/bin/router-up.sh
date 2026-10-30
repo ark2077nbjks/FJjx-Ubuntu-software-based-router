@@ -36,4 +36,6 @@ nmcli connection up "$LAN_CON" >/dev/null 2>&1 || { printf "${C_R}LAN 启动失�
 systemctl start ua3f >/dev/null 2>&1 || true
 [ -x "$GR_OPT/bin/ua3f-rules.sh" ] && bash "$GR_OPT/bin/ua3f-rules.sh" apply >/dev/null 2>&1 || true
 sleep 1
+mkdir -p "$GR_ETC" 2>/dev/null || true
+echo router > "$GR_ETC/boot-mode" 2>/dev/null || true
 printf "${C_G}已启动${C_N}：$(ip -4 -br addr show "$LAN_IF" 2>/dev/null | awk '{print $3}')\n"
