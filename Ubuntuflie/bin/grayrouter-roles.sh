@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  grayrrouter-roles.sh —— 网口角色解析（WAN / LAN-AP）
+#  grayrouter-roles.sh —— 网口角色解析（WAN / LAN-AP）
 #    get           输出当前角色（自动探测，或手动指定）
 #    set auto      恢复自动
 #    set <wan> <lan>  手动指定（写 /etc/grayrouter/roles.env，需 root）

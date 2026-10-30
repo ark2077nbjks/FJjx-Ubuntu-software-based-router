@@ -1,0 +1,13 @@
+[Unit]
+Description=GrayRouter 智能队列（开机按配置恢复 cake 整形）
+After=network-online.target grayrrouter-boot.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-sqm.sh restore
+RemainAfterExit=yes
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

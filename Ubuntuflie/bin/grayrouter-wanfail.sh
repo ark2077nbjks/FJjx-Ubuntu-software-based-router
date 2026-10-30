@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  grayrrouter-wanfail.sh —— 多 WAN 故障转移（N 条上线，按优先级自动选）
+#  grayrouter-wanfail.sh —— 多 WAN 故障转移（N 条上线，按优先级自动选）
 #    自动发现所有「能当出口」的网口：默认路由口 → 有线插线的 → USB 网卡 → 无线 STA
 #    每 15 秒探测一次；当前出口连续失败 → 换下一条；更高优先级恢复 → 切回去
 #
@@ -148,12 +148,23 @@ cnt_set() {
   awk -v i="$i" '$1!=i' "$CNT" 2>/dev/null > "$tmp"; echo "$i $f $o" >> "$tmp"; mv "$tmp" "$CNT" 2>/dev/null
 }
 
+resqm() {  # 出口变了：把 cake 挪到新出口（只在已启用时；配置不动）
+  local s=/usr/local/bin/grayrouter-sqm.sh
+  [ -x "$s" ] || return 0
+  [ -r /etc/grayrouter/sqm.env ] || return 0
+  ( . /etc/grayrouter/sqm.env 2>/dev/null; [ "${SQM_ENABLED:-0}" = "1" ] || exit 0 )
+  "$s" flush >/dev/null 2>&1
+  "$s" restore >>"$LOG" 2>&1
+  log "已把智能队列挪到新出口"
+}
+
 set_active() {  # $1=网口 $2=原因
   local ifc="$1" gw; gw=$(gw_of "$ifc")
   [ -z "$gw" ] && { log "切换失败：$ifc 没有网关"; return 1; }
   ip route replace default via "$gw" dev "$ifc" metric 50 2>/dev/null || { log "切换失败：写路由被拒"; return 1; }
   log "出口 → $ifc（网关 $gw，原因：$2）"
   ACTIVE="$ifc"; LAST_SWITCH=$(date '+%F %T'); LAST_REASON="$2"; save_state
+  resqm
 }
 
 restore_system() {  # 删掉我们自己加的 50 号默认路由，交回 NetworkManager
@@ -165,6 +176,7 @@ restore_system() {  # 删掉我们自己加的 50 号默认路由，交回 Netwo
   # 主线上如果也残留了我们加的 50 号路由（同网关），一并清掉
   p=$(role_wan); pgw=$(gw_of "$p")
   [ -n "$pgw" ] && ip route del default via "$pgw" dev "$p" metric 50 2>/dev/null
+  resqm
 }
 
 

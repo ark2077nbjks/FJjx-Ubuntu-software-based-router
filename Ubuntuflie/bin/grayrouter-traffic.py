@@ -17,6 +17,9 @@ import os, sys, json, time, glob, datetime, subprocess, re
 
 BASE = os.environ.get("GR_TRAFFIC_DIR", "/var/lib/grayrouter/traffic")
 STATE = os.path.join(BASE, "state.json")
+IPMAP = os.path.join(BASE, "ip2mac.json")   # IP→MAC 绑定历史（回填用）
+IPMAP_TTL = 30 * 86400                      # 30 天
+IPMAP_MAX = 1024
 DEVJSON = "/etc/grayrouter/devices.json"
 KEEP_DAYS = 32
 ACCT_TBL = "gray_acct"
@@ -110,6 +113,56 @@ def meta():
     return names, ip2mac
 
 
+def load_ipmap():
+    """IP→MAC 历史表：{ip: [mac, 最后见到秒]}"""
+    try:
+        d = json.load(open(IPMAP, encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_ipmap(m):
+    """TTL 过期剔除 + 上限淘汰最旧，然后落盘（几 KB）"""
+    now = int(time.time())
+    items = []
+    for ip, v in m.items():
+        mac, ts = ("", 0)
+        if isinstance(v, list) and len(v) >= 2:
+            mac, ts = str(v[0]), int(v[1])
+        elif isinstance(v, str):
+            mac, ts = v, now
+        if mac and now - ts <= IPMAP_TTL:
+            items.append((ts, ip, mac))
+    if len(items) > IPMAP_MAX:
+        items.sort(reverse=True)
+        items = items[:IPMAP_MAX]
+    out = {ip: [mac, ts] for ts, ip, mac in items}
+    try:
+        os.makedirs(BASE, exist_ok=True)
+        tmp = IPMAP + ".tmp"
+        json.dump(out, open(tmp, "w", encoding="utf-8"), ensure_ascii=False)
+        os.replace(tmp, IPMAP)
+    except Exception:
+        pass
+
+
+def ipmap_lookup(hist, ip):
+    v = hist.get(ip)
+    if isinstance(v, list) and len(v) >= 2:
+        mac, ts = str(v[0]), int(v[1])
+        if mac and time.time() - ts <= IPMAP_TTL:
+            return mac
+    elif isinstance(v, str):
+        return v
+    return ""
+
+
+def ipmap_note(hist, ip, mac):
+    if ip and mac:
+        hist[ip] = [mac, int(time.time())]
+
+
 def prune():
     cut = datetime.date.today() - datetime.timedelta(days=KEEP_DAYS)
     for path in glob.glob(os.path.join(BASE, "*.csv")):
@@ -126,6 +179,7 @@ def sample():
     except Exception: state = {}
 
     names, ip2mac = meta()
+    hist = load_ipmap()
     counts = acct_counts()
     wifi = stations(lan_if())
     now = datetime.datetime.now()
@@ -137,6 +191,10 @@ def sample():
     lines = []
     for ip, c in counts.items():
         mac = ip2mac.get(ip, "")
+        if mac:
+            ipmap_note(hist, ip, mac)
+        else:
+            mac = ipmap_lookup(hist, ip)      # 回填：这个 IP 曾经属于哪台设备
         key = mac or ("ip:" + ip)
         prev = state.get(key, {})
         if not prev:                    # 第一次见：只记基线
@@ -160,12 +218,20 @@ def sample():
             f.write(l + "\n")
 
     json.dump(state, open(STATE, "w", encoding="utf-8"), ensure_ascii=False)
+    save_ipmap(hist)
     prune()
     print(f"采样 {len(counts)} 个 IP（表 {ACCT_TBL}），写入 {rows} 行 → {path}", file=sys.stderr)
 
 
 def summary(days=30):
     names, ip2mac = meta()
+    # 回填表：活体(租约/ARP) 优先，其次历史绑定
+    hist = load_ipmap()
+    mac_of = dict(ip2mac)
+    for ip, v in hist.items():
+        m = v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else "")
+        if m:
+            mac_of.setdefault(ip, m)
     counts = acct_counts()
     wifi = stations(lan_if())
     online_macs = set(wifi) | {ip2mac.get(ip, "") for ip in counts} | {ip2mac[ip] for ip in counts if ip in ip2mac}
@@ -174,6 +240,7 @@ def summary(days=30):
     start = today - datetime.timedelta(days=days - 1)
 
     agg = {}
+    csv_ip2mac = {}
     hours = [[0, 0] for _ in range(24)]
     for path in sorted(glob.glob(os.path.join(BASE, "*.csv"))):
         try:
@@ -189,6 +256,13 @@ def summary(days=30):
             p = line.split(",")
             if len(p) < 6: continue
             key = p[1].lower()
+            ipf = (p[2] or "").strip().lower()
+            if not key.startswith("ip:") and ipf:
+                csv_ip2mac.setdefault(ipf, key)           # CSV 自身记录的 (MAC, IP)
+            if key.startswith("ip:"):
+                m2 = mac_of.get(ipf) or csv_ip2mac.get(ipf)
+                if m2:
+                    key = m2.lower()
             try:
                 dn, up = int(p[4] or 0), int(p[5] or 0)
             except Exception:
@@ -207,6 +281,22 @@ def summary(days=30):
             if p[2]: a["ip"] = p[2]
             if day == today: a["td"] += dn; a["tu"] += up
 
+    # 剩下的 ip: 桶（行序问题导致当时没查到）在这里合并
+    for key in [k for k in list(agg) if k.startswith("ip:")]:
+        m2 = csv_ip2mac.get(key[3:]) or mac_of.get(key[3:])
+        if not m2:
+            continue
+        src_a = agg.pop(key)
+        dst = agg.setdefault(m2.lower(), {"d": 0, "u": 0, "td": 0, "tu": 0, "last": "", "name": "", "ip": ""})
+        for f in ("d", "u", "td", "tu"):
+            dst[f] += src_a[f]
+        if src_a["last"] > dst["last"]:
+            dst["last"] = src_a["last"]
+        if not dst["name"] and src_a["name"]:
+            dst["name"] = src_a["name"]
+        if not dst["ip"] and src_a["ip"]:
+            dst["ip"] = src_a["ip"]
+
     out = []
     for key, a in agg.items():
         mac = "" if key.startswith("ip:") else key
@@ -214,7 +304,7 @@ def summary(days=30):
         cur = counts.get(ip, {})
         out.append({
             "mac": mac,
-            "name": names.get(mac) or a["name"] or "",
+            "name": names.get(mac) or a["name"] or ("" if mac else "未知设备"),
             "ip": ip,
             "online": 1 if (mac and mac in online_macs) or (ip in counts) else 0,
             "today_down": a["td"], "today_up": a["tu"],

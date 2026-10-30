@@ -52,10 +52,11 @@ do_up() {
 do_rules() {
   # 两个 LAN 网段互访（幂等：先删再建）
   nft delete table inet gray_lan2 2>/dev/null || true
+  # 注意：链名不能用 'fwd'，它是 nft 保留字（会报 unexpected fwd）
   nft -f - <<'EOF'
 table inet gray_lan2 {
-  chain fwd {
-    type filter hook forward priority filter - 5; policy accept;
+  chain lanfwd {
+    type filter hook forward priority -5; policy accept;
     ip saddr 192.168.60.0/24 ip daddr 192.168.50.0/24 accept
     ip saddr 192.168.50.0/24 ip daddr 192.168.60.0/24 accept
   }

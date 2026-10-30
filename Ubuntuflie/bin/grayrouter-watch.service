@@ -1,0 +1,7 @@
+[Unit]
+Description=GrayRouter 看门狗（自愈：LAN/AP/SSH/路由/外网）
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-watch.sh

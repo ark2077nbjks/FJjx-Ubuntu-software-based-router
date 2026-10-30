@@ -1,0 +1,10 @@
+[Unit]
+Description=监听 GrayRouter 面板请求文件
+StartLimitIntervalSec=0
+
+[Path]
+PathModified=/run/grayrouter/request
+Unit=grayrouter-ctl.service
+
+[Install]
+WantedBy=multi-user.target

@@ -31,7 +31,7 @@ install -m 755 "$DIR/grayrouter-traffic.sh" /usr/local/bin/grayrouter-traffic.sh
 install -m 644 "$DIR/grayrouter-traffic.service" /etc/systemd/system/grayrouter-traffic.service || exit 1
 install -m 644 "$DIR/grayrouter-traffic.timer" /etc/systemd/system/grayrouter-traffic.timer || exit 1
 mkdir -p /var/lib/grayrouter/traffic
-systemctl enable --now grayrrouter-traffic.timer >/dev/null 2>&1 || true
+systemctl enable --now grayrouter-traffic.timer >/dev/null 2>&1 || true
 
 echo "④ 清掉调试残留规则"
 nft delete table inet dbgprobe 2>/dev/null && echo "   删了 dbgprobe" || true

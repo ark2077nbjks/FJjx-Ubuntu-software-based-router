@@ -295,8 +295,11 @@ echo "   日志：/var/log/grayrouter-ctl.log"
         var miss = 0;
         for (int i = 0; i < 80; i++)
         {
-            await Task.Delay(3000);
-            progress?.Invoke(i < 5 ? "正在执行…" : "还在跑（" + ((i + 1) * 3) + " 秒）…");
+            // 快起步：前 12 次 0.4 秒一探，之后 1 秒，再往后 3 秒；短命令（读状态/列租约）不再干等 3 秒
+            var waitMs = i < 12 ? 400 : i < 30 ? 1000 : 3000;
+            await Task.Delay(waitMs);
+            var elapsed = (i < 12 ? (i + 1) * 0.4 : i < 30 ? 4.8 + (i - 11) * 1.0 : 4.8 + 18 + (i - 29) * 3.0);
+            progress?.Invoke(i < 5 ? "正在执行…" : "还在跑（" + (int)elapsed + " 秒）…");
 
             var (rc2, out2, _) = await Remote.RunAsync("ssh.exe",
                 Remote.BaseArgs(cfg, true) + cfg.Target + " \"cat /run/grayrouter/res/" + id + ".json 2>/dev/null || cat /run/grayrouter/result.json 2>/dev/null\"");

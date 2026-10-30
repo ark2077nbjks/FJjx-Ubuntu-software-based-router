@@ -65,6 +65,9 @@ case "$cmd" in
   dev-block|dev-unblock)
     printf '%s' "$rest" | grep -qiE '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || {
       write_res "error" 65 "MAC 格式不对：$rest"; log "拒绝 MAC: $rest"; exit 0; } ;;
+  sqm-apply)
+    printf '%s' "$rest" | grep -qE '^[0-9]{1,4} [0-9]{1,4}$' || {
+      write_res "error" 65 "带宽参数不对：$rest"; log "拒绝 sqm-apply: $rest"; exit 0; } ;;
   dev-*) : ;;
 esac
 
@@ -95,9 +98,38 @@ case "$cmd" in
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
   wanfail-set)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="set ${rest:-}"; DEVCAP=1 ;;
   wanfail-switch) SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="switch ${rest:-primary}"; DEVCAP=1 ;;
+  sqm-stats)     SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="stats"; DEVCAP=1 ;;
+  traffic-report) SCRIPT=/usr/local/bin/grayrouter-usage.sh; ARGS="${arg:-30}"; DEVCAP=1 ;;
+  snap-list)     SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="list"; DEVCAP=1 ;;
+  snap-diff)     SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="diff $rest"; DEVCAP=1
+                 printf '%s' "$rest" | grep -Eq '^[A-Za-z0-9_.+-]+[[:space:]]+[A-Za-z0-9_.+-]+$' || {
+                   write_res "error" 71 "快照名不合法：$rest"; exit 0; } ;;
+  netdiag-trace) SCRIPT=/usr/local/bin/grayrouter-netdiag.sh; ARGS="trace ${rest:-223.5.5.5}"; DEVCAP=1
+                 printf '%s' "${rest:-}" | grep -Eq '^[A-Za-z0-9.:_-]*$' || {
+                   write_res "error" 69 "主机名不合法：$rest"; log "拒绝 netdiag: $rest"; exit 0; } ;;
+  netdiag-mtu)   SCRIPT=/usr/local/bin/grayrouter-netdiag.sh; ARGS="mtu ${rest:-223.5.5.5}"; DEVCAP=1
+                 printf '%s' "${rest:-}" | grep -Eq '^[A-Za-z0-9.:_-]*$' || {
+                   write_res "error" 70 "主机名不合法：$rest"; log "拒绝 netdiag: $rest"; exit 0; } ;;
+  lease-list)    SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="list"; DEVCAP=1 ;;
+  lease-set)     SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="set $rest"; DEVCAP=1
+                 printf '%s' "$rest" | grep -Eqi '^([0-9a-f]{2}:){5}[0-9a-f]{2} +([0-9]{1,3}\.){3}[0-9]{1,3}' || {
+                   write_res "error" 66 "参数要 MAC IP [备注]：$rest"; log "拒绝 lease-set: $rest"; exit 0; } ;;
+  lease-del)     SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="del $rest"; DEVCAP=1
+                 printf '%s' "$rest" | grep -Eqi '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || {
+                   write_res "error" 67 "参数要 MAC：$rest"; log "拒绝 lease-del: $rest"; exit 0; } ;;
+  lease-apply)   SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="apply"; DEVCAP=1 ;;
+  lease-clear)   SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="clear"; DEVCAP=1 ;;
+  drift-check)   SCRIPT=/usr/local/bin/grayrouter-drift.sh; ARGS="${rest:-}"; DEVCAP=1 ;;
+  restore-file)  SCRIPT=/usr/local/bin/grayrouter-restore.sh; ARGS="$rest"; DEVCAP=1
+                 printf '%s' "$rest" | grep -Eq '^/home/[A-Za-z0-9._/-]+\.tar\.gz$' || {
+                   write_res "error" 68 "参数要备份包绝对路径：$rest"; log "拒绝 restore-file: $rest"; exit 0; } ;;
   traffic-now)   SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="now ${arg:-30}"; DEVCAP=1 ;;
   traffic-summary) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="summary ${arg:-30}"; DEVCAP=1 ;;
   traffic-reset) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="reset"; DEVCAP=1 ;;
+  sqm-get)       SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="json"; DEVCAP=1 ;;
+  sqm-apply)     SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="apply ${rest}"; DEVCAP=1 ;;
+  sqm-clear)     SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="clear"; DEVCAP=1 ;;
+  sqm-measure)   SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="measure"; DEVCAP=1 ;;
   *)
     write_res "unknown" 64 "不认识的命令：$cmd"
     log "拒绝：$cmd"
@@ -113,7 +145,8 @@ fi
 
 write_res "running" 0 "开始执行 $cmd ${ARGS:-}"
 if [ "${DEVCAP:-0}" = "1" ]; then
-  out=$(bash "$SCRIPT" ${ARGS:-} 2>>"$LOG")
+  out=$(bash "$SCRIPT" ${ARGS:-} 2>&1)
+  printf '%s\n' "$out" >> "$LOG"
   code=$?
   tailmsg=$out
 else

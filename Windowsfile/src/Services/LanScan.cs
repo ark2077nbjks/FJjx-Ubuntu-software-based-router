@@ -5,8 +5,9 @@ using System.Text.RegularExpressions;
 namespace NetPanel.Services;
 
 /// <summary>局域网里发现的设备</summary>
-public sealed class LanDevice
+public sealed class LanDevice : System.ComponentModel.INotifyPropertyChanged
 {
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     public string Ip { get; set; } = "";
     public string Mac { get; set; } = "";
     public string Vendor { get; set; } = "";
@@ -18,6 +19,18 @@ public sealed class LanDevice
     public string Traffic { get; set; } = "";  // 上行 / 下行（软路由计数，累计）
     public string Rate { get; set; } = "";     // 实时速率（两次计数差值 / 秒）
     public bool Blocked { get; set; }          // 是否已拉黑
+    private string _pinText = "";
+    /// <summary>已固定："✓ 192.168.50.20"（改值会通知界面刷新）</summary>
+    public string PinText
+    {
+        get => _pinText;
+        set
+        {
+            if (_pinText == value) return;
+            _pinText = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(PinText)));
+        }
+    }
     public string ActionText => Blocked ? "解除" : "拉黑";
 }
 
