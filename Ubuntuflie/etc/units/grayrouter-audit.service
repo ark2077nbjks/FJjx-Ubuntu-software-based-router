@@ -1,0 +1,8 @@
+[Unit]
+Description=GrayRouter 配置变更审计（/etc 快照进 git）
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=@BIN@/grayrouter-audit.sh commit auto
+Nice=15

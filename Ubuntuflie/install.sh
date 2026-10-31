@@ -314,6 +314,12 @@ for f in "$HERE"/bin/*.sh; do
   install -m 755 "$f" "$GR_OPT/bin/$(basename "$f")"
 done
 track_created "$GR_OPT/bin"
+# 兼容层：历史脚本/单元里硬编码了 /usr/local/bin，建符号链接让两种布局都可用
+for f in "$HERE"/bin/*.sh "$HERE"/bin/*.py; do
+  [ -e "$f" ] || continue
+  ln -sf "$GR_OPT/bin/$(basename "$f")" "/usr/local/bin/$(basename "$f")"
+done
+ok "已建 /usr/local/bin 兼容链接（$(ls /usr/local/bin/grayrouter-*.sh 2>/dev/null | wc -l) 个）"
 ok "脚本安装到 $GR_OPT/bin（$(ls "$GR_OPT"/bin/*.sh 2>/dev/null | wc -l) 个）"
 
 # 转发
@@ -464,7 +470,7 @@ Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'sleep 8; /usr/local/bin/grayrouter-limit.sh apply'
+ExecStart=/bin/sh -c 'sleep 8; if [ -x $GR_OPT/bin/grayrouter-limit.sh ]; then $GR_OPT/bin/grayrouter-limit.sh apply; else /usr/local/bin/grayrouter-limit.sh apply; fi'
 
 [Install]
 WantedBy=multi-user.target
@@ -518,6 +524,12 @@ else
 fi
 nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "$LAN_CON" \
   && ok "LAN 连接处于活动状态" || { bad "LAN 连接没起来"; FAIL=1; }
+
+# ---- 附加单元（sqm / opt / audit / devices / lan2 / watch / traffic / usbnet@）----
+if [ -x "$HERE/install-extras.sh" ]; then
+  echo
+  bash "$HERE/install-extras.sh" || warn "附加单元没装全（sqm/opt/audit 等），可单独重跑 install-extras.sh"
+fi
 
 # ---- rtw88 假在线修复：驱动参数 + 信标自愈 + 开机自启 ----
 if [ -x "$HERE/bin/install-rtw88-fix.sh" ]; then

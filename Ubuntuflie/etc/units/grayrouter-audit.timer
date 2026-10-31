@@ -1,0 +1,10 @@
+[Unit]
+Description=每小时记录一次 GrayRouter 配置变更
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

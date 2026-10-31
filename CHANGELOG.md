@@ -1,3 +1,14 @@
+## 1.51.3 · 2026-10-31
+
+### 修复（安装器，仅影响新装机器）
+- **`grayrouter-limit.service` 路径写死**：ExecStart 硬编码 `/usr/local/bin/grayrouter-limit.sh`，而安装器把脚本装到 `/opt/grayrouter/bin`，新机器限速单元起不来。现在跟随 `$GR_OPT` 并带兜底
+- **安装器只装 4 个单元**：新增 `install-extras.sh` + `etc/units/` 15 个模板，补齐 sqm / opt / audit / devices / lan2 / watch / traffic / beacon / wanfail / usbnet@
+- **122 处硬编码 `/usr/local/bin`**：`install.sh` 安装后建符号链接指向 `/opt/grayrouter/bin`，两种布局通用；`uninstall.sh` 同步清理链接
+- **包内 `SHA256SUMS` 是旧的**（指向上一版 zip，用户校验必然失败）：改为列出包内每个文件的哈希
+
+### 校验
+包内 `SHA256SUMS` 为逐文件哈希；仓库根 `SHA256SUMS` 为 zip + exe 哈希。
+
 ## 1.51.2 · 2026-10-31
 
 ### 修复

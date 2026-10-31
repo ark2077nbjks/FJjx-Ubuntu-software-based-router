@@ -1,0 +1,6 @@
+[Unit]
+Description=GrayRouter USB 网络共享自动上线（%i）
+
+[Service]
+Type=oneshot
+ExecStart=@BIN@/grayrouter-usbnet-up.sh %i

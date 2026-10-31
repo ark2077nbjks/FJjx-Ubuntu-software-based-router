@@ -1,0 +1,10 @@
+[Unit]
+Description=每 5 分钟检查一次 AP 信标
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Unit=grayrouter-beacon.service
+
+[Install]
+WantedBy=timers.target

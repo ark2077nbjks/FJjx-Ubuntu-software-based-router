@@ -1,0 +1,11 @@
+[Unit]
+Description=每分钟运行 GrayRouter 看门狗
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=grayrouter-watch.service
+
+[Install]
+WantedBy=timers.target
