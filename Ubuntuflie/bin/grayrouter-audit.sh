@@ -65,6 +65,11 @@ do_init() {
   snapshot
   git -C "$GITDIR" add -A
   git -C "$GITDIR" commit -q -m "init: $(date '+%F %T')" || true
+  # 属主交给调用 sudo 的普通用户，否则 zy-star 直接 git log 会报 dubious ownership
+  if [ -n "${SUDO_USER:-}" ]; then
+    chown -R "$SUDO_USER":"$SUDO_USER" "$GITDIR" 2>/dev/null || true
+    git config --global --add safe.directory "$GITDIR" 2>/dev/null || true
+  fi
   say "✓ 审计仓库已建立：$GITDIR（$(git -C "$GITDIR" rev-list --count HEAD) 次提交）"
 }
 

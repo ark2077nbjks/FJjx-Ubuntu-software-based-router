@@ -30,6 +30,8 @@ apply() {
   for f in "$SYSCTL_FILE" "$JOURNALD_FILE" "$DNS_FILE"; do
     [ -f "$f" ] && cp -a "$f" "$BK/$(basename "$f").bak"
   done
+  # 只保留最近 2 份备份（否则每次开机 apply 都新增一份，无限增长）
+  ls -1dt /etc/grayrouter/opt-backup-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
   # ① BBR
   printf '%s\n' "net.core.default_qdisc=fq" "net.ipv4.tcp_congestion_control=bbr" > "$SYSCTL_FILE"
