@@ -95,7 +95,7 @@ do_diff() {
 }
 
 do_restore() {
-  local want="$1" f
+  local want="$1" mode="${2:-hard}" f
   if [ -z "$want" ] || [ "$want" = "latest" ]; then
     f=$(ls -1t "$DIR"/*.tar.gz 2>/dev/null | head -1)
   else
@@ -107,16 +107,29 @@ do_restore() {
   echo "正在恢复：$(basename "$f")"
   ( cd / && tar xzf "$f" ) || { echo "解包失败"; exit 3; }
   systemctl daemon-reload 2>/dev/null
-  echo "已恢复。正在重启 NetworkManager…"
-  systemctl restart NetworkManager 2>/dev/null || true
-  sleep 6
-  systemctl is-active --quiet NetworkManager && echo "√ NetworkManager 已起来" || echo "× NetworkManager 没起来，请本地检查"
+  if [ "$mode" = "soft" ]; then
+    # 软恢复：不重启网络，只把配置重新读进运行态（对标 OPNsense 的 apply）
+    echo "软恢复：不重启网络，只重载配置…"
+    nmcli con reload >/dev/null 2>&1 || true
+    nmcli general reload dns-rc >/dev/null 2>&1 || true
+    if [ -f /etc/systemd/journald.conf.d/99-grayrouter.conf ]; then
+      systemctl restart systemd-journald 2>/dev/null || true
+    fi
+    [ -x /usr/local/bin/grayrouter-limit.sh ] && /usr/local/bin/grayrouter-limit.sh apply >/dev/null 2>&1 || true
+    echo "√ 已恢复（网络未中断）"
+  else
+    echo "已恢复。正在重启 NetworkManager…"
+    systemctl restart NetworkManager 2>/dev/null || true
+    sleep 6
+    systemctl is-active --quiet NetworkManager && echo "√ NetworkManager 已起来" || echo "× NetworkManager 没起来，请本地检查"
+  fi
 }
 
 case "${1:-list}" in
   save)    do_save "${2:-manual}" ;;
   list)    do_list ;;
-  restore) do_restore "${2:-latest}" ;;
+  restore) do_restore "${2:-latest}" hard ;;
+  restore-soft) do_restore "${2:-latest}" soft ;;
   diff)    do_diff "${2:-}" "${3:-}" ;;
   *) echo "用法：sudo bash $0 save [备注] | list | restore [名字|latest]"; exit 2 ;;
 esac

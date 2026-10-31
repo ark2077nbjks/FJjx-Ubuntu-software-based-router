@@ -37,7 +37,7 @@ load_conf(){
 save_conf(){
   mkdir -p "$(dirname "$CONF")"
   cat > "$CONF" <<EOF
-# GrayRouter 智能队列配置（由 grayrrouter-sqm.sh 写入，改完 apply 生效）
+# GrayRouter 智能队列配置（由 grayrouter-sqm.sh 写入，改完 apply 生效）
 SQM_ENABLED=$1
 DOWN_KBIT=$2
 UP_KBIT=$3

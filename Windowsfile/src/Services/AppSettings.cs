@@ -15,6 +15,8 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; } = true;
     public bool TrayTipShown { get; set; }
     public bool NotifyOnOffline { get; set; } = true;
+    /// <summary>设备上线时弹托盘提醒（对标 UniFi 客户端上线通知）</summary>
+    public bool NotifyDeviceOnline { get; set; } = true;
     /// <summary>日志文件夹；空 = 用 data 目录</summary>
     public string LogDir { get; set; } = "";
     /// <summary>上次导出测速结果的目录</summary>
@@ -49,6 +51,7 @@ public sealed class AppSettings
                 case "close_to_tray": CloseToTray = IsTrue(val); break;
                 case "tray_tip_shown": TrayTipShown = IsTrue(val); break;
                 case "notify_on_offline": NotifyOnOffline = IsTrue(val); break;
+                case "notify_device_online": NotifyDeviceOnline = IsTrue(val); break;
                 case "log_dir": LogDir = val; break;
                 case "last_export_dir": LastExportDir = val; break;
             }
@@ -72,6 +75,7 @@ public sealed class AppSettings
                     case "closetotray": CloseToTray = p.Value.ValueKind == JsonValueKind.True; break;
                     case "traytipshown": TrayTipShown = p.Value.ValueKind == JsonValueKind.True; break;
                     case "notifyonoffline": NotifyOnOffline = p.Value.ValueKind == JsonValueKind.True; break;
+                    case "notifydeviceonline": NotifyDeviceOnline = p.Value.ValueKind == JsonValueKind.True; break;
                 }
             }
             Save();
@@ -98,6 +102,9 @@ public sealed class AppSettings
             sb.AppendLine();
             sb.AppendLine("# 掉线、恢复时是否弹提醒：1 = 要，0 = 不要");
             sb.AppendLine("notify_on_offline=" + (NotifyOnOffline ? "1" : "0"));
+            sb.AppendLine();
+            sb.AppendLine("# 有设备连上局域网时弹托盘提醒：1 = 要，0 = 不要");
+            sb.AppendLine("notify_device_online=" + (NotifyDeviceOnline ? "1" : "0"));
             sb.AppendLine();
             sb.AppendLine("# 日志文件夹。留空 = 用默认的 data 目录；也可以填绝对路径，例如 D:\\我的日志");
             sb.AppendLine("log_dir=" + LogDir);

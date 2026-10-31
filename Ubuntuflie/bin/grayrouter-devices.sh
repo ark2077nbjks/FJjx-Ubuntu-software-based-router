@@ -261,7 +261,8 @@ for mac in set(devs) | set(sta) | set(neigh_ip) | set(leases) | blocked:
     L = leases.get(mac, {})
     ip = neigh_ip.get(mac) or L.get("ip", "")
     iface = neigh_if.get(mac, "")
-    online = (mac in sta) or (mac in neigh_ip)
+    # 只有「关联到 AP」或「邻居表 REACHABLE/DELAY/PROBE」才算在线；STALE 是缓存残影，会挂几分钟
+    online = (mac in sta) or (neigh_st.get(mac) in ("REACHABLE", "DELAY", "PROBE"))
     kind = "wifi" if mac in sta else ("wired" if mac in neigh_ip else "")
     # 清掉“没有任何信息”的幽灵条目（历史 JSON 里残留的假 MAC）
     if not online and not ip and not (e.get("name") or L.get("name")) and mac not in blocked \

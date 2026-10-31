@@ -14,6 +14,7 @@ public sealed class StatusRow
     public bool Sub;           // 附属说明行（型号、提示），灰色小字、不占标签列
     public string Icon = "";   // 复用图标库里的 png 名（不含 /icons/ 前缀）
     public List<StatusRow>? Children;   // 非空 = 可折叠的组（默认收起）
+    public string Click = "";  // 非空 = 可点，值为目标页名（状态/设备/流量/网卡/诊断…）
 }
 
 public sealed class RemoteNic
@@ -422,8 +423,23 @@ public static class StatusGather
                     secMini.Rows.Add(new StatusRow { Label = "有线", Value = $"{d.GetValueOrDefault("WAN_IP")}  "
                         + $"{(d.GetValueOrDefault("CARRIER") == "1" ? "已插线" : "没插线")}  {d.GetValueOrDefault("SPEED")} Mb/s" });
                     secMini.Rows.Add(new StatusRow { Label = "无线", Value = $"{d.GetValueOrDefault("AP_TYPE")} / {d.GetValueOrDefault("AP_SSID")}  {d.GetValueOrDefault("AP_IP")}" });
-                    secMini.Rows.Add(new StatusRow { Label = "客户端", Value = $"{ClientCn(d.GetValueOrDefault("CLIENTS"))} · 转发 ip_forward={d.GetValueOrDefault("FWD")}" });
+                    secMini.Rows.Add(new StatusRow { Label = "客户端", Value = $"{ClientCn(d.GetValueOrDefault("CLIENTS"))} · 转发 ip_forward={d.GetValueOrDefault("FWD")}", Click = "设备" });
                     secMini.Rows.Add(new StatusRow { Label = "出网", Value = $"HTTPS {d.GetValueOrDefault("HTTPS")}" });
+                    var v6a = d.GetValueOrDefault("IPV6_ADDR");
+                    var v6ok = d.GetValueOrDefault("IPV6_OK") == "1";
+                    secMini.Rows.Add(new StatusRow
+                    {
+                        Label = "IPv6",
+                        Value = string.IsNullOrWhiteSpace(v6a) ? "未获取地址" : (v6ok ? "已连通（可用）" : "有地址但连不通"),
+                        Click = "网卡",
+                    });
+                    if (!string.IsNullOrWhiteSpace(v6a))
+                        secMini.Rows.Add(new StatusRow
+                        {
+                            Label = "IPv6 地址",
+                            Value = v6a.Length > 32 ? v6a[..32] + "…" : v6a,
+                            Click = "网卡",
+                        });
 
                     // 伪装层（旧版采集脚本不带这项时显示“—”，不误报未运行）
                     var ua3fCn2 = !d.ContainsKey("UA3F")
@@ -501,7 +517,115 @@ public static class StatusGather
                     Value = $"{diskPct} 已用 · 剩 {kvInfo.GetValueOrDefault("DISK_FREE", "—")}",
                 });
 
+            // 并发连接数（conntrack）：对标爱快「系统概况 · 连接数」
+            var connNow = kvInfo.GetValueOrDefault("CONNTRACK", "");
+            if (connNow.Length > 0)
+            {
+                var connMax = kvInfo.GetValueOrDefault("CONNTRACK_MAX", "");
+                secSys.Rows.Add(new StatusRow
+                {
+                    Label = "连接数",
+                    Value = connMax.Length > 0 ? $"{connNow} / {connMax}" : connNow,
+                    Click = "诊断",
+                });
+            }
+
+            // DHCP 池：已租 / 可用池（爱快「接口状态 · DHCP 池剩余」）
+            var leases = kvInfo.GetValueOrDefault("LEASES", "");
+            var pool = kvInfo.GetValueOrDefault("POOL", "0");
+            if (leases.Length > 0 && pool != "0")
+            {
+                var free = 0;
+                if (int.TryParse(leases, out var lu) && int.TryParse(pool, out var pu)) free = Math.Max(0, pu - lu);
+                secSys.Rows.Add(new StatusRow
+                {
+                    Label = "DHCP",
+                    Value = $"已租 {leases} · 池剩 {free}",
+                    Click = "设备",
+                });
+            }
+
             snap.MiniSections.Add(secSys);
+
+            // ---------------- 当前配置（对标爱快「系统概况」的版本/配置信息区） ----------------
+            var secCfg = new StatusSection { Title = "当前配置" };
+            var isApNow = !string.IsNullOrWhiteSpace(kvInfo.GetValueOrDefault("AP_SSID", ""));
+            secCfg.Rows.Add(new StatusRow
+            {
+                Label = "模式",
+                Value = isApNow ? "软路由（AP）" : "热点模式（客户端）",
+            });
+            var ssidNow = kvInfo.GetValueOrDefault("AP_SSID", "");
+            if (!string.IsNullOrWhiteSpace(ssidNow))
+                secCfg.Rows.Add(new StatusRow
+                {
+                    Label = "热点",
+                    Value = $"{ssidNow} · {kvInfo.GetValueOrDefault("AP_IP", "—")}",
+                    Click = "无线",
+                });
+
+            var sqmOn = kvInfo.GetValueOrDefault("SQM_ON", "0") == "1";
+            var dk = kvInfo.GetValueOrDefault("SQM_DOWN", "0");
+            var uk = kvInfo.GetValueOrDefault("SQM_UP", "0");
+            secCfg.Rows.Add(new StatusRow
+            {
+                Label = "智能队列",
+                Value = sqmOn ? $"已开启 · ↓{dk}kbit ↑{uk}kbit" : "未开启",
+                Click = "网卡",
+            });
+
+            var staticN = kvInfo.GetValueOrDefault("STATIC_LEASES", "0");
+            secCfg.Rows.Add(new StatusRow
+            {
+                Label = "静态租约",
+                Value = staticN == "0" ? "无" : $"{staticN} 条",
+                Click = "设备",
+            });
+
+            var wfNow = kvInfo.GetValueOrDefault("WANFAIL", "inactive");
+            secCfg.Rows.Add(new StatusRow
+            {
+                Label = "多 WAN",
+                Value = wfNow == "active" ? "自动切换已开启" : "自动切换未运行",
+                Click = "网卡",
+            });
+
+            snap.MiniSections.Add(secCfg);
+        }
+
+        // ---------------- 远端硬件资产（CPU / 主板 / 系统，只读） ----------------
+        if (kvInfo.ContainsKey("HW_CPU") || kvInfo.ContainsKey("HW_DISTRO"))
+        {
+            var secHw = new StatusSection { Title = "硬件" };
+            var cpu = kvInfo.GetValueOrDefault("HW_CPU", "");
+            var cores = kvInfo.GetValueOrDefault("HW_CORES", "");
+            var th = kvInfo.GetValueOrDefault("HW_THREADS", "");
+            if (cpu.Length > 0)
+            {
+                var coreTxt = th.Length > 0 && th != cores ? $"{cores} 核 {th} 线程" : (cores.Length > 0 ? $"{cores} 核" : "");
+                secHw.Rows.Add(new StatusRow { Label = "处理器", Value = coreTxt.Length > 0 ? $"{cpu} · {coreTxt}" : cpu });
+            }
+            var board = kvInfo.GetValueOrDefault("HW_BOARD", "");
+            var vendor = kvInfo.GetValueOrDefault("HW_VENDOR", "");
+            var bios = kvInfo.GetValueOrDefault("HW_BIOS", "");
+            if (board.Length > 0 || vendor.Length > 0)
+                secHw.Rows.Add(new StatusRow
+                {
+                    Label = "主板 / 整机",
+                    Value = string.Join(" · ", new[] { board, vendor }.Where(x => x.Length > 0)) +
+                            (bios.Length > 0 ? $"　BIOS {bios}" : ""),
+                });
+            var distro = kvInfo.GetValueOrDefault("HW_DISTRO", "");
+            var kernel = kvInfo.GetValueOrDefault("HW_KERNEL", "");
+            if (distro.Length > 0 || kernel.Length > 0)
+                secHw.Rows.Add(new StatusRow
+                {
+                    Label = "系统 / 内核",
+                    Value = string.Join(" · ", new[] { distro, kernel.Length > 0 ? $"kernel {kernel}" : "" }.Where(x => x.Length > 0)),
+                });
+            var disk = kvInfo.GetValueOrDefault("HW_DISK", "");
+            if (disk.Length > 0) secHw.Rows.Add(new StatusRow { Label = "硬盘", Value = disk });
+            if (secHw.Rows.Count > 0) snap.MiniSections.Add(secHw);
         }
 
         // ---------------- 远端网卡清单（含 USB 网卡，热插拔后刷新即可见） ----------------

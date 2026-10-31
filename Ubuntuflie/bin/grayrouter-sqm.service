@@ -1,6 +1,6 @@
 [Unit]
 Description=GrayRouter 智能队列（开机按配置恢复 cake 整形）
-After=network-online.target grayrrouter-boot.service
+After=network-online.target grayrouter-boot.service
 Wants=network-online.target
 
 [Service]

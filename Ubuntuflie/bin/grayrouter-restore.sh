@@ -61,7 +61,7 @@ fi
 if [ -n "$PRE" ]; then
   echo "  已备份：$PRE"
 else
-  echo "  ! 恢复前备份失败：${BMSG:-找不到 grayrrouter-backup.sh}"
+  echo "  ! 恢复前备份失败：${BMSG:-找不到 grayrouter-backup.sh}"
   echo "    继续恢复，但回滚只能靠 /var/lib/grayrouter/snapshots 里的旧快照"
 fi
 

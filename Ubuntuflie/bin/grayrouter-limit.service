@@ -1,0 +1,12 @@
+[Unit]
+Description=GrayRouter 每设备限速恢复（tc 规则不落盘，开机重建）
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+# 等 NetworkManager 把 AP/有线 LAN 都拉起来再建规则
+ExecStart=/bin/sh -c 'sleep 8; /usr/local/bin/grayrouter-limit.sh apply'
+
+[Install]
+WantedBy=multi-user.target

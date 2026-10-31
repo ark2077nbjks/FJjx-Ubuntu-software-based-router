@@ -68,6 +68,10 @@ case "$cmd" in
   sqm-apply)
     printf '%s' "$rest" | grep -qE '^[0-9]{1,4} [0-9]{1,4}$' || {
       write_res "error" 65 "带宽参数不对：$rest"; log "拒绝 sqm-apply: $rest"; exit 0; } ;;
+  sys-restart)
+    printf '%s' "$rest" | grep -qE '^[a-zA-Z0-9@._-]+\.service$' || { write_res "error" 65 "单元名不合法：$rest"; log "拒绝 sys-restart: $rest"; exit 0; } ;;
+  sys-power)
+    case "$rest" in net-restart|reboot|shutdown) : ;; *) write_res "error" 65 "电源动作不允许：$rest"; exit 0 ;; esac ;;
   dev-*) : ;;
 esac
 
@@ -93,6 +97,9 @@ case "$cmd" in
   acct-apply)    SCRIPT=/usr/local/bin/grayrouter-acct.sh; ARGS="apply"; DEVCAP=1 ;;
   snapshot-save)  SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="save panel"; DEVCAP=1 ;;
   snapshot-list)  SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="list"; DEVCAP=1 ;;
+  snapshot-restore-soft) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore-soft ${rest:-latest}"; DEVCAP=1
+                 printf '%s' "${rest:-latest}" | grep -Eq '^[A-Za-z0-9_.+-]+$' || {
+                   write_res "error" 72 "快照名不合法：$rest"; exit 0; } ;;
   snapshot-restore) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore ${rest:-latest}"; DEVCAP=1 ;;
   usbnet-now)    SCRIPT=/usr/local/bin/grayrouter-usbnet-now.sh; ARGS=""; DEVCAP=1 ;;
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
@@ -123,6 +130,14 @@ case "$cmd" in
   restore-file)  SCRIPT=/usr/local/bin/grayrouter-restore.sh; ARGS="$rest"; DEVCAP=1
                  printf '%s' "$rest" | grep -Eq '^/home/[A-Za-z0-9._/-]+\.tar\.gz$' || {
                    write_res "error" 68 "参数要备份包绝对路径：$rest"; log "拒绝 restore-file: $rest"; exit 0; } ;;
+  cron-get)      SCRIPT=/usr/local/bin/grayrouter-cron.sh; ARGS="get"; DEVCAP=1 ;;
+  cron-set)      SCRIPT=/usr/local/bin/grayrouter-cron.sh; ARGS="set $rest"; DEVCAP=1 ;;
+  cron-off)      SCRIPT=/usr/local/bin/grayrouter-cron.sh; ARGS="off"; DEVCAP=1 ;;
+  dhcp-leases)   SCRIPT=/usr/local/bin/grayrouter-dhcpleases.sh; ARGS=""; DEVCAP=1 ;;
+  limit-list)    SCRIPT=/usr/local/bin/grayrouter-limit.sh; ARGS="list"; DEVCAP=1 ;;
+  limit-set)     SCRIPT=/usr/local/bin/grayrouter-limit.sh; ARGS="set $rest"; DEVCAP=1 ;;
+  limit-del)     SCRIPT=/usr/local/bin/grayrouter-limit.sh; ARGS="del $rest"; DEVCAP=1 ;;
+  limit-clear)   SCRIPT=/usr/local/bin/grayrouter-limit.sh; ARGS="clear"; DEVCAP=1 ;;
   traffic-now)   SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="now ${arg:-30}"; DEVCAP=1 ;;
   traffic-summary) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="summary ${arg:-30}"; DEVCAP=1 ;;
   traffic-reset) SCRIPT=/usr/local/bin/grayrouter-traffic.sh; ARGS="reset"; DEVCAP=1 ;;
@@ -130,6 +145,15 @@ case "$cmd" in
   sqm-apply)     SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="apply ${rest}"; DEVCAP=1 ;;
   sqm-clear)     SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="clear"; DEVCAP=1 ;;
   sqm-measure)   SCRIPT=/usr/local/bin/grayrouter-sqm.sh; ARGS="measure"; DEVCAP=1 ;;
+  opt-status)    SCRIPT=/usr/local/bin/grayrouter-opt.sh; ARGS="status"; DEVCAP=1 ;;
+  opt-apply)     SCRIPT=/usr/local/bin/grayrouter-opt.sh; ARGS="apply"; DEVCAP=1 ;;
+  opt-rollback)  SCRIPT=/usr/local/bin/grayrouter-opt.sh; ARGS="rollback"; DEVCAP=1 ;;
+  guard-arm)     SCRIPT=/usr/local/bin/grayrouter-guard.sh; ARGS="arm ${rest}"; DEVCAP=1
+                 printf '%s' "$rest" | grep -qE '^[0-9]{2,3} (router|hotspot)$' || {
+                   write_res "error" 66 "守卫参数不合法：$rest"; exit 0; } ;;
+  guard-ok)      SCRIPT=/usr/local/bin/grayrouter-guard.sh; ARGS="confirm"; DEVCAP=1 ;;
+  sys-restart)   SCRIPT=/usr/local/bin/grayrouter-sys.sh; ARGS="restart ${rest}"; DEVCAP=1 ;;
+  sys-power)     SCRIPT=/usr/local/bin/grayrouter-sys.sh; ARGS="power ${rest}"; DEVCAP=1 ;;
   *)
     write_res "unknown" 64 "不认识的命令：$cmd"
     log "拒绝：$cmd"
@@ -145,10 +169,13 @@ fi
 
 write_res "running" 0 "开始执行 $cmd ${ARGS:-}"
 if [ "${DEVCAP:-0}" = "1" ]; then
-  out=$(bash "$SCRIPT" ${ARGS:-} 2>&1)
-  printf '%s\n' "$out" >> "$LOG"
+  errf=$(mktemp)
+  out=$(bash "$SCRIPT" ${ARGS:-} 2>"$errf")
   code=$?
-  tailmsg=$out
+  err=$(cat "$errf" 2>/dev/null); rm -f "$errf"
+  printf '%s\n' "$out" >> "$LOG"
+  if [ -n "$err" ]; then printf '%s\n' "$err" >> "$LOG"; fi
+  if [ "$code" -eq 0 ]; then tailmsg=$out; else tailmsg="$out"$'\n'"$err"; fi
 else
   bash "$SCRIPT" ${ARGS:-} >> "$LOG" 2>&1
   code=$?

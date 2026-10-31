@@ -17,8 +17,8 @@
         
         <!-- 设计令牌：文字三级 / 表面两级 / 分隔线 / 状态四色（改一处全站生效） -->
         <SolidColorBrush x:Key="TextT1" Color="#FF1E2A3B" />
-        <SolidColorBrush x:Key="TextT2" Color="#FF55647A" />
-        <SolidColorBrush x:Key="TextT3" Color="#FF8A94A6" />
+        <SolidColorBrush x:Key="TextT2" Color="#FF4B5563" />
+        <SolidColorBrush x:Key="TextT3" Color="#FF6B7280" />
         <SolidColorBrush x:Key="LineHair" Color="#FFDBE6F3" />
         <SolidColorBrush x:Key="SurfaceSoft" Color="#FFF3F8FE" />
         <SolidColorBrush x:Key="SurfaceChip" Color="#FFE9EFF7" />
@@ -27,6 +27,10 @@
         <SolidColorBrush x:Key="StatusWarn" Color="#FFE8A33D" />
         <SolidColorBrush x:Key="StatusError" Color="#FFE5484D" />
         <SolidColorBrush x:Key="StatusIdle" Color="#FF94A3B8" />
+        <!-- 状态色·文字版：白底对比度 5.5 / 5.0 / 6.5，正文可用 -->
+        <SolidColorBrush x:Key="StatusOkText" Color="#FF047857" />
+        <SolidColorBrush x:Key="StatusWarnText" Color="#FFB45309" />
+        <SolidColorBrush x:Key="StatusErrorText" Color="#FFB91C1C" />
 
         <!-- 导航分组标题：禁用态 TabItem，只作文本标签（不可选中、不占页名） -->
         <Style x:Key="NavGroupLabel" TargetType="{x:Type TabItem}">
@@ -57,7 +61,6 @@
             <Setter Property="Height" Value="32" />
             <Setter Property="FontSize" Value="12.5" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
             <Setter Property="Template">
@@ -185,7 +188,16 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type ToolTip}">
                         <Border Background="#F21E2A3B" CornerRadius="8" Padding="10,7">
-                            <ContentPresenter />
+                            <!-- 关键：全局 TextBlock 样式把前景设成深色，会盖掉继承来的 Foreground；
+                                 必须在 ContentPresenter 资源里放一份更近的隐式样式，否则深底深字看不见 -->
+                            <ContentPresenter>
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="{x:Type TextBlock}">
+                                        <Setter Property="TextElement.Foreground" Value="#FFFFFFFF" />
+                                        <Setter Property="TextElement.FontSize" Value="12" />
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -407,8 +419,8 @@
             </Style.Triggers>
         </Style>
 
-<Style x:Key="FocusRing">
-    <Setter Property="Control.Template">
+<Style x:Key="FocusRing" TargetType="{x:Type Control}">
+    <Setter Property="Template">
         <Setter.Value>
             <ControlTemplate>
                 <Border Margin="1"
