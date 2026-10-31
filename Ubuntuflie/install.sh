@@ -473,6 +473,24 @@ LIMITEOF
   track_created "$LIMIT_UNIT"
   systemctl daemon-reload
   systemctl enable grayrouter-limit.service >/dev/null 2>&1 || true
+
+# AP 频段恢复（开机后把 set-band 保存的频段补回去；Ubuntu 26.04 的 AP 连接在 /run 下重建）
+BAND_UNIT=$SYSTEMD_DIR/grayrouter-band.service
+cat >"$BAND_UNIT" <<BANDUNIT
+[Unit]
+Description=GrayRouter 恢复 AP 频段（失败自动回退 2.4G）
+After=NetworkManager.service grayrouter.service
+
+[Service]
+Type=oneshot
+ExecStart=$GR_OPT/bin/grayrouter-band.sh apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+BANDUNIT
+systemctl daemon-reload >/dev/null 2>&1 || true
+systemctl enable grayrouter-band.service >/dev/null 2>&1 || true
   ok "已设置每设备限速开机恢复"
 fi
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=GrayRouter 恢复 AP 频段（失败自动回退 2.4G）
+After=NetworkManager.service grayrouter-boot.service
+Wants=grayrouter-boot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grayrouter-band.sh apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
