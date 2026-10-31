@@ -42,6 +42,11 @@ step "3/3 清理"
 rm -f /etc/sysctl.d/99-grayrouter.conf
 systemctl daemon-reload
 sysctl -q --system >/dev/null 2>&1 || true
+# 清理指向 $GR_OPT 的兼容符号链接（install.sh 建的）
+for lf in /usr/local/bin/grayrouter-* /usr/local/bin/lan-usb.sh /usr/local/bin/netpanel-*.sh; do
+  [ -L "$lf" ] || continue
+  case "$(readlink "$lf")" in "$GR_OPT"/*) rm -f "$lf"; ok "删除链接 $lf" ;; esac
+done
 rm -rf "$GR_OPT"
 mkdir -p "$GR_VAR"
 mv "$GR_JOURNAL" "$GR_VAR/journal.uninstalled.$(date +%s)" 2>/dev/null

@@ -314,6 +314,12 @@ for f in "$HERE"/bin/*.sh; do
   install -m 755 "$f" "$GR_OPT/bin/$(basename "$f")"
 done
 track_created "$GR_OPT/bin"
+# 兼容层：历史脚本/单元里硬编码了 /usr/local/bin，建符号链接让两种布局都可用
+for f in "$HERE"/bin/*.sh "$HERE"/bin/*.py; do
+  [ -e "$f" ] || continue
+  ln -sf "$GR_OPT/bin/$(basename "$f")" "/usr/local/bin/$(basename "$f")"
+done
+ok "已建 /usr/local/bin 兼容链接（$(ls /usr/local/bin/grayrouter-*.sh 2>/dev/null | wc -l) 个）"
 ok "脚本安装到 $GR_OPT/bin（$(ls "$GR_OPT"/bin/*.sh 2>/dev/null | wc -l) 个）"
 
 # 转发
