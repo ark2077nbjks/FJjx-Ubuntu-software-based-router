@@ -1,0 +1,12 @@
+[Unit]
+Description=GrayRouter 有线 LAN 互访规则（开机重建 nft 表）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@BIN@/lan-usb.sh rules
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
