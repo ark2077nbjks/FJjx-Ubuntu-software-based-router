@@ -77,7 +77,7 @@
 - 新增 **信标自愈** `grayrouter-beacon.timer`：5 分钟一检；双判据（10 分钟内 ≥20 次 beacon 错误 / ≥1 次 rsvd page 失败，**且** 15 分钟无客户端、24 小时内有连接记录）才动手；两级动作（`nmcli down/up` → 重载 `rtw88_8821ce`）；1 小时最多自愈 1 次
 - 新增 **开机自动恢复软路由** `grayrouter-boot.service`：读 `/etc/grayrouter/boot-mode`，只有 `router` 才拉 WAN/NAT/TTL；`router-up.sh` 写 `router`、`router-down.sh` 写 `hotspot`，热点模式下开机什么都不做，不会偷认证
 - 状态页重构为三段式（总览 / 线路 / 折叠网卡明细）：只读 `netsh wlan show interfaces` 的当前连接，不再把保存过的配置当 SSID；`State` 中文化；APIPA 显示「未获取到 IP（169.254.x.x）」；删除【判定】组和公网出口/WAN IP/LAN IP 等 4 处重复
-- 流量页同一设备重复：ARP 查不到 MAC 时存成 `ip:192.168.50.245` 导致 7 行 4 台 → 面板先按 IP 补 MAC 再按 MAC 合并（流量相加、在线取或、时间取最新）；远端 `grayrouter-traffic.py` 同步合并
+- 流量页同一设备重复：ARP 查不到 MAC 时存成 `ip:192.168.50.100` 导致 7 行 4 台 → 面板先按 IP 补 MAC 再按 MAC 合并（流量相加、在线取或、时间取最新）；远端 `grayrouter-traffic.py` 同步合并
 - 校园网页在非校园网 WAN（CPE / 手机热点）下：新增 1 秒只读预检（出口是否属 `10.149/16`、`10.150/16`），不满足时登录直接提示、**不跑 bitsrun、不写 Config.yaml**；注销不发签名请求；查状态显示「当前出口不是校园网，认证不适用」
 
 ## 1.50 · 2026-10-27
