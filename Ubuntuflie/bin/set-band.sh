@@ -111,6 +111,7 @@ CUR=$(iw dev "$IF" info 2>/dev/null | grep -o "channel [0-9]*" | head -1)
 if [ "$GB" = "$BAND" ] && [ "$GC" = "$CH" ] && [ "$CUR" = "channel $CH" ]; then
   systemctl stop gr5g-deadman.timer >/dev/null 2>&1 || true
   systemctl reset-failed gr5g-deadman.timer >/dev/null 2>&1 || true
+  mkdir -p /etc/grayrouter; printf 'BAND=%s\nCH=%s\n' "$BAND" "$CH" > /etc/grayrouter/band.env
   echo "[6/6] ✅ 成功：$LABEL 信道 $CH 已生效（$CUR）"
 else
   echo "[6/6] ❌ 没成功（band=$GB channel=$GC 实际=$CUR），立即回滚"

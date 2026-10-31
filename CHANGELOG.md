@@ -1,3 +1,14 @@
+## 1.51.2 · 2026-10-31
+
+### 修复
+- **AP 频段重启后回落到 2.4G**：Ubuntu 26.04 的 AP 连接由 netplan 在 `/run` 下重建，`nmcli con modify` 的改动不持久。现在 `set-band.sh` 成功后写 `/etc/grayrouter/band.env`，并由 `grayrouter-band.service` 在开机后补一次；起不来自动回退 2.4G 并改写 env（对齐 OpenWrt auto-fallback）
+- **仓库缺 `grayrouter-audit.sh`**：此前只在实机上，新装用户执行安装会失败，已补入
+- **审计不记录频段**：新增 `ap-band.txt`（只含 SSID/band/channel，不含密码），频段被改可追溯
+- **`install.sh` 少装 `grayrouter-band.service`**：已补，新装机器自带
+
+### 校验
+见 `SHA256SUMS`。
+
 # 更新日志
 
 版本号规则照 Minecraft 那套：**主.次**，新功能就把次版本 +1（1.35 → 1.36 → 1.37），同一个版本只修 bug 才加补丁位（1.36.1、1.36.2）。不跳号、不写多余的 `.0`。
