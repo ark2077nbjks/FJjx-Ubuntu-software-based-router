@@ -50,6 +50,14 @@ do_up() {
 }
 
 do_rules() {
+  # forward 策略是 accept 时，跨段本来就通，不需要额外规则（B3：多余的表）
+  local pol
+  pol=$(nft list chain inet filter forward 2>/dev/null | sed -n 's/.*policy \([a-z]*\).*/\1/p' | head -1)
+  if [ "${pol:-accept}" = "accept" ]; then
+    nft delete table inet gray_lan2 2>/dev/null || true
+    echo "forward 策略为 accept，跨段已放行（不建 gray_lan2 表）"
+    return 0
+  fi
   # 两个 LAN 网段互访（幂等：先删再建）
   nft delete table inet gray_lan2 2>/dev/null || true
   # 注意：链名不能用 'fwd'，它是 nft 保留字（会报 unexpected fwd）
