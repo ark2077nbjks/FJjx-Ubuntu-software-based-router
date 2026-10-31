@@ -35,6 +35,7 @@ public sealed class SnapshotDiffWindow : Window
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
     };
     private readonly Button _go = new() { Content = "对比", Height = 30, Padding = new Thickness(16, 0, 16, 0), Margin = new Thickness(8, 0, 0, 0) };
+    private readonly Button _roll = new() { Content = "回滚到 A", Height = 30, Padding = new Thickness(14, 0, 14, 0), Margin = new Thickness(8, 0, 0, 0) };
 
     public SnapshotDiffWindow()
     {
@@ -50,12 +51,13 @@ public sealed class SnapshotDiffWindow : Window
         top.Children.Add(new TextBlock { Text = "B", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         top.Children.Add(_b);
         top.Children.Add(_go);
+        top.Children.Add(_roll);
         top.Children.Add(_hint);
 
         var root = new StackPanel { Margin = new Thickness(16) };
         root.Children.Add(new TextBlock
         {
-            Text = "对比两份配置快照（只读，不改任何设置）",
+            Text = "对比两份配置快照；需要时可以把配置回滚到 A（软恢复，不断网）",
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 10)
@@ -65,6 +67,7 @@ public sealed class SnapshotDiffWindow : Window
         Content = root;
 
         _go.Click += async (_, _) => await RunDiffAsync();
+        _roll.Click += async (_, _) => await RollbackAsync();
         Loaded += async (_, _) => await LoadListAsync();
     }
 
@@ -108,5 +111,19 @@ public sealed class SnapshotDiffWindow : Window
         _out.Text = detail;
         _out.ScrollToHome();
         _hint.Text = ok ? "√ 完成" : "× 失败";
+    }
+
+    private async Task RollbackAsync()
+    {
+        if (_a.SelectedItem is not string na) { _hint.Text = "× 先选 A 快照"; return; }
+        var r = MessageBox.Show(
+            $"回滚到快照 {na}？\n\n① 会先把当前配置存一份 pre-restore（可再回滚）\n② 只覆盖配置文件，软恢复：不重启网络、不断网\n③ 个别设置在下次重连后才完全生效\n\n继续？",
+            "回滚配置", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes) return;
+        _hint.Text = "回滚中…";
+        var (ok, detail) = await RouterCtl.RunAsync(RemoteConfig.Load(), $"snapshot-restore-soft {na}");
+        _out.Text = detail;
+        _out.ScrollToHome();
+        _hint.Text = ok ? "√ 已回滚（未断网）" : "× 失败";
     }
 }

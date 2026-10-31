@@ -36,6 +36,7 @@ public partial class DiagnoseWindow : Window
         TxtSub.Text = DateTime.Now.ToString("HH:mm:ss");
         _verdict = "";
         BtnRerun.IsEnabled = false;
+        BtnCancel.Visibility = Visibility.Visible;
 
         try
         {
@@ -62,7 +63,13 @@ public partial class DiagnoseWindow : Window
             TxtVerdict.Text = "诊断出错：" + ex.Message;
             AppPaths.Log("[诊断] 异常: " + ex);
         }
-        finally { BtnRerun.IsEnabled = true; }
+        finally { BtnRerun.IsEnabled = true; BtnCancel.Visibility = Visibility.Collapsed; }
+    }
+
+    private void OnCancel(object sender, RoutedEventArgs e)
+    {
+        _cts?.Cancel();
+        TxtVerdict.Text = "正在取消…";
     }
 
     private void AddRow(DiagItem it)

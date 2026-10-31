@@ -453,6 +453,29 @@ systemctl daemon-reload
 systemctl enable grayrouter.service >/dev/null 2>&1 || systemctl enable grayrouter.service >/dev/null 2>&1
 ok "已设置开机自启（systemctl disable grayrouter 可关）"
 
+# 每设备限速：tc 规则不落盘，开机用 oneshot 重建
+if [ -f "$GR_OPT/bin/grayrouter-limit.sh" ] || [ -f /usr/local/bin/grayrouter-limit.sh ]; then
+  LIMIT_UNIT=$SYSTEMD_DIR/grayrouter-limit.service
+  cat >"$LIMIT_UNIT" <<LIMITEOF
+[Unit]
+Description=GrayRouter 每设备限速恢复（tc 规则不落盘，开机重建）
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'sleep 8; /usr/local/bin/grayrouter-limit.sh apply'
+
+[Install]
+WantedBy=multi-user.target
+LIMITEOF
+  track_unit "$LIMIT_UNIT"
+  track_created "$LIMIT_UNIT"
+  systemctl daemon-reload
+  systemctl enable grayrouter-limit.service >/dev/null 2>&1 || true
+  ok "已设置每设备限速开机恢复"
+fi
+
 # ---------- 7. 自检 ----------
 step "7/7 自检"
 FAIL=0

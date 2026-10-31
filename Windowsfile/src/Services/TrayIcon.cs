@@ -69,6 +69,19 @@ public sealed class TrayIcon : IDisposable
         };
         menu.Items.Add(_miNotify);
 
+        var miDev = new ToolStripMenuItem("设备上线时提醒")
+        {
+            Checked = cfg.NotifyDeviceOnline,
+            CheckOnClick = true,
+        };
+        miDev.Click += (_, _) =>
+        {
+            _cfg.NotifyDeviceOnline = miDev.Checked;
+            _cfg.Save();
+            SettingsChanged?.Invoke(_cfg);
+        };
+        menu.Items.Add(miDev);
+
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => ExitRequested?.Invoke()));
 

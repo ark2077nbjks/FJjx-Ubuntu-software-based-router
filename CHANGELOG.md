@@ -6,6 +6,29 @@
 
 ---
 
+## 1.51.1 · 2026-10-31
+
+新功能
+- **实时负载卡**（系统页）：CPU / 内存双线曲线，3 秒一采样、只看最近 3 分钟，离开页面立刻停（单条 SSH 长连接，不额外占带宽）
+- **快照软回滚**：快照对比窗口新增「回滚到 A」，先自动存 `pre-restore`，恢复时不重启 NetworkManager（不断网）
+- **系统调优卡**（系统页）：只读显示 BBR / fq / 日志限额与占用 / DNS 缓存 / AP 频段 / 开机自愈状态；支持「重新应用」「撤销」（免 sudo，走遥控通道）
+- **「系统」页（第 12 栏）**：服务表（grayrouter-* / ssh / NetworkManager / docker，单个重启，二次确认）、电源（重启网络 / 重启设备 / 关机）、系统更新（只检查不安装，标注是否含内核）、进程 Top5
+- **变更守卫（commit-confirm）**：切模式前自动布防，120 秒内不点「保留」→ 远端自动回滚；面板弹出倒计时确认窗
+- **配置审计**：`/etc/grayrouter`、`sysctl.d`、`journald.conf.d`、`dnsmasq-shared.d`、`cron.d` 每小时快照进本地 git（`/var/lib/grayrouter/etcsnap`），可查「谁在什么时候删了什么」
+
+稳定性
+- BBR / fq / 日志限额 / DNS 缓存 / 5G 频段 全部改为 `grayrouter-opt.service`（oneshot，开机幂等），重启不再丢
+- DNS 生效改用 `nmcli general reload dns-rc`，不再重启 NetworkManager（不断链接）
+- 诊断改为并发 + 网关 6 包 + 可取消 + 非模态，修掉「程序卡死 / 丢包 33%」误判
+
+修复
+- ToolTip 深底深字看不见（全局 TextBlock 样式覆盖了气泡内文字颜色）
+- 重启后优化配置消失、无线回落到 2.4G
+- 流量页空状态把 TextBlock 插进 DataGrid 导致 `ItemsSource` 异常
+- 设备名统一走 `DisplayName()`，无信息量名字退回 IP
+
+---
+
 ## 1.51.0 · 2026-10-30
 
 界面全面重做（本次主线）

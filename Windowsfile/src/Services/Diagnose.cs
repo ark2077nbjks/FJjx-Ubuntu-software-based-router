@@ -83,7 +83,7 @@ public static class Diagnose
         if (!string.IsNullOrEmpty(gw))
         {
             sw.Restart();
-            var (ok, rtt, loss) = await PingCountAsync(gw, 3, 900, ct);
+            var (ok, rtt, loss) = await PingCountAsync(gw, 6, 600, ct);
             Add(new DiagItem
             {
                 Layer = "本机", Name = "网关连通",
@@ -355,32 +355,38 @@ public static class Diagnose
 
     private static async Task<(int code, string probe, long len)> Try204Async(CancellationToken ct)
     {
+        // 三个探测点并发，取第一个 204；全失败则返回任意有响应的那个
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
-        foreach (var url in Probe204)
+        var tasks = Probe204.Select(async url =>
         {
             try
             {
                 using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
                 var body = await resp.Content.ReadAsStringAsync(ct);
-                return ((int)resp.StatusCode, new Uri(url).Host, body.Length);
+                return ((int)resp.StatusCode, new Uri(url).Host, (long)body.Length);
             }
-            catch { }
-        }
+            catch { return (0, "", 0L); }
+        }).ToArray();
+        var results = await Task.WhenAll(tasks);
+        foreach (var r in results) if (r.Item1 == 204) return r;
+        foreach (var r in results) if (r.Item1 > 0) return r;
         return (0, "", 0);
     }
 
     private static async Task<string> TryEgressAsync(CancellationToken ct)
     {
+        // 两个回显点并发，谁先返回合法 IP 用谁
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
-        foreach (var url in IpEcho)
+        var tasks = IpEcho.Select(async url =>
         {
             try
             {
                 var s = (await http.GetStringAsync(url, ct)).Trim();
-                if (IPAddress.TryParse(s, out _)) return s;
+                return IPAddress.TryParse(s, out _) ? s : "";
             }
-            catch { }
-        }
-        return "";
+            catch { return ""; }
+        }).ToArray();
+        var arr = await Task.WhenAll(tasks);
+        return arr.FirstOrDefault(x => !string.IsNullOrEmpty(x)) ?? "";
     }
 }

@@ -15,6 +15,10 @@
         <Grid Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="一键网络诊断" FontSize="16" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="BtnCancel" AutomationProperties.Name="取消诊断" Height="32" Margin="0,0,8,0" Padding="14,0"
+                        Click="OnCancel" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand" Visibility="Collapsed">
+                    <TextBlock Text="取消"/>
+                </Button>
                 <Button x:Name="BtnRerun" AutomationProperties.Name="重新诊断" Height="32" Padding="14,0"
                         Click="OnRerun" Background="#EEF2F8" BorderThickness="1" BorderBrush="#D5DBE5" Cursor="Hand">
                     <TextBlock Text="重新诊断"/>

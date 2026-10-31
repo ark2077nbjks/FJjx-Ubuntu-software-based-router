@@ -15,6 +15,9 @@ public sealed class LanDevice : System.ComponentModel.INotifyPropertyChanged
     public string Source { get; set; } = "";   // 本机 / 软路由（内部逻辑用，不再显示）
     public string Conn { get; set; } = "";     // 显示用：本机 / 无线 2.4G -49dBm / 有线 / 同网段
     public string State { get; set; } = "";    // 在线 / 不在线
+    public string LastNote { get; set; } = "";  // 离线时：最后在线（多久前）
+    public string IconPath { get; set; } = "";   // 设备类型图标（按 OUI / 主机名推断）
+    public string TypeLabel { get; set; } = "";  // 手机 / 电脑 / 电视 …
     public string Rtt { get; set; } = "";      // 12 ms / —
     public string Traffic { get; set; } = "";  // 上行 / 下行（软路由计数，累计）
     public string Rate { get; set; } = "";     // 实时速率（两次计数差值 / 秒）

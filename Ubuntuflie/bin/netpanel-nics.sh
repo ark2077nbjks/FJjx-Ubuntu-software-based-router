@@ -10,7 +10,7 @@ lan_if=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^192\.168\.50\.1\//{print $
 for d in /sys/class/net/*; do
     n=$(basename "$d")
     case "$n" in
-        lo|docker*|veth*|br-*|virbr*|tun*|tap*) continue ;;
+        lo|docker*|veth*|br-*|virbr*|tun*|tap*|ifb*|vxlan*) continue ;;
     esac
 
     st=$(cat "$d/operstate" 2>/dev/null || echo unknown)

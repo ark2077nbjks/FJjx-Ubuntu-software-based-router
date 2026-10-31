@@ -1,4 +1,6 @@
 ﻿using System.IO;
+using System.Text.Json;
+using System.Collections.Generic;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -84,6 +86,9 @@ public partial class MainWindow : Window
             Dispatcher.BeginInvoke(new Action(() => new SnapshotDiffWindow { Owner = this }.ShowDialog()));
 
         InitializeComponent();
+        _spark = new SparkChart();
+        HostSpark.Child = _spark;
+        Closed += (_, _) => StopSysStream();
         AppPaths.Ensure();
         RestoreWindowState();          // 记住上次大小/位置
         TxtBadge.Text = $"{Ver.Text()} · 网段自适应";   // 版本号跟着程序集走，不再写死
@@ -315,6 +320,7 @@ public partial class MainWindow : Window
             if (page == "设备" && (now - _devAutoStamp).TotalSeconds >= 180)
             {
                 _devAutoStamp = now;
+                AppPaths.Log("[设备] 自动扫描（180 秒节拍）");
                 await RefreshDevStateAsync();          // 先拉黑名单/流量（轻）
                 await ScanDevicesAsync(false, true);   // 再快速扫一遍（温和，不发大包）
             }
@@ -474,6 +480,264 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { TxtRoleInfo.Text = "× 解析失败：" + ex.Message; }
         finally { _rolesLoading = false; }
+    }
+
+
+    // ---------------- 系统页（服务 / 电源 / 更新 / 进程） ----------------
+    private bool _sysBusy;
+    private SparkChart? _spark;
+    private Process? _sysStream;
+    private int _rtCores = 4;
+    private double _rtMemTotal, _rtLoad = double.NaN;
+    private sealed class SvcRow { public string Unit { get; set; } = ""; public string State { get; set; } = ""; public string Auto { get; set; } = ""; }
+    private sealed class ProcRow { public string Name { get; set; } = ""; public string Cpu { get; set; } = ""; public string Mem { get; set; } = ""; }
+
+    private async void OnSysRefresh(object sender, RoutedEventArgs e) => await RefreshSysAsync();
+
+    private async Task RefreshSysAsync()
+    {
+        if (_sysBusy) return;
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtUpdCount.Text = "未配置软路由地址"; return; }
+        _sysBusy = true;
+        try
+        {
+            var args = $"{Remote.BaseArgs(cfg, true)} {cfg.User}@{cfg.Host} \"LANG=C /usr/local/bin/grayrouter-sys.sh info\"";
+            var (rc, output, err) = await Remote.RunAsync("ssh.exe", args, 25);
+            if (rc != 0 || !output.Trim().StartsWith("{"))
+            {
+                // 回退：脚本还没装到系统目录时，用家目录里的副本
+                var args2 = $"{Remote.BaseArgs(cfg, true)} {cfg.User}@{cfg.Host} \"LANG=C bash grayrouter-sys.sh info\"";
+                (rc, output, err) = await Remote.RunAsync("ssh.exe", args2, 25);
+            }
+            var json = output.Trim();
+            if (rc != 0 || !json.StartsWith("{"))
+            {
+                TxtUpdCount.Text = "读取失败（远端可能还没装系统脚本）";
+                AppPaths.Log("[系统] info 失败 rc=" + rc + " " + err.Trim());
+                return;
+            }
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("services", out var svcs) && svcs.ValueKind == JsonValueKind.Array)
+            {
+                var rows = new List<SvcRow>();
+                foreach (var s in svcs.EnumerateArray())
+                    rows.Add(new SvcRow
+                    {
+                        Unit = s.TryGetProperty("unit", out var u) ? u.GetString() ?? "" : "",
+                        State = s.TryGetProperty("active", out var a) ? a.GetString() ?? "" : "",
+                        Auto = s.TryGetProperty("enabled", out var en) ? en.GetString() ?? "" : "",
+                    });
+                DgServices.ItemsSource = rows;
+                TxtSvcEmpty.Visibility = rows.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            if (root.TryGetProperty("updates", out var up) && up.ValueKind == JsonValueKind.Object)
+            {
+                var n = up.TryGetProperty("count", out var c) && c.TryGetInt32(out var ci) ? ci : 0;
+                var kern = up.TryGetProperty("kernel", out var k) ? k.GetString() ?? "" : "";
+                var ku = up.TryGetProperty("kernel_update", out var kb) && kb.ValueKind == JsonValueKind.True;
+                TxtUpdCount.Text = n == 0 ? "已是最新（0 个可升级）" : $"可升级 {n} 个" + (ku ? " · 含内核" : "");
+                TxtUpdKernel.Text = string.IsNullOrEmpty(kern) ? "" : $"当前内核 {kern}";
+                var list = new List<string>();
+                if (up.TryGetProperty("pkgs", out var pk) && pk.ValueKind == JsonValueKind.Array)
+                    foreach (var p in pk.EnumerateArray()) { var v = p.GetString(); if (!string.IsNullOrEmpty(v)) list.Add(v!); }
+                TxtUpdList.Text = list.Count == 0 ? "" : string.Join("、", list);
+            }
+
+            if (root.TryGetProperty("procs", out var ps) && ps.ValueKind == JsonValueKind.Array)
+            {
+                var rows = new List<ProcRow>();
+                foreach (var p in ps.EnumerateArray())
+                    rows.Add(new ProcRow
+                    {
+                        Name = p.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "",
+                        Cpu = p.TryGetProperty("cpu", out var cp) && cp.TryGetDouble(out var cv) ? cv.ToString("0.0") + "%" : "",
+                        Mem = p.TryGetProperty("mem", out var mm) && mm.TryGetDouble(out var mv) ? mv.ToString("0.0") + "%" : "",
+                    });
+                DgProcs.ItemsSource = rows;
+                TxtProcEmpty.Visibility = rows.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            }
+            await RefreshOptAsync(cfg);
+            AppPaths.Log($"[系统] 刷新完成");
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[系统] 异常: " + ex);
+            TxtUpdCount.Text = "解析失败：" + ex.Message;
+        }
+        finally { _sysBusy = false; }
+    }
+
+
+
+    // ---------------- 实时负载流（单条 ssh，3 秒一行，离页即停） ----------------
+    private void StartSysStream()
+    {
+        StopSysStream();
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured || _spark == null) return;
+        const string cmd = "echo N $(nproc); while :; do echo ---; cat /proc/loadavg; grep Mem /proc/meminfo; sleep 3; done";
+        var psi = new ProcessStartInfo("ssh.exe", $"{Remote.BaseArgs(cfg, true)} {cfg.User}@{cfg.Host} \"{cmd}\"")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        try
+        {
+            _sysStream = Process.Start(psi);
+            if (_sysStream == null) return;
+            _sysStream.OutputDataReceived += OnSysStreamLine;
+            _sysStream.BeginOutputReadLine();
+            _sysStream.BeginErrorReadLine();
+            _spark.Clear();
+            AppPaths.Log("[实时] 采样开始");
+        }
+        catch (Exception ex) { AppPaths.Log("[实时] 启动失败: " + ex.Message); }
+    }
+
+    private void StopSysStream()
+    {
+        var p = _sysStream;
+        _sysStream = null;
+        if (p == null) return;
+        try { if (!p.HasExited) p.Kill(true); } catch { }
+        try { p.Dispose(); } catch { }
+        AppPaths.Log("[实时] 采样停止");
+    }
+
+    private void OnSysStreamLine(object? sender, DataReceivedEventArgs e)
+    {
+        var line = e.Data;
+        if (string.IsNullOrWhiteSpace(line)) return;
+        if (line.StartsWith("N ") && int.TryParse(line.AsSpan(2).Trim(), out var cores) && cores > 0) { _rtCores = cores; return; }
+
+        if (line.StartsWith("MemTotal:")) { _rtMemTotal = Kb(line); return; }
+        if (line.StartsWith("MemAvailable:"))
+        {
+            var avail = Kb(line);
+            var memPct = _rtMemTotal > 0 ? (_rtMemTotal - avail) * 100.0 / _rtMemTotal : 0;
+            PushRt(memPct);
+            return;
+        }
+
+        // /proc/loadavg 的第一列（1 分钟平均）
+        var sp = line.IndexOf(' ');
+        var head = sp > 0 ? line[..sp] : line;
+        if (double.TryParse(head, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var load))
+            _rtLoad = load;
+    }
+
+    private static double Kb(string line)
+    {
+        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 1; i < parts.Length; i++)
+            if (double.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && parts[i] != parts[0])
+                return v;
+        return 0;
+    }
+
+    private void PushRt(double memPct)
+    {
+        if (double.IsNaN(_rtLoad)) return;
+        var cpuPct = Math.Min(100.0, _rtLoad / Math.Max(1, _rtCores) * 100.0);
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _spark?.Push(cpuPct, memPct);
+            TxtRtCpu.Text = $"{cpuPct:0}%  ·  {_rtLoad:0.00} / {_rtCores} 核";
+            TxtRtMem.Text = $"{memPct:0}%";
+        }));
+    }
+
+    // ---------------- 系统调优（BBR / 日志 / DNS / 频段） ----------------
+    private async Task RefreshOptAsync(RemoteConfig cfg)
+    {
+        try
+        {
+            var (ok, detail) = await RouterCtl.RunAsync(cfg, "opt-status", m => AppPaths.Log("[调优] " + m));
+            var js = detail.Trim();
+            var k = js.IndexOf('{');
+            if (!ok || k < 0) { TxtOptState.Text = "读取失败（远端未装新版 opt.sh）"; return; }
+            using var doc = JsonDocument.Parse(js[k..]);
+            var r = doc.RootElement;
+            string S(string key) => r.TryGetProperty(key, out var v) ? (v.ToString() ?? "") : "";
+            bool applied = r.TryGetProperty("applied", out var ap) && ap.ToString() == "1";
+            var unit = S("unit");
+            var band = S("band");
+            var ch = S("channel");
+
+            TxtOptCc.Text = S("congestion") == "bbr" ? "bbr（已开启）" : S("congestion");
+            TxtOptQdisc.Text = S("qdisc") == "fq" ? "fq（已开启）" : S("qdisc");
+            var jl = S("journal_limit"); var ju = S("journal_used");
+            TxtOptJournal.Text = string.IsNullOrEmpty(jl) ? $"{ju}（未设上限）" : $"{ju} / 上限 {jl}";
+            var dc = S("dns_cache");
+            TxtOptDns.Text = string.IsNullOrEmpty(dc) ? "未设置" : $"{dc} 条";
+            TxtOptBand.Text = string.IsNullOrEmpty(band) ? "未配置" : (band == "a" ? $"5G · 信道 {ch}" : $"2.4G · 信道 {ch}");
+            TxtOptState.Text = applied
+                ? (unit == "enabled" ? "已启用（开机自动应用）" : "已应用（开机自愈未启用）")
+                : "未应用（重启后回到系统默认）";
+            TxtOptState.Foreground = applied
+                ? (Brush)FindResource("StatusOkText")
+                : (Brush)FindResource("StatusWarnText");
+        }
+        catch (Exception ex) { AppPaths.Log("[调优] 异常: " + ex.Message); TxtOptState.Text = "解析失败"; }
+    }
+
+    private async void OnOptApply(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "opt-apply", m => AppPaths.Log("[调优] " + m));
+        AppPaths.Log("[调优] 应用 → " + (ok ? "OK" : "FAIL：" + detail));
+        if (!ok) MessageBox.Show(detail, "系统调优", MessageBoxButton.OK, MessageBoxImage.Warning);
+        await RefreshOptAsync(cfg);
+    }
+
+    private async void OnOptRollback(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        var r = MessageBox.Show(
+            "撤销系统调优？\n\n会删除这三份配置：\n① BBR / fq\n② journald 200M 限额\n③ DNS 缓存 1000\n\n并关闭开机自愈。重启后回到系统默认（cubic / 无日志上限 / 无缓存）。\n\n不会断网，但下一轮优化要手动重放。确定撤销？",
+            "撤销系统调优", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes) return;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "opt-rollback", m => AppPaths.Log("[调优] " + m));
+        AppPaths.Log("[调优] 撤销 → " + (ok ? "OK" : "FAIL：" + detail));
+        if (!ok) MessageBox.Show(detail, "系统调优", MessageBoxButton.OK, MessageBoxImage.Warning);
+        await RefreshOptAsync(cfg);
+    }
+
+    private async void OnSvcRestart(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not string unit || string.IsNullOrWhiteSpace(unit)) return;
+        var r = MessageBox.Show($"重启 {unit}？\n\n只会重启这一个单元，不会重启设备。", "重启服务",
+            MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes) return;
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "sys-restart " + unit, m => AppPaths.Log("[系统] " + m));
+        AppPaths.Log($"[系统] 重启 {unit} → {(ok ? "成功" : "失败：" + detail)}");
+        await RefreshSysAsync();
+    }
+
+    private async void OnSysPower(object sender, RoutedEventArgs e)
+    {
+        var act = (sender as Button)?.Tag as string ?? "";
+        var (title, body) = act switch
+        {
+            "net-restart" => ("重启网络", "会重启 NetworkManager，所有设备断网 1-2 秒。"),
+            "reboot" => ("重启设备", "整机重启，断网约 30-60 秒；重启后会自动恢复软路由。"),
+            "shutdown" => ("关机", "设备将关机，只能到现场开机（或断电重上电）。"),
+            _ => ("", ""),
+        };
+        if (title.Length == 0) return;
+        var r = MessageBox.Show($"{title}？\n\n{body}\n\n确定继续？", title,
+            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (r != MessageBoxResult.Yes) return;
+        var cfg = RemoteConfig.Load(); if (!cfg.IsConfigured) return;
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, "sys-power " + act, m => AppPaths.Log("[系统] " + m));
+        MessageBox.Show(ok ? "已下发，稍等几秒。" : "失败：" + detail, "系统", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     // ---------------- 兜底恢复 ----------------
@@ -774,6 +1038,18 @@ public partial class MainWindow : Window
         if (ok) await LoadRolesAsync();
     }
 
+    /// <summary>
+    /// 远端命令的 stdout 可能混有人类可读前缀（例如「采样 2 个 IP…」），
+    /// 这里从第一个 { 截到最后一个 }，只把 JSON 交给解析器。
+    /// </summary>
+    private static string ExtractJson(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return s ?? "";
+        int a = s.IndexOf('{');
+        int b = s.LastIndexOf('}');
+        return (a >= 0 && b > a) ? s.Substring(a, b - a + 1) : s.Trim();
+    }
+
     /// <summary>设备流量：sample=true 时先让远端立刻采一次，再取汇总</summary>
     private async Task LoadDevTrafficAsync(bool sample)
     {
@@ -789,7 +1065,7 @@ public partial class MainWindow : Window
             detail = d;
             if (!ok) { TxtDevTrafficInfo.Text = "× " + detail; return; }
 
-            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            using var doc = System.Text.Json.JsonDocument.Parse(ExtractJson(detail));
             var rows = new List<DevTrafficRow>();
             var pending = new List<(string Mac, string Ip)>();
 
@@ -842,7 +1118,7 @@ public partial class MainWindow : Window
                 if (name.Length == 0 && a.Ip.Length > 0) pending.Add((mac, a.Ip));
                 rows.Add(new DevTrafficRow
                 {
-                    Name = name.Length > 0 ? name : (mac.Length > 0 ? mac : a.Ip),
+                    Name = DeviceType.DisplayName(name, a.Ip, mac),
                     Mac = mac.Length > 0 ? mac : "—",
                     Ip = a.Ip,
                     State = a.Online == 1 ? "在线" : "离线",
@@ -875,9 +1151,11 @@ public partial class MainWindow : Window
                 // ② 还没名字的再 PTR 兜底
                 await FillDevNamesAsync(pending.Where(x => !_devNames.ContainsKey(x.Mac)).ToList(), cfg.Host);
                 foreach (var r in rows)
-                    if (_devNames.TryGetValue(r.Mac, out var nm2) && nm2.Length > 0) r.Name = nm2;
+                    if (_devNames.TryGetValue(r.Mac, out var nm2))
+                        r.Name = DeviceType.DisplayName(nm2, r.Ip, r.Mac);
             }
             DgDevTraffic.ItemsSource = rows;
+            TxtTrafficEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             Array.Clear(_devHourDown);
             Array.Clear(_devHourUp);
@@ -909,6 +1187,7 @@ public partial class MainWindow : Window
             }
             DgDevTraffic.ItemsSource = null;
             DgDevTraffic.ItemsSource = rows;
+            TxtTrafficEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             TxtTrafficInfo.Text =
                 $"今天 ↓{Traffic.SizeText(todayD / 1048576.0)} ↑{Traffic.SizeText(todayU / 1048576.0)}" +
@@ -961,7 +1240,7 @@ public partial class MainWindow : Window
 
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            using var doc = System.Text.Json.JsonDocument.Parse(ExtractJson(detail));
             long mu = doc.RootElement.GetProperty("month_up").GetInt64();
             long md = doc.RootElement.GetProperty("month_down").GetInt64();
             int fc = doc.RootElement.TryGetProperty("file_count", out var f) ? f.GetInt32() : 0;
@@ -1277,6 +1556,8 @@ public partial class MainWindow : Window
 
     private CancellationTokenSource? _scanCts;
     private List<LanDevice> _devices = new();
+    /// <summary>同一台设备 5 分钟内只提醒一次，避免反复上下线刷屏</summary>
+    private readonly Dictionary<string, DateTime> _onlineNotifyAt = new();
 
     // 静态租约缓存：MAC → IP（每次扫描后后台刷一次，点「固定」时不用等）
     private readonly System.Collections.Generic.Dictionary<string, string> _pins =
@@ -1332,58 +1613,115 @@ public partial class MainWindow : Window
     }
 
     private async void OnScanDevices(object sender, RoutedEventArgs e)
-        => await ScanDevicesAsync(ChkDeep.IsChecked == true, false);
+    {
+        AppPaths.Log("[设备] 手动扫描（点按钮）");
+        await ScanDevicesAsync(ChkDeep.IsChecked == true, false);
+    }
+
+    /// <summary>给设备行补类型图标（离线推断，不查库）</summary>
+    private static void ApplyDeviceIcons(IEnumerable<LanDevice> list)
+    {
+        foreach (var d in list)
+        {
+            d.Name = DeviceType.DisplayName(d.Name, d.Ip, d.Mac);
+            d.IconPath = DeviceType.IconFor(d.Mac, d.Name, d.Conn, d.Ip);
+            d.TypeLabel = DeviceType.Label(d.Mac, d.Name, d.Conn, d.Ip);
+        }
+    }
+
+    /// <summary>扫描完成后，把设备所在的网段也加进扫描框（覆盖无线 50 段 + 有线 60 段）</summary>
+    private void AugmentCidrsWithDevices()
+    {
+        if (_cidrUserEdited) return;
+        var set = SplitCidrs(TxtScanCidr.Text);
+        bool added = false;
+        foreach (var dv in _devices)
+        {
+            var p = (dv.Ip ?? "").Split('.');
+            if (p.Length != 4 || !int.TryParse(p[1], out _)) continue;
+            var c = $"{p[0]}.{p[1]}.{p[2]}.0/24";
+            if (c.StartsWith("10.") || c.StartsWith("169.254") || c.StartsWith("172.") || c.StartsWith("127.")) continue;
+            if (set.Contains(c, StringComparer.OrdinalIgnoreCase)) continue;
+            set.Add(c); added = true;
+        }
+        if (!added) return;
+        _settingCidr = true;
+        TxtScanCidr.Text = string.Join(",", set);
+        _settingCidr = false;
+    }
 
     /// <summary>扫描设备（deep=深度扫描；quiet=true 时用于后台自动刷新）</summary>
+    private static List<string> SplitCidrs(string text) => text
+        .Split(new[] { ',', '，', ' ', ';', '；' }, StringSplitOptions.RemoveEmptyEntries)
+        .Select(x => x.Trim())
+        .Where(x => x.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
     private async Task ScanDevicesAsync(bool deep, bool quiet)
     {
         if (_scanCts != null) return;                 // 已经在扫，别叠加
-        var cidr = TxtScanCidr.Text.Trim();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(cidr, @"^\d+\.\d+\.\d+\.\d+/\d+$"))
+        var cidrs = SplitCidrs(TxtScanCidr.Text);
+        if (cidrs.Count == 0) { TxtScanInfo.Text = "× 先填网段，例如 192.168.1.0/24"; return; }
+        foreach (var c in cidrs)
         {
-            TxtScanInfo.Text = "× 网段格式不对，应该是 192.168.1.0/24 这样";
-            return;
-        }
-        if (!cidr.EndsWith("/24"))
-        {
-            TxtScanInfo.Text = "× 只支持 /24（一个 C 段，254 个地址）";
-            return;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(c, @"^\d+\.\d+\.\d+\.\d+/24$"))
+            {
+                TxtScanInfo.Text = $"× 网段「{c}」格式不对，只支持 192.168.1.0/24 这种 /24";
+                return;
+            }
         }
 
         var locals = LanScan.LocalCidrs();
-        var cidrMismatch = locals.Count > 0 && !locals.Contains(cidr);
-        if (cidrMismatch)
-            TxtScanInfo.Text = $"注意：本机在 {string.Join("、", locals)}，扫 {cidr} 大概率 0 台";
+        var mismatch = locals.Count > 0 && !cidrs.Any(c => locals.Contains(c));
 
         BtnScan.IsEnabled = false;
         BtnScanStop.IsEnabled = true;
         _scanCts = new CancellationTokenSource();
         var cfg = RemoteConfig.Load();
+        var merged = new List<LanDevice>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
-            var list = await LanScan.ScanAsync(cidr, cfg, deep, msg =>
+            for (int i = 0; i < cidrs.Count; i++)
             {
-                AppPaths.Log($"[固定] 读到 {_pins.Count} 条，设备 {_devices.Count} 台");
-            Dispatcher.Invoke(() => TxtScanInfo.Text = msg);
-            }, _scanCts.Token);
+                var cidr = cidrs[i];
+                var idx = i;
+                var part = await LanScan.ScanAsync(cidr, cfg, deep, msg =>
+                {
+                    var head = cidrs.Count > 1 ? $"[{idx + 1}/{cidrs.Count}] {cidr}　" : "";
+                    Dispatcher.Invoke(() => TxtScanInfo.Text = head + msg);
+                }, _scanCts.Token);
+
+                foreach (var d in part)
+                {
+                    var key = !string.IsNullOrWhiteSpace(d.Mac) && d.Mac != "—" ? d.Mac : d.Ip;
+                    if (string.IsNullOrWhiteSpace(key) || !seen.Add(key)) continue;
+                    merged.Add(d);
+                }
+                AppPaths.Log($"[设备] 扫描 {cidr} 完成，{part.Count} 台，在线 {part.Count(x => x.State == "在线")}");
+            }
 
             if (cfg.IsConfigured) await LoadPinsAsync(cfg);   // 先拿固定表（约 0.5~1 秒），再填列
-            _devices = list;
+            _devices = merged;
+            ApplyDeviceIcons(merged);
             ApplyPinsToDevices();
-            DgDevices.ItemsSource = list;
+            DgDevices.ItemsSource = merged;
             UpdateDevEmpty();
 
-            var online = list.Count(x => x.State == "在线");
-            TxtScanInfo.Text = $"√ 共 {list.Count} 台，{online} 台在线" +
+            var online = merged.Count(x => x.State == "在线");
+            TxtScanInfo.Text = $"√ 共 {merged.Count} 台，{online} 台在线" +
+                               (cidrs.Count > 1 ? $"（{cidrs.Count} 个网段）" : "") +
                                (deep ? "（深度扫描）" : "（快速，轻量发包）") +
                                (cfg.IsConfigured ? " + 软路由邻居表" : "（软路由未连接，只看本机 ARP）");
-            if (list.Count == 0 && cidrMismatch)
+            if (merged.Count == 0 && mismatch)
                 TxtScanInfo.Text += $"　← 本机在 {string.Join("、", locals)}，网段是不是填错了";
             await RefreshDevStateAsync();
-            TxtFoot.Text = $"√ 扫描完成：{list.Count} 台设备";
-            Toast($"扫描完成：{list.Count} 台设备（{online} 在线）");
-            AppPaths.Log($"[设备] 扫描 {cidr} 完成，{list.Count} 台，在线 {online}");
+            AugmentCidrsWithDevices();
+            TxtFoot.Text = $"√ 扫描完成：{merged.Count} 台设备";
+            Toast($"扫描完成：{merged.Count} 台设备（{online} 在线）");
+            AppPaths.Log($"[设备] 扫描汇总 {string.Join(",", cidrs)} → {merged.Count} 台，在线 {online}");
         }
         catch (OperationCanceledException)
         {
@@ -1567,6 +1905,127 @@ public partial class MainWindow : Window
         if (ok) await RefreshDevStateAsync();
     }
 
+
+    // ---------------- 定时备份（每天一次，写 /etc/cron.d/grayrouter-panel） ----------------
+    private async Task RefreshCronStateAsync()
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { TxtCronState.Text = "软路由未连接"; return; }
+        var (ok, msg) = await RouterCtl.RunAsync(cfg, "cron-get");
+        if (!ok) { TxtCronState.Text = "读取失败"; return; }
+        var line = msg.Split('\n').FirstOrDefault(x => x.StartsWith("BACKUP=")) ?? "";
+        var v = line.Replace("BACKUP=", "").Trim();
+        if (string.IsNullOrEmpty(v) || v == "off") TxtCronState.Text = "当前：未开启";
+        else { TxtCronTime.Text = v; TxtCronState.Text = $"当前：每天 {v}"; }
+    }
+
+    private async void OnCronSave(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { Toast("软路由没连上，先到「连接」页配置", false); return; }
+        var time = TxtCronTime.Text.Trim();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(time, @"^([01]\d|2[0-3]):[0-5]\d$"))
+        { Toast("时间要 24 小时制 HH:MM，例如 03:30", false); return; }
+        var (ok, msg) = await RouterCtl.RunAsync(cfg, $"cron-set {time}");
+        Toast(ok ? $"已设为每天 {time} 自动备份" : "保存失败：" + msg, ok);
+        TxtCronState.Text = ok ? $"当前：每天 {time}" : "保存失败";
+        AppPaths.Log($"[备份] 定时 cron-set {time} -> {(ok ? "ok" : msg)}");
+    }
+
+    private async void OnCronOff(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { Toast("软路由没连上", false); return; }
+        var (ok, msg) = await RouterCtl.RunAsync(cfg, "cron-off");
+        Toast(ok ? "已关闭定时备份" : "取消失败：" + msg, ok);
+        TxtCronState.Text = ok ? "当前：未开启" : "取消失败";
+        AppPaths.Log($"[备份] 定时 cron-off -> {(ok ? "ok" : msg)}");
+    }
+
+    // ---------------- 最后在线时间（对标 UniFi「Last Seen」） ----------------
+    private static readonly Dictionary<string, DateTime> _lastSeen = new(StringComparer.OrdinalIgnoreCase);
+    private static bool _lastSeenLoaded;
+    private static DateTime _lastSeenSavedAt = DateTime.MinValue;
+    private static string LastSeenFile => System.IO.Path.Combine(AppPaths.DataDir, "devlast.json");
+
+    private static void EnsureLastSeen()
+    {
+        if (_lastSeenLoaded) return;
+        _lastSeenLoaded = true;
+        try
+        {
+            if (!System.IO.File.Exists(LastSeenFile)) return;
+            var d = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, DateTime>>(System.IO.File.ReadAllText(LastSeenFile));
+            if (d != null) foreach (var kv in d) _lastSeen[kv.Key] = kv.Value;
+        }
+        catch { }
+    }
+
+    private static void SaveLastSeen(bool force)
+    {
+        if (!force && (DateTime.Now - _lastSeenSavedAt).TotalSeconds < 60) return;
+        _lastSeenSavedAt = DateTime.Now;
+        try { System.IO.File.WriteAllText(LastSeenFile, System.Text.Json.JsonSerializer.Serialize(_lastSeen)); } catch { }
+    }
+
+    /// <summary>在线时记录时间；离线时给出「最后在线 X 分钟前」。</summary>
+    private static string SeenNote(string mac, bool online)
+    {
+        if (string.IsNullOrEmpty(mac)) return "";
+        EnsureLastSeen();
+        if (online)
+        {
+            _lastSeen[mac] = DateTime.Now;
+            SaveLastSeen(false);
+            return "";
+        }
+        if (!_lastSeen.TryGetValue(mac, out var t)) return "";
+        var s = DateTime.Now - t;
+        if (s.TotalMinutes < 1) return "最后在线：刚刚";
+        if (s.TotalHours < 1) return $"最后在线：{(int)s.TotalMinutes} 分钟前";
+        if (s.TotalDays < 1) return $"最后在线：{(int)s.TotalHours} 小时前";
+        return $"最后在线：{(int)s.TotalDays} 天前";
+    }
+
+    /// <summary>DHCP 租约窗口（数据来自 minipc 的 dnsmasq 租约文件，经 ctl 以 root 读取）。</summary>
+    private void OnLeases(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { Toast("软路由没连上，先到「连接」页配置", false); return; }
+        new LeasesWindow(async () =>
+        {
+            var (ok, msg) = await RouterCtl.RunAsync(cfg, "dhcp-leases");
+            return (ok, msg);
+        })
+        { Owner = this }.ShowDialog();
+    }
+
+    /// <summary>双击设备行改名（存 devnames.json；清空则恢复自动识别名）。</summary>
+    private void OnDevRename(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (DgDevices.SelectedItem is not LanDevice dv) return;
+        var dlg = new TextPromptDialog("设备改名",
+            $"给 {dv.Ip} 起个名字",
+            dv.Name,
+            "留空 = 恢复自动识别（DHCP 主机名 / PTR 反查）") { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+
+        var key = (dv.Mac ?? "").Trim().ToUpperInvariant();
+        if (key.Length > 0)
+        {
+            if (string.IsNullOrWhiteSpace(dlg.Value)) _devNames.Remove(key);
+            else _devNames[key] = dlg.Value;
+            SaveDevNames();
+        }
+
+        dv.Name = string.IsNullOrWhiteSpace(dlg.Value) ? (dv.Mac ?? "") : dlg.Value;
+        DgDevices.ItemsSource = null;
+        DgDevices.ItemsSource = _devices;
+        Toast("已改名：" + dv.Name);
+        try { File.AppendAllText(System.IO.Path.Combine(AppPaths.DataDir, "app.log"),
+            $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}  [设备] 改名 {dv.Ip} → {dv.Name}\n"); } catch { }
+    }
+
     private async void OnDevUnblockAll(object sender, RoutedEventArgs e)
     {
         var cfg = RemoteConfig.Load();
@@ -1600,7 +2059,7 @@ public partial class MainWindow : Window
 
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            using var doc = System.Text.Json.JsonDocument.Parse(ExtractJson(detail));
             var map = new Dictionary<string, (bool Blocked, long Up, long Down, string Name, string Ip, string Kind, string Iface, bool Online)>(StringComparer.OrdinalIgnoreCase);
             foreach (var el in doc.RootElement.GetProperty("devices").EnumerateArray())
             {
@@ -1623,7 +2082,11 @@ public partial class MainWindow : Window
                 if (string.IsNullOrWhiteSpace(d.Conn) || d.Conn == "同网段")
                     d.Conn = v.Kind == "wired" ? "有线 · " + (v.Iface.Length > 0 ? v.Iface : "以太网")
                             : v.Kind == "wifi" ? "无线 · " + (v.Iface.Length > 0 ? v.Iface : "WiFi") : d.Conn;
-                if (v.Online) d.State = "在线";
+                d.State = v.Online ? "在线" : "不在线";
+                d.LastNote = SeenNote(mac2, v.Online);
+                d.Name = DeviceType.DisplayName(d.Name, d.Ip, d.Mac);
+                d.IconPath = DeviceType.IconFor(d.Mac, d.Name, d.Conn, d.Ip);
+                d.TypeLabel = DeviceType.Label(d.Mac, d.Name, d.Conn, d.Ip);
 
                 // 实时速率：和上一次采样（≥0.8 秒）的计数差 / 秒
                 if (_devRatePrev.TryGetValue(mac2, out var pv))
@@ -1656,6 +2119,9 @@ public partial class MainWindow : Window
                     Conn = v.Kind == "wired" ? "有线 · " + (v.Iface.Length > 0 ? v.Iface : "以太网")
                          : v.Kind == "wifi" ? "无线 · " + (v.Iface.Length > 0 ? v.Iface : "WiFi") : "软路由",
                     State = v.Online ? "在线" : "不在线",
+                    LastNote = SeenNote(kv.Key, v.Online),
+                    IconPath = DeviceType.IconFor(kv.Key, v.Name, v.Kind == "wired" ? "有线" : "无线", v.Ip),
+                    TypeLabel = DeviceType.Label(kv.Key, v.Name, v.Kind == "wired" ? "有线" : "无线", v.Ip),
                     Source = "软路由",
                     Blocked = v.Blocked,
                     Traffic = FmtShort(v.Up) + " / " + FmtShort(v.Down),
@@ -1684,6 +2150,7 @@ public partial class MainWindow : Window
             {
                 DeviceEvents.Record(dv.Mac, string.IsNullOrWhiteSpace(dv.Name) ? dv.Ip : dv.Name, online);
                 _eventDirty = true;
+                if (online && _cfg.NotifyDeviceOnline) NotifyDeviceCameOnline(dv);
             }
             _onlinePrev[dv.Mac] = online;
         }
@@ -1694,6 +2161,62 @@ public partial class MainWindow : Window
         }
 
         ApplyPinsToDevices();
+    }
+
+    /// <summary>设备上线提醒（对标 UniFi 客户端上线通知）</summary>
+    private void NotifyDeviceCameOnline(LanDevice dv)
+    {
+        var key = dv.Mac;
+        if (_onlineNotifyAt.TryGetValue(key, out var t) && (DateTime.Now - t).TotalMinutes < 5) return;
+        _onlineNotifyAt[key] = DateTime.Now;
+        var name = string.IsNullOrWhiteSpace(dv.Name) ? dv.Ip : dv.Name;
+        _tray?.Balloon("设备已上线", $"{name} · {dv.Ip}");
+        AppPaths.Log($"[通知] 设备上线 {name} {dv.Ip}");
+    }
+
+    /// <summary>每设备下行限速（远端 HTB 按目的 IP）</summary>
+    private async void OnDevLimit(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not LanDevice dv) return;
+        if (string.IsNullOrWhiteSpace(dv.Ip) || dv.Ip == "—") { Toast("这台设备没有 IP，先扫描一次"); return; }
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { Toast("软路由没连上"); return; }
+
+        var name = string.IsNullOrWhiteSpace(dv.Name) ? dv.Ip : dv.Name;
+
+        // 先读远端当前规则，回显「已限速多少」，避免每次打开都显示不限速
+        int current = 0;
+        var (lok, lmsg) = await RouterCtl.RunAsync(cfg, "limit-list");
+        if (lok)
+            foreach (var line in lmsg.Split('\n'))
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && parts[0] == dv.Ip && int.TryParse(parts[1], out var kb)) { current = kb; break; }
+            }
+
+        var dlg = new LimitDialog(name, dv.Ip, dv.Mac, current) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+
+        var cmd = dlg.Kbit > 0 ? $"limit-set {dv.Ip} {dlg.Kbit}" : $"limit-del {dv.Ip}";
+        var (ok, detail) = await RouterCtl.RunAsync(cfg, cmd);
+        Toast(ok
+            ? (dlg.Kbit > 0 ? $"已限速 {dlg.Kbit / 1000.0:F1} Mbit · {dv.Ip}" : $"已取消限速 · {dv.Ip}")
+            : "限速失败：" + detail, ok);
+        AppPaths.Log($"[限速] {cmd} -> {(ok ? "ok" : detail)}");
+    }
+
+    /// <summary>Wake-on-LAN：给选中的设备发魔术包</summary>
+    private void OnDevWol(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not LanDevice dv) return;
+        if (string.IsNullOrWhiteSpace(dv.Mac) || dv.Mac == "—")
+        {
+            Toast("这台设备没有 MAC，无法唤醒");
+            return;
+        }
+        var (ok, msg) = Wol.Send(dv.Mac, dv.Ip);
+        Toast(ok ? "已发送唤醒包 · " + dv.Ip : msg, ok);
+        AppPaths.Log($"[WoL] {dv.Ip} {dv.Mac} -> {msg}");
     }
 
     /// <summary>进设备页先采两次（间隔 1.2 秒）：第一次建基线，第二次出速率</summary>
@@ -1845,10 +2368,28 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private string CurrentPage =>
         (NavTabs.SelectedItem as TabItem)?.GetValue(System.Windows.Automation.AutomationProperties.NameProperty) as string ?? "";
 
+    /// <summary>按页名切换导航（状态页里点数字跳转用）</summary>
+    private void GoPage(string page)
+    {
+        if (string.IsNullOrWhiteSpace(page)) return;
+        foreach (var item in NavTabs.Items)
+            if (item is TabItem ti &&
+                (System.Windows.Automation.AutomationProperties.GetName(ti) ?? "") == page)
+            {
+                NavTabs.SelectedItem = ti;
+                AppPaths.Log($"[状态] 点数字跳转 → {page}");
+                return;
+            }
+    }
+
 
     private async void OnNavChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.Source, NavTabs)) return;   // 子页签（诊断/无线）也会冒泡，必须只认导航栏
+        if (CurrentPage == "其他") _ = RefreshCronStateAsync();
+        if (CurrentPage == "诊断") EnsureSitesEmptyHint();
+        if (CurrentPage == "系统") { _ = RefreshSysAsync(); StartSysStream(); }
+        else StopSysStream();
         var page = CurrentPage;
 
         // 状态页：切进来顺手查一次远端网口（一次 ssh，不常驻）
@@ -2809,14 +3350,26 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
         SetModeButtons(false);
         TxtModeHint.Text = "正在执行…";
+        var undoMode = cmd == "mode-router" ? "hotspot" : "router";
         try
         {
+            // 先布防：120 秒内不确认，远端自动回滚
+            var (gok, gdetail) = await RouterCtl.RunAsync(cfg, $"guard-arm 120 {undoMode}", p => TxtModeHint.Text = p);
+            AppPaths.Log("[守卫] 布防 " + (gok ? "OK" : "FAIL：" + gdetail));
+
             AppPaths.Log("[遥控] 发送 " + cmd);
             var (ok, detail) = await RouterCtl.RunAsync(cfg, cmd, p => TxtModeHint.Text = p);
             TxtModeHint.Text = (ok ? "√ " : "× ") + detail;
             AppPaths.Log("[遥控] " + cmd + " → " + (ok ? "OK" : "FAIL") + "：" + detail);
             if (!ok)
                 MessageBox.Show(detail, title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            else if (gok)
+            {
+                var w = new GuardWindow(120, undoMode, "模式切换已下发。",
+                    async () => { var (_, d) = await RouterCtl.RunAsync(cfg, "guard-ok", _ => { }); AppPaths.Log("[守卫] 保留：" + d); },
+                    async () => { var (_, d) = await RouterCtl.RunAsync(cfg, "mode-" + undoMode, _ => { }); AppPaths.Log("[守卫] 立即还原：" + d); TxtModeHint.Text = d; });
+                w.Show();
+            }
             await Task.Delay(1500);
             await RefreshAsync();
         }
@@ -2843,7 +3396,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         try
         {
             var win = new DiagnoseWindow(RemoteConfig.Load()) { Owner = this };
-            win.ShowDialog();
+            win.Show();   // 非模态：主窗口不假死
         }
         catch (Exception ex)
         {
@@ -2881,7 +3434,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private void SetNicHint(string text, bool ok)
     {
         TxtNicHint.Text = text;
-        TxtNicHint.Foreground = new SolidColorBrush(ok ? Color.FromRgb(0x2F, 0x8F, 0x5B) : Color.FromRgb(0xFF, 0x4D, 0x4F));
+        TxtNicHint.Foreground = new SolidColorBrush(ok ? Color.FromRgb(0x2F, 0x8F, 0x5B) : Color.FromRgb(0xB9, 0x1C, 0x1C));
     }
 
 
@@ -2931,7 +3484,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             var r = await Task.Run(() => MemOptimize.Run(m => Dispatcher.Invoke(() => TxtMemResult.Text = m)));
             if (r.Error.Length > 0 && r.Steps == 0)
             {
-                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F));
+                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
                 TxtMemResult.Text = "优化失败：" + r.Error;
                 AppPaths.Log("[内存] 失败：" + r.Error);
             }
@@ -2939,7 +3492,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             {
                 var saved = MemOptimize.AvailPhys() - r.AvailBefore;
                 string delta = r.FreedMB > 0 ? $"释放约 {r.FreedMB:F0} MB" : "内存本来就很充裕，变化不大";
-                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94));
+                TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57));
                 TxtMemResult.Text = $"完成：可用 {r.BeforeGB:F1} GB → {r.AfterGB:F1} GB（{delta}）";
                 AppPaths.Log($"[内存] 完成：可用 {r.BeforeGB:F1} GB → {r.AfterGB:F1} GB，释放 {r.FreedMB:F0} MB，命令成功 {r.Steps}/3");
                 RefreshOtherRuntime();
@@ -2948,7 +3501,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         }
         catch (Exception ex)
         {
-            TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F));
+            TxtMemResult.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
             TxtMemResult.Text = "出错了：" + ex.Message;
             AppPaths.Log("[内存] 异常：" + ex.Message);
         }
@@ -3261,7 +3814,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             if (cfg.IsConfigured)
             {
                 var cmd = "ip -o -4 route show default 2>/dev/null | awk '{print \"WAN=\" $5; exit}'; "
-                        + "ip -o link show up 2>/dev/null | sed -n 's/^[0-9]*: \\([^:@]*\\).*/IF=\\1/p' | grep -vE '^(IF=(lo|docker|veth|br-|virbr|tun|tap|wg))'";
+                        + "ip -o link show up 2>/dev/null | sed -n 's/^[0-9]*: \\([^:@]*\\).*/IF=\\1/p' | grep -vE '^(IF=(lo|docker|veth|br-|virbr|tun|tap|wg|ifb|vxlan))'";
                 var args = Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + cmd + "\"";
                 var run = await Remote.RunAsync("ssh.exe", args, 8);
                 foreach (var raw in (run.Out ?? "").Split('\n'))
@@ -3428,7 +3981,8 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
             var real = names.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
                             .Where(n => !(n.StartsWith("docker") || n.StartsWith("veth") || n.StartsWith("br-")
-                                       || n.StartsWith("virbr") || n.StartsWith("tun") || n.StartsWith("tap") || n == "lo"))
+                                       || n.StartsWith("virbr") || n.StartsWith("tun") || n.StartsWith("tap")
+                                       || n.StartsWith("ifb") || n.StartsWith("vxlan") || n == "lo"))
                             .OrderBy(n => n, StringComparer.Ordinal).ToArray();
             var set = string.Join(",", real);
             _lastNicProbe = DateTime.Now;
@@ -3572,7 +4126,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(detail.Trim());
+            using var doc = System.Text.Json.JsonDocument.Parse(ExtractJson(detail));
             var rootEl = doc.RootElement;
             if (!rootEl.TryGetProperty("enabled", out var en) || en.GetInt32() != 1)
             {
@@ -3677,12 +4231,12 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             if (enabled == 1 && upOn && downOn)
             {
                 TxtSqmState.Text = $"已开启 · 下 {down / 1000} / 上 {up / 1000} Mbit · {wan}";
-                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94));
+                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57));
             }
             else if (enabled == 1)
             {
                 TxtSqmState.Text = $"配置已开但没挂上（上行 {(upOn ? "✓" : "×")} / 下行 {(downOn ? "✓" : "×")}）";
-                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F));
+                TxtSqmState.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
             }
             else
             {
@@ -3814,9 +4368,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 FontSize = 15,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = a.IsDisabled
-                    ? new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F))
+                    ? new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C))
                     : a.Status.Equals("Up", StringComparison.OrdinalIgnoreCase)
-                        ? new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94))
+                        ? new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57))
                         : new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8))
             });
             info.Children.Add(new TextBlock
@@ -3840,7 +4394,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 {
                     Text = label,
                     FontSize = 11.5,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x94, 0xA6)),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80)),
                     VerticalAlignment = VerticalAlignment.Center
                 });
                 sp.Children.Add(new TextBlock
@@ -3953,7 +4507,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         return new Button
         {
             Content = IconText(isEnable ? "shield_check_w" : "shield_x", text,
-                isEnable ? Colors.White : Color.FromRgb(0xFF, 0x4D, 0x4F)),
+                isEnable ? Colors.White : Color.FromRgb(0xB9, 0x1C, 0x1C)),
             Width = 86,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
@@ -3965,7 +4519,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 : new SolidColorBrush(Color.FromRgb(0xFB, 0xEF, 0xEF)),
             Foreground = isEnable
                 ? Brushes.White
-                : new SolidColorBrush(Color.FromRgb(0xFF, 0x4D, 0x4F)),
+                : new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C)),
             BorderThickness = new Thickness(isEnable ? 0 : 1),
             BorderBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xB4, 0xB4))
         };
@@ -4460,9 +5014,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             // 判定颜色：能连=绿，能连但非 2xx/3xx=黄，不通=红
             Color color;
             string mark;
-            if (!r.Ok) { color = Color.FromRgb(0xFF, 0x4D, 0x4F); mark = "×"; }
-            else if (r.Error.Length > 0) { color = Color.FromRgb(0xFF, 0x4D, 0x4F); mark = "×"; }
-            else if (r.Status >= 200 && r.Status < 400) { color = Color.FromRgb(0x00, 0xB8, 0x94); mark = "√"; }
+            if (!r.Ok) { color = Color.FromRgb(0xB9, 0x1C, 0x1C); mark = "×"; }
+            else if (r.Error.Length > 0) { color = Color.FromRgb(0xB9, 0x1C, 0x1C); mark = "×"; }
+            else if (r.Status >= 200 && r.Status < 400) { color = Color.FromRgb(0x04, 0x78, 0x57); mark = "√"; }
             else { color = Color.FromRgb(0xC8, 0x86, 0x00); mark = "!"; }
 
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
@@ -4492,6 +5046,20 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             });
             PanelSiteResults.Children.Add(row);
         }
+        EnsureSitesEmptyHint();
+    }
+
+    /// <summary>诊断页没有任何检测结果时给一句引导（空状态）</summary>
+    private void EnsureSitesEmptyHint()
+    {
+        if (PanelSiteResults.Children.Count > 0) return;
+        PanelSiteResults.Children.Add(new TextBlock
+        {
+            Text = "还没有检测结果 · 点上方「检测」开始，这里会逐条显示每个站点的连通性和耗时",
+            FontSize = 12.5,
+            Margin = new Thickness(6, 28, 0, 0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80)),
+        });
     }
 
     private void SaveSites(string text)
@@ -4620,8 +5188,8 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 ? Color.FromRgb(0xE6, 0xF7, 0xEC)
                 : Color.FromRgb(0xFD, 0xEC, 0xEC));
             TxtGameGrade.Foreground = new SolidColorBrush(good
-                ? Color.FromRgb(0x00, 0xB8, 0x94)
-                : Color.FromRgb(0xFF, 0x4D, 0x4F));
+                ? Color.FromRgb(0x04, 0x78, 0x57)
+                : Color.FromRgb(0xB9, 0x1C, 0x1C));
 
             TxtFoot.Text = stats.Avg < 0
                 ? $"× {host} 全部丢包"
@@ -4763,12 +5331,25 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             Text = row.Value,
             FontSize = 12.5,
-            Foreground = new SolidColorBrush(row.Sub ? Color.FromRgb(0x8A, 0x94, 0xA3) : Color.FromRgb(0x1F, 0x2A, 0x3D)),
+            Foreground = new SolidColorBrush(row.Sub ? Color.FromRgb(0x6B, 0x72, 0x80) : Color.FromRgb(0x1E, 0x2A, 0x3B)),
             TextWrapping = row.Sub ? TextWrapping.NoWrap : TextWrapping.Wrap,
             TextTrimming = row.Sub ? TextTrimming.CharacterEllipsis : TextTrimming.None,
             LineHeight = 19,
             ToolTip = row.Value,
         };
+
+        // 可点数字（对标爱快「点数字跳转」）：主色 + 手型 + 悬停下划线
+        if (!string.IsNullOrEmpty(row.Click))
+        {
+            var target = row.Click;
+            val.Foreground = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF));
+            val.Cursor = System.Windows.Input.Cursors.Hand;
+            val.ToolTip = $"点一下跳到「{target}」";
+            val.TextDecorations = null;
+            val.MouseEnter += (_, _) => val.TextDecorations = TextDecorations.Underline;
+            val.MouseLeave += (_, _) => val.TextDecorations = null;
+            val.MouseLeftButtonUp += (_, e) => { GoPage(target); e.Handled = true; };
+        }
         Grid.SetColumn(lbl, 1);
         Grid.SetColumn(val, 2);
         g.Children.Add(lbl);
@@ -4860,6 +5441,11 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     /// <summary>    // 测速结果不再自动写盘，等用户手动导出
     private SpeedResult? _lastSpeed;
     private string _lastUp = "-", _lastPing = "-", _lastJitter = "-";
+
+    private void OnSpeedHistory(object sender, RoutedEventArgs e)
+    {
+        new SpeedHistoryWindow { Owner = this }.ShowDialog();
+    }
 
     private void OnExportSpeed(object sender, RoutedEventArgs e)
     {
@@ -5064,6 +5650,11 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 ? "测速已停止"
                 : $"√ 测速完成：下行 {result.AverageMbps:F1} Mbps / 上行 {TxtUp.Text} Mbps / 延迟 {TxtPing.Text} ms（{source.Name}）";
             AppPaths.Log($"测速完成 down={result.AverageMbps:F1} up={TxtUp.Text} ping={TxtPing.Text} jitter={TxtJitter.Text} bytes={result.Bytes} cancelled={result.Cancelled}");
+            if (!result.Cancelled && result.AverageMbps > 0)
+            {
+                double.TryParse(TxtUp.Text, out var upNow);
+                SpeedHistory.Append(source.Name, result.AverageMbps, result.PeakMbps, upNow);
+            }
             // 不自动落盘：只记在内存里，等用户点「导出本次结果」才写文件
             _lastSpeed = result;
             _lastUp = TxtUp.Text; _lastPing = TxtPing.Text; _lastJitter = TxtJitter.Text;
@@ -5173,7 +5764,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
         // 图例（安兔兔那种两根线：下载蓝、上传绿）
         var lgBrushDown = new SolidColorBrush(Color.FromRgb(0x2D, 0x8C, 0xFF));
-        var lgBrushUp = new SolidColorBrush(Color.FromRgb(0x00, 0xB8, 0x94));
+        var lgBrushUp = new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57));
         AddLegend(left + 8, top + ph - 24, lgBrushDown, "下载");
         AddLegend(left + 78, top + ph - 24, lgBrushUp, "上传");
 
