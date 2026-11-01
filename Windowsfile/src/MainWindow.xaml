@@ -66,7 +66,7 @@
                                 x:Name="ImgDotLink"
                                 Width="12"
                                 Height="12"
-                                Margin="0,0,7,0"
+                                Margin="0,0,6,0"
                                 VerticalAlignment="Center"
                                 Source="/icons/dot_wait.png" />
                             <TextBlock
@@ -94,7 +94,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_layout-dashboard_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="状态" />
@@ -110,7 +110,7 @@
                                 <Grid Margin="0,0,0,12" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_activity_24_blue.png" />
                                             <TextBlock Style="{StaticResource PageTitle}" Text="运行状态" />
                                         </StackPanel>
@@ -118,7 +118,7 @@
                                             <StackPanel.Children>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnWatchInstall"
-                                                    Height="32"
+                                                    Height="30"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="安装看门狗"
                                                     Click="OnWatchInstall"
@@ -139,7 +139,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnWatchRestart"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="重启 AP"
@@ -161,7 +161,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnWatchAuto"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="自动执行开关"
@@ -175,7 +175,7 @@
                                                                 x:Name="ImgWatchSwitch"
                                                                 Width="42"
                                                                 Height="22"
-                                                                Margin="0,0,7,0"
+                                                                Margin="0,0,6,0"
                                                                 VerticalAlignment="Center"
                                                                 Source="/icons/ui_power_24_dark.png" />
                                                             <TextBlock
@@ -187,7 +187,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnDiagnose"
-                                                    Height="32"
+                                                    Height="30"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="一键网络诊断"
                                                     Click="OnDiagnose"
@@ -209,7 +209,7 @@
                                                 <Button Style="{StaticResource BtnDanger}"
                                                     x:Name="BtnRescue"
                                                     Width="104"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="恢复上网"
                                                     Click="OnRescue"
@@ -230,7 +230,7 @@
                                                 <Button Style="{StaticResource BtnPrimary}"
                                                     x:Name="BtnRefresh"
                                                     Width="92"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="刷新"
                                                     Click="OnRefresh"
@@ -273,7 +273,7 @@
                                                                 x:Name="ImgDotLocal"
                                                                 Width="12"
                                                                 Height="12"
-                                                                Margin="0,0,7,0"
+                                                                Margin="0,0,6,0"
                                                                 VerticalAlignment="Center"
                                                                 Source="/icons/dot_wait.png" />
                                                             <TextBlock
@@ -290,7 +290,7 @@
                                                                 x:Name="ImgDotCampus"
                                                                 Width="12"
                                                                 Height="12"
-                                                                Margin="0,0,7,0"
+                                                                Margin="0,0,6,0"
                                                                 VerticalAlignment="Center"
                                                                 Source="/icons/dot_wait.png" />
                                                             <TextBlock
@@ -320,7 +320,7 @@
                                                                                     Text="清工作集 · 刷修改页 · 清待机列表"
                                                                                     TextTrimming="CharacterEllipsis" />
                                                                                 <Button Style="{StaticResource BtnSecondary}" x:Name="BtnMemOptimize"
-                                                                                    Grid.Column="2" Height="32" Padding="16,0" Click="OnMemOptimize">
+                                                                                    Grid.Column="2" Height="30" Padding="16,0" Click="OnMemOptimize">
                                                                                     优化内存
                                                                                     <Button.FontSize>12.5</Button.FontSize>
                                                                                     <Button.Background>#FF2D8CFF</Button.Background>
@@ -355,7 +355,7 @@
                                                                         x:Name="ImgDotMini"
                                                                         Width="12"
                                                                         Height="12"
-                                                                        Margin="0,0,7,0"
+                                                                        Margin="0,0,6,0"
                                                                         VerticalAlignment="Center"
                                                                         Source="/icons/dot_wait.png" />
                                                                     <TextBlock
@@ -391,7 +391,7 @@
                                                                         <WrapPanel>
                                                                             <Button Style="{StaticResource BtnSecondary}"
                                                                                 x:Name="BtnSwitchRouter"
-                                                                                Height="32"
+                                                                                Height="30"
                                                                                 Padding="12,0"
                                                                                 AutomationProperties.Name="切到软路由"
                                                                                 Click="OnSwitchRouter"
@@ -410,7 +410,7 @@
                                                                             </Button>
                                                                             <Button Style="{StaticResource BtnDanger}"
                                                                                 x:Name="BtnSwitchHotspot"
-                                                                                Height="32"
+                                                                                Height="30"
                                                                                 Margin="8,0,0,0"
                                                                                 Padding="12,0"
                                                                                 AutomationProperties.Name="回滚到热点"
@@ -430,7 +430,7 @@
                                                                             </Button>
                                                                             <Button Style="{StaticResource BtnSecondary}"
                                                                                 x:Name="BtnHarden"
-                                                                                Height="32"
+                                                                                Height="30"
                                                                                 Margin="8,0,0,0"
                                                                                 Padding="12,0"
                                                                                 AutomationProperties.Name="加固伪装"
@@ -488,7 +488,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_school_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="校园网" />
@@ -509,7 +509,7 @@
                                     <DockPanel.Children>
                                         <Button Style="{StaticResource BtnSecondary}"
                                             x:Name="BtnCampusStatus"
-                                            Height="32"
+                                            Height="30"
                                             Padding="14,0"
                                             VerticalAlignment="Center"
                                             AutomationProperties.Name="查校园网状态"
@@ -529,7 +529,7 @@
                                             </StackPanel>
                                         </Button>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_school_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
@@ -642,7 +642,7 @@
                                                         <Button Style="{StaticResource BtnPrimary}"
                                                             x:Name="BtnCampusLogin"
                                                             Width="100"
-                                                            Height="32"
+                                                            Height="30"
                                                             AutomationProperties.Name="校园网登录"
                                                             Click="OnCampusLogin"
                                                             Cursor="Hand">
@@ -664,7 +664,7 @@
                                                         <Button Style="{StaticResource BtnSecondary}"
                                                             x:Name="BtnCampusLogout"
                                                             Width="100"
-                                                            Height="32"
+                                                            Height="30"
                                                             Margin="8,0,0,0"
                                                             AutomationProperties.Name="校园网注销"
                                                             Click="OnCampusLogout"
@@ -725,7 +725,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_monitor-smartphone_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="设备" />
@@ -742,7 +742,7 @@
                                 <Grid Margin="0,0,0,8" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_monitor-smartphone_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
@@ -753,7 +753,7 @@
                                                 <Image
                                                     Width="16"
                                                     Height="16"
-                                                    Margin="0,0,4,0"
+                                                    Margin="0,0,6,0"
                                                     VerticalAlignment="Center"
                                                     Source="/icons/ui_search_24_dark.png" />
                                                 <CheckBox
@@ -783,7 +783,7 @@
                                                     ToolTip="支持多个网段，用逗号隔开：192.168.60.0/24,192.168.50.0/24｜扫描后会把发现的网段自动补进来" />
                                                 <Button Style="{StaticResource BtnPrimary}"
                                                     x:Name="BtnScan"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="10,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="扫描设备"
@@ -806,7 +806,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnScanStop"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="停止扫描"
@@ -827,7 +827,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnUnblockAll"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="全部解除"
@@ -847,7 +847,7 @@
                                                 </Button>
                                         <Button Style="{StaticResource BtnSecondary}"
                                             x:Name="BtnClearPins"
-                                            Height="26"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             Padding="10,0"
                                             Click="OnDevPinsClear"
@@ -865,7 +865,7 @@
                                         </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnLeases"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Width="32"
                                                     Padding="0"
@@ -878,7 +878,7 @@
                                                     </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnExportDev"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="导出设备"
@@ -986,27 +986,27 @@
                                                             <StackPanel Orientation="Horizontal">
                                                                 <Button Style="{StaticResource BtnSecondary}"
                                                                     MinWidth="52"
-                                                                    Height="22"
+                                                                    Height="30"
                                                                     Padding="6,0"
                                                                     Margin="0,0,4,0"
                                                                     AutomationProperties.Name="设备限速"
                                                                     Click="OnDevLimit"
                                                                     Cursor="Hand"
                                                                     FontSize="12"
-                                                                    ToolTip="限制这台设备的下行带宽"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center" Source="/icons/ui_gauge_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="限速" /></StackPanel></Button>
+                                                                    ToolTip="限制这台设备的下行带宽"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_gauge_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="限速" /></StackPanel></Button>
                                                                 <Button Style="{StaticResource BtnSecondary}"
                                                                     MinWidth="56"
-                                                                    Height="22"
+                                                                    Height="30"
                                                                     Padding="6,0"
                                                                     Margin="0,0,4,0"
                                                                     AutomationProperties.Name="网络唤醒"
                                                                     Click="OnDevWol"
                                                                     Cursor="Hand"
                                                                     FontSize="12"
-                                                                    ToolTip="发魔术包唤醒这台设备（需网卡开启 Wake-on-LAN）"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center" Source="/icons/ui_power_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="唤醒" /></StackPanel></Button>
+                                                                    ToolTip="发魔术包唤醒这台设备（需网卡开启 Wake-on-LAN）"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_power_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="唤醒" /></StackPanel></Button>
                                                                 <Button Style="{StaticResource BtnSecondary}"
                                                                     MinWidth="48"
-                                                                    Height="22"
+                                                                    Height="30"
                                                                     Padding="6,0"
                                                                     AutomationProperties.Name="固定 IP"
                                                                     Click="OnDevPin"
@@ -1016,7 +1016,7 @@
                                                                     ToolTip="把这台设备的 IP 钉死（写静态租约）"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_pin_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="固定" /></StackPanel></Button>
                                                                 <Button Style="{StaticResource BtnSecondary}"
                                                                     MinWidth="48"
-                                                                    Height="22"
+                                                                    Height="30"
                                                                     Margin="4,0,0,0"
                                                                     Padding="6,0"
                                                                     AutomationProperties.Name="设备操作"
@@ -1053,7 +1053,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_chart-column_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="流量" />
@@ -1071,7 +1071,7 @@
                                 <Grid Margin="0,0,0,8" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_chart-column_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
@@ -1088,7 +1088,7 @@
                                                     Text="" />
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnTrafficRefresh"
-                                                    Height="32"
+                                                    Height="30"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="刷新流量"
                                                     Click="OnTrafficRefresh"
@@ -1107,7 +1107,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnTrafficExport"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="导出流量数据"
@@ -1126,7 +1126,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnTrafficClear"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="清空设备流量历史"
@@ -1336,7 +1336,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_wifi_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="无线" />
@@ -1361,7 +1361,7 @@
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_signal_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
@@ -1557,7 +1557,7 @@
                                                                         SelectionChanged="OnApSelChanged" />
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         x:Name="BtnApApply"
-                                                                        Height="32"
+                                                                        Height="30"
                                                                         Margin="18,0,0,0"
                                                                         Padding="18,0"
                                                                         Click="OnApApply"
@@ -1625,7 +1625,7 @@
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_wifi_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
@@ -1633,7 +1633,7 @@
                                         </StackPanel>
                                         <Button Style="{StaticResource BtnPrimary}"
                                             Width="80"
-                                            Height="32"
+                                            Height="30"
                                             Margin="16,0,0,0"
                                             Click="OnScanWifi"
                                             Cursor="Hand">
@@ -1654,7 +1654,7 @@
                                         </Button>
                                         <Button Style="{StaticResource BtnSecondary}"
                                             Width="96"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             Click="OnDisconnectWifi"
                                             Cursor="Hand">
@@ -1672,7 +1672,7 @@
                                         </Button>
                                         <Button Style="{StaticResource BtnSecondary}"
                                             Width="118"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             Click="OnOpenLocation"
                                             Cursor="Hand">
@@ -1713,7 +1713,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_network_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="网卡" />
@@ -1735,13 +1735,13 @@
                                     Margin="0,0,0,10"
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                        <WrapPanel>
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_route_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
                                             Text="线路与故障转移" />
-                                        </StackPanel>
+                                        </WrapPanel>
                                         <TextBlock
                                             x:Name="TxtWanFailInfo"
                                             Margin="14,0,0,0"
@@ -1811,14 +1811,14 @@
                                                     Text="故障转移策略" />
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnWanFailToggle"
-                                                    Height="26"
+                                                    Height="30"
                                                     Margin="12,0,0,0"
                                                     Padding="12,0"
                                                     Click="OnWanFailToggle"
                                                     ToolTip="开启后每 15 秒探测一次，当前出口连续失败达到次数就换下一条" />
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnRestoreSystem"
-                                                    Height="26"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="12,0"
                                                     Click="OnRestoreSystem"
@@ -1834,25 +1834,25 @@
                                             </StackPanel>
                                             <Expander Margin="0,10,0,0" Header="高级（静态兜底 / 网口角色 / USB 激活）">
                                                 <StackPanel Margin="0,8,0,0">
-                                                    <StackPanel Orientation="Horizontal">
+                                                    <WrapPanel>
                                                         <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="静态兜底 IP" />
                                                         <TextBox x:Name="TxtStaticIp" Width="130" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center" FontSize="12" />
                                                         <TextBlock VerticalAlignment="Center" Margin="10,0,4,0" FontSize="12" Foreground="{StaticResource TextT2}" Text="网关" />
                                                         <TextBox x:Name="TxtStaticGw" Width="130" Height="24" VerticalContentAlignment="Center" FontSize="12" />
-                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnStaticSave" Height="26" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave" Content="保存网段" ToolTip="DHCP 拿不到地址时的兜底网段，不会覆盖主线路由" />
-                                                    </StackPanel>
-                                                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnStaticSave" Height="30" Margin="10,0,0,0" Padding="12,0" Click="OnStaticSave" Content="保存网段" ToolTip="DHCP 拿不到地址时的兜底网段，不会覆盖主线路由" />
+                                                    </WrapPanel>
+                                                    <WrapPanel Margin="0,8,0,0">
                                                         <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="WAN 角色" ToolTip="脚本自动发现的依据，不是立即换出口" />
                                                         <ComboBox x:Name="CmbRoleWan" Width="200" Height="24" Margin="8,0,0,0" VerticalContentAlignment="Center" ToolTip="决定脚本把哪块网卡当出口（自动发现用）。临时换出口请点上面线路表里的「设为出口」" />
                                                         <TextBlock VerticalAlignment="Center" Margin="12,0,4,0" FontSize="12" Foreground="{StaticResource TextT2}" Text="LAN 角色" ToolTip="开热点的那块网卡" />
                                                         <ComboBox x:Name="CmbRoleLan" Width="200" Height="24" VerticalContentAlignment="Center" ToolTip="哪块网卡负责开热点" />
-                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnRoleSave" Height="26" Margin="10,0,0,0" Padding="12,0" Click="OnRoleSave" Content="保存为手动" />
-                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnRoleAuto" Height="26" Margin="6,0,0,0" Padding="12,0" Click="OnRoleAuto" Content="自动识别" ToolTip="恢复按网口自动识别出口与热点（取消手动钉）" />
-                                                    </StackPanel>
-                                                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
-                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnUsbNow" Height="26" Padding="12,0" Click="OnUsbNow" Content="立即激活 USB 网卡" ToolTip="立刻给所有 USB / 手机共享网口建连接并要地址" />
+                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnRoleSave" Height="30" Margin="10,0,0,0" Padding="12,0" Click="OnRoleSave" Content="保存为手动" />
+                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnRoleAuto" Height="30" Margin="6,0,0,0" Padding="12,0" Click="OnRoleAuto" Content="自动识别" ToolTip="恢复按网口自动识别出口与热点（取消手动钉）" />
+                                                    </WrapPanel>
+                                                    <WrapPanel Margin="0,8,0,0">
+                                                        <Button Style="{StaticResource BtnSecondary}" x:Name="BtnUsbNow" Height="30" Padding="12,0" Click="OnUsbNow" Content="立即激活 USB 网卡" ToolTip="立刻给所有 USB / 手机共享网口建连接并要地址" />
                                                         <TextBlock x:Name="TxtRoleInfo" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT3}" Text="" />
-                                                    </StackPanel>
+                                                    </WrapPanel>
                                                     <TextBlock x:Name="TxtLanUsb" Margin="0,6,0,0" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT3}" Text="" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Expander>
@@ -1891,17 +1891,17 @@
                                                 x:Name="SqmChart"
                                                 Height="84"
                                                 Margin="0,8,0,0" />
-                                            <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                                            <WrapPanel Margin="0,8,0,0">
                                                 <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="下行" />
                                                 <TextBox x:Name="TxtSqmDown" Width="76" Height="24" Margin="6,0,0,0" VerticalContentAlignment="Center" FontSize="12" Text="81" />
                                                 <TextBlock VerticalAlignment="Center" Margin="4,0,14,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="Mbit" />
                                                 <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="上行" />
                                                 <TextBox x:Name="TxtSqmUp" Width="76" Height="24" Margin="6,0,0,0" VerticalContentAlignment="Center" FontSize="12" Text="81" />
                                                 <TextBlock VerticalAlignment="Center" Margin="4,0,16,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="Mbit" />
-                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnSqmApply" Height="26" Padding="12,0" Click="OnSqmApply"  ToolTip="按上面的数值启用整形（立即生效，不掉线）"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_check_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="应用" /></StackPanel></Button>
-                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnSqmClear" Height="26" Margin="8,0,0,0" Padding="12,0" Click="OnSqmClear"  ToolTip="恢复系统默认排队，立即生效"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_x_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="关闭" /></StackPanel></Button>
-                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnSqmMeasure" Height="26" Margin="8,0,0,0" Padding="12,0" Click="OnSqmMeasure" Content="测一下带宽" ToolTip="跑 10 秒测速并自动填好上下行（约 100MB 流量）" />
-                                            </StackPanel>
+                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnSqmApply" Height="30" Padding="12,0" Click="OnSqmApply"  ToolTip="按上面的数值启用整形（立即生效，不掉线）"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_check_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="应用" /></StackPanel></Button>
+                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnSqmClear" Height="30" Margin="8,0,0,0" Padding="12,0" Click="OnSqmClear"  ToolTip="恢复系统默认排队，立即生效"><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_x_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="关闭" /></StackPanel></Button>
+                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnSqmMeasure" Height="30" Margin="8,0,0,0" Padding="12,0" Click="OnSqmMeasure" Content="测一下带宽" ToolTip="跑 10 秒测速并自动填好上下行（约 100MB 流量）" />
+                                            </WrapPanel>
                                         </StackPanel>
                                     </Border.Child>
                                 </Border>
@@ -1917,27 +1917,27 @@
                                     CornerRadius="10">
                                     <Border.Child>
                                         <StackPanel>
-                                            <StackPanel Margin="0,0,0,6" Orientation="Horizontal">
+                                            <WrapPanel Margin="0,0,0,6">
                                                 <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="多网卡路由" />
                                                 <TextBlock x:Name="TxtMultiRouteInfo" Margin="12,0,0,0" VerticalAlignment="Center"
                                                            FontSize="11.5" Foreground="{StaticResource TextT3}"
                                                            Text="外网走热点、内网走网线，一键切换" />
-                                                <Button Style="{StaticResource BtnSecondary}" Height="26" Margin="12,0,0,0" Padding="12,0"
+                                                <Button Style="{StaticResource BtnSecondary}" Height="30" Margin="12,0,0,0" Padding="12,0"
                                                         Click="OnRefreshRoutes" Cursor="Hand">
-                                                    <StackPanel Orientation="Horizontal">
+                                                    <WrapPanel>
                                                         <Image Width="14" Height="14" Margin="0,0,6,0" Source="/icons/ui_refresh-cw_24_dark.png" />
                                                         <TextBlock Text="刷新" />
-                                                    </StackPanel>
+                                                    </WrapPanel>
                                                 </Button>
-                                            </StackPanel>
+                                            </WrapPanel>
 
                                             <Grid Margin="0,0,0,4">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="170" />
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="150" />
-                                                    <ColumnDefinition Width="70" />
-                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="1.2*" MinWidth="110" />
+                                                    <ColumnDefinition Width="1*" MinWidth="100" />
+                                                    <ColumnDefinition Width="1*" MinWidth="100" />
+                                                    <ColumnDefinition Width="Auto" MinWidth="60" />
+                                                    <ColumnDefinition Width="Auto" MinWidth="56" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextT3}" Text="网卡" />
                                                 <TextBlock Grid.Column="1" FontSize="11" Foreground="{StaticResource TextT3}" Text="IP 地址" />
@@ -1948,23 +1948,23 @@
 
                                             <StackPanel x:Name="PanelRoutes" />
 
-                                            <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                            <WrapPanel Margin="0,10,0,0">
                                                 <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="外网走" />
                                                 <ComboBox x:Name="CmbOutNic" Width="170" Height="28" Margin="6,0,0,0" VerticalContentAlignment="Center" />
                                                 <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Margin="14,0,0,0" Text="内网走" />
                                                 <ComboBox x:Name="CmbInNic" Width="170" Height="28" Margin="6,0,0,0" VerticalContentAlignment="Center" />
-                                                <Button Style="{StaticResource BtnSecondary}" Height="28" Margin="14,0,0,0" Padding="14,0"
+                                                <Button x:Name="BtnApplySplit" Style="{StaticResource BtnSecondary}" Height="30" Margin="14,0,0,0" Padding="14,0"
                                                         Click="OnApplySplitRoute" Cursor="Hand">
                                                     <StackPanel Orientation="Horizontal">
                                                         <Image Width="14" Height="14" Margin="0,0,6,0" Source="/icons/ui_route_24_blue.png" />
                                                         <TextBlock Text="一键分流" />
                                                     </StackPanel>
                                                 </Button>
-                                                <Button Style="{StaticResource BtnGhost}" Height="28" Margin="8,0,0,0" Padding="14,0"
+                                                <Button x:Name="BtnResetRoute" Style="{StaticResource BtnGhost}" Height="30" Margin="8,0,0,0" Padding="14,0"
                                                         Click="OnResetRoutes" Cursor="Hand">
                                                     <TextBlock Text="恢复自动" />
                                                 </Button>
-                                            </StackPanel>
+                                            </WrapPanel>
                                         </StackPanel>
                                     </Border.Child>
                                 </Border>
@@ -1986,7 +1986,7 @@
                                                 <StackPanel Grid.Row="0" Margin="0,0,0,6" Orientation="Horizontal">
                                                     <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="本机网卡" />
                                                     <Button Style="{StaticResource BtnSecondary}"
-                                                        Height="26"
+                                                        Height="30"
                                                         Margin="12,0,0,0"
                                                         Padding="12,0"
                                                         Click="OnRefreshNics"
@@ -2018,7 +2018,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_stethoscope_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="诊断" />
@@ -2051,8 +2051,8 @@
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="目标" />
                                             <TextBox x:Name="TxtNetDiagHost" Width="200" Height="28" Margin="6,0,0,0" VerticalContentAlignment="Center" FontSize="12" Text="223.5.5.5" ToolTip="域名或 IP，只用来看路径，不会发大量包" />
-                                            <Button Style="{StaticResource BtnSecondary}" Height="26" Margin="8,0,0,0" Padding="12,0" Click="OnNetDiagTrace" Content="路由追踪" ToolTip="最多 15 跳，每跳 2 个包（约 10 秒）" />
-                                            <Button Style="{StaticResource BtnSecondary}" Height="26" Margin="8,0,0,0" Padding="12,0" Click="OnNetDiagMtu" Content="测 MTU" ToolTip="二分探测，约 10 个包" />
+                                            <Button Style="{StaticResource BtnSecondary}" Height="30" Margin="8,0,0,0" Padding="12,0" Click="OnNetDiagTrace" Content="路由追踪" ToolTip="最多 15 跳，每跳 2 个包（约 10 秒）" />
+                                            <Button Style="{StaticResource BtnSecondary}" Height="30" Margin="8,0,0,0" Padding="12,0" Click="OnNetDiagMtu" Content="测 MTU" ToolTip="二分探测，约 10 个包" />
                                             <TextBlock x:Name="TxtNetDiagHint" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="11.5" Foreground="{StaticResource TextT3}" />
                                         </StackPanel>
                                         <TextBox
@@ -2082,7 +2082,7 @@
                                         <Image
                                             Width="16"
                                             Height="16"
-                                            Margin="0,0,8,0"
+                                            Margin="0,0,6,0"
                                             VerticalAlignment="Center"
                                             Source="/icons/ui_signal_24_dark.png" />
                                         <TextBox
@@ -2093,7 +2093,7 @@
                                             ToolTip="域名或网址；要批量就一行一个粘贴进来" />
                                         <Button Style="{StaticResource BtnPrimary}"
                                             x:Name="BtnCheckSites"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             Padding="14,0"
                                             AutomationProperties.Name="检测"
@@ -2114,7 +2114,7 @@
                                             </StackPanel>
                                         </Button>
                                         <Button Style="{StaticResource BtnSecondary}"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             Padding="14,0"
                                             AutomationProperties.Name="测全部常用"
@@ -2134,7 +2134,7 @@
                                         </Button>
                                         <Button Style="{StaticResource BtnSecondary}"
                                             x:Name="BtnExportSites"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             Padding="14,0"
                                             AutomationProperties.Name="导出结果"
@@ -2211,7 +2211,7 @@
                                 <Grid Margin="0,0,0,10" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_shield-check_24_blue.png" />
                                             <TextBlock Style="{StaticResource PageTitle}" Text="代理 / 加速器检测" />
                                         </StackPanel>
@@ -2219,7 +2219,7 @@
                                             <StackPanel.Children>
                                                 <Button Style="{StaticResource BtnPrimary}"
                                                     x:Name="BtnProxyCheck"
-                                                    Height="32"
+                                                    Height="30"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="开始检测"
                                                     Click="OnProxyCheck"
@@ -2242,7 +2242,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnProxyCopy"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="复制结果"
@@ -2279,7 +2279,7 @@
                                                     x:Name="ImgProxyDot"
                                                     Width="14"
                                                     Height="14"
-                                                    Margin="0,0,8,0"
+                                                    Margin="0,0,6,0"
                                                     VerticalAlignment="Center"
                                                     Source="/icons/dot_wait.png" />
                                                 <TextBlock
@@ -2331,13 +2331,13 @@
                                     Margin="0,0,0,6"
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                        <WrapPanel>
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_activity_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
                                             Text="游戏延迟 / 丢包（CS2 亚服）" />
-                                        </StackPanel>
+                                        </WrapPanel>
                                         <ComboBox
                                             x:Name="CmbGameTarget"
                                             Width="250"
@@ -2370,7 +2370,7 @@
                                         <Button Style="{StaticResource BtnPrimary}"
                                             x:Name="BtnGameStart"
                                             Width="96"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             AutomationProperties.Name="开始检测"
                                             Click="OnStartGamePing"
@@ -2393,7 +2393,7 @@
                                         <Button Style="{StaticResource BtnSecondary}"
                                             x:Name="BtnGameStop"
                                             Width="72"
-                                            Height="32"
+                                            Height="30"
                                             Margin="8,0,0,0"
                                             AutomationProperties.Name="停止检测"
                                             Click="OnStopGamePing"
@@ -2510,7 +2510,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_gauge_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="测速" />
@@ -2528,13 +2528,13 @@
                                     <StackPanel.Children>
                                         <StackPanel Orientation="Horizontal">
                                             <StackPanel.Children>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                <WrapPanel>
+                                                    <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                            Source="/icons/ui_gauge_24_blue.png" />
                                                     <TextBlock VerticalAlignment="Center"
                                                     Style="{StaticResource PageTitle}"
                                                     Text="网络测速" />
-                                                </StackPanel>
+                                                </WrapPanel>
                                                 <ComboBox
                                                     x:Name="CmbSource"
                                                     Width="300"
@@ -2567,7 +2567,7 @@
                                                 <Button Style="{StaticResource BtnPrimary}"
                                                     x:Name="BtnSpeedStart"
                                                     Width="96"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="开始测速"
                                                     Click="OnStartSpeed"
@@ -2590,7 +2590,7 @@
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnSpeedStop"
                                                     Width="72"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="停止测速"
                                                     Click="OnStopSpeed"
@@ -2611,7 +2611,7 @@
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnSpeedHistory"
                                                     Width="86"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="测速历史"
                                                     Click="OnSpeedHistory"
@@ -2632,7 +2632,7 @@
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnExportSpeed"
                                                     Width="120"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     AutomationProperties.Name="导出本次结果"
                                                     Click="OnExportSpeed"
@@ -2939,7 +2939,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_cable_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="连接" />
@@ -2956,7 +2956,7 @@
                                 <Grid Margin="0,0,0,10" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_link_24_blue.png" />
                                             <TextBlock Style="{StaticResource PageTitle}" Text="连接与部署" />
                                         </StackPanel>
@@ -2964,7 +2964,7 @@
                                             <StackPanel.Children>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnConnRefresh"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="0,0,8,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="刷新状态"
@@ -2984,7 +2984,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnAutoDetect"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="0,0,8,0"
                                                     Padding="12,0"
                                                     AutomationProperties.Name="自动探测"
@@ -3005,7 +3005,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnPrimary}"
                                                     x:Name="BtnRemoteTest"
-                                                    Height="32"
+                                                    Height="30"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="测试连接"
                                                     Click="OnTestRemote"
@@ -3103,7 +3103,7 @@
                                                             ToolTip="GrayRouter 的 zip 包，或已解压的目录" />
                                                         <Button Style="{StaticResource BtnSecondary}"
                                                             x:Name="BtnPickPackage"
-                                                            Height="32"
+                                                            Height="30"
                                                             Margin="8,0,0,0"
                                                             Padding="12,0"
                                                             Click="OnPickPackage"
@@ -3120,7 +3120,7 @@
                                                         </Button>
                                                         <Button Style="{StaticResource BtnSecondary}"
                                                             x:Name="BtnUpload"
-                                                            Height="32"
+                                                            Height="30"
                                                             Margin="8,0,0,0"
                                                             Padding="12,0"
                                                             AutomationProperties.Name="上传安装包"
@@ -3154,7 +3154,7 @@
                                                                 <Button Style="{StaticResource BtnSecondary}"
                                                                     x:Name="BtnOpenTerm"
                                                                     Width="120"
-                                                                    Height="32"
+                                                                    Height="30"
                                                                     Padding="12,0"
                                                                     AutomationProperties.Name="打开终端"
                                                                     Click="OnOpenTerminal"
@@ -3174,7 +3174,7 @@
                                                                 <Button Style="{StaticResource BtnPrimary}"
                                                                     x:Name="BtnDeploy"
                                                                     Width="160"
-                                                                    Height="32"
+                                                                    Height="30"
                                                                     Margin="8,0,0,0"
                                                                     Padding="12,0"
                                                                     AutomationProperties.Name="开始部署"
@@ -3227,7 +3227,7 @@
                             </Grid.Children>
                         </Grid>
                     </TabItem>
-<TabItem Style="{StaticResource NavGroupLabel}" Header="系统" />
+<TabItem Style="{StaticResource NavGroupLabel}" Header="维护" />
 <TabItem AutomationProperties.Name="日志">
                         <TabItem.Header>
                             <StackPanel Orientation="Horizontal">
@@ -3235,7 +3235,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_scroll-text_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="日志" />
@@ -3253,7 +3253,7 @@
                                         <StackPanel Orientation="Horizontal">
                                             <StackPanel.Children>
                                                 <StackPanel Orientation="Horizontal">
-                                                    <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                    <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                            Source="/icons/ui_scroll-text_24_blue.png" />
                                                     <TextBlock Style="{StaticResource PageTitle}" Text="运行日志" />
                                                 </StackPanel>
@@ -3269,7 +3269,7 @@
                                             <StackPanel.Children>
                                                 <Button Style="{StaticResource BtnPrimary}"
                                                     x:Name="BtnLogRefresh"
-                                                    Height="32"
+                                                    Height="30"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="刷新日志"
                                                     Click="OnRefreshLog"
@@ -3291,7 +3291,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnLogClear"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     Click="OnClearLog"
@@ -3312,7 +3312,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnLogExport"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="导出日志"
@@ -3333,7 +3333,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnLogDelete"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     AutomationProperties.Name="删除全部日志"
@@ -3354,7 +3354,7 @@
                                                 </Button>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnLogOpen"
-                                                    Height="32"
+                                                    Height="30"
                                                     Margin="8,0,0,0"
                                                     Padding="14,0"
                                                     Click="OnOpenLogDir"
@@ -3404,7 +3404,7 @@
                         <TabItem.Header>
                             <StackPanel Orientation="Horizontal">
                                 <StackPanel.Children>
-                                    <Image Width="20" Height="20" Margin="0,0,10,0" VerticalAlignment="Center" Source="/icons/ui_cpu_32_dark.png" />
+                                    <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_cpu_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="系统" />
                                 </StackPanel.Children>
                             </StackPanel>
@@ -3420,7 +3420,7 @@
                                         <StackPanel>
                                             <StackPanel.Children>
                                                 <StackPanel Orientation="Horizontal">
-                                                    <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" Source="/icons/ui_cpu_24_blue.png" />
+                                                    <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_cpu_24_blue.png" />
                                                     <TextBlock Style="{StaticResource PageTitle}" Text="系统" />
                                                 </StackPanel>
                                                 <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="远端软路由 · 服务 / 电源 / 更新 / 调优 / 备份（只读采集，不改任何配置）" />
@@ -3515,11 +3515,11 @@
                                             </StackPanel.Children>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                            <Button Style="{StaticResource BtnSecondary}" Height="32" Padding="12,0" AutomationProperties.Name="刷新系统状态" Click="OnSysRefresh" Cursor="Hand">
-                                                <StackPanel Orientation="Horizontal">
+                                            <Button Style="{StaticResource BtnSecondary}" Height="30" Padding="12,0" AutomationProperties.Name="刷新系统状态" Click="OnSysRefresh" Cursor="Hand">
+                                                <WrapPanel>
                                                     <Image Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_refresh-cw_24_dark.png" />
                                                     <TextBlock Text="刷新" />
-                                                </StackPanel>
+                                                </WrapPanel>
                                             </Button>
                                         </StackPanel>
                                     </Grid.Children>
@@ -3538,7 +3538,7 @@
                                                         <DataGridTemplateColumn Width="104" Header="操作">
                                                             <DataGridTemplateColumn.CellTemplate>
                                                                 <DataTemplate>
-                                                                    <Button Content="重启" Height="24" Padding="10,0" Style="{StaticResource BtnSecondary}" Click="OnSvcRestart" Tag="{Binding Unit}" Cursor="Hand" Margin="0,0,8,0" />
+                                                                    <Button Content="重启" Height="30" Padding="10,0" Style="{StaticResource BtnSecondary}" Click="OnSvcRestart" Tag="{Binding Unit}" Cursor="Hand" Margin="0,0,8,0" />
                                                                 </DataTemplate>
                                                             </DataGridTemplateColumn.CellTemplate>
                                                         </DataGridTemplateColumn>
@@ -3738,7 +3738,7 @@
                                     <Image
                                         Width="20"
                                         Height="20"
-                                        Margin="0,0,10,0"
+                                        Margin="0,0,6,0"
                                         VerticalAlignment="Center"
                                         Source="/icons/ui_settings_32_dark.png" />
                                     <TextBlock Style="{StaticResource NavText}" Text="关于" />
@@ -3757,7 +3757,7 @@
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
                                                    Source="/icons/ui_settings_24_blue.png" />
                                             <TextBlock VerticalAlignment="Center"
                                             Style="{StaticResource PageTitle}"
@@ -3837,7 +3837,7 @@
                                                                         Text="—" />
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         x:Name="BtnUpdCheck"
-                                                                        Height="32"
+                                                                        Height="30"
                                                                         Margin="24,0,0,0"
                                                                         Padding="14,0"
                                                                         Click="OnCheckUpdate"
@@ -3857,7 +3857,7 @@
                                                                     </Button>
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         x:Name="BtnUpdGo"
-                                                                        Height="32"
+                                                                        Height="30"
                                                                         Margin="8,0,0,0"
                                                                         Padding="14,0"
                                                                         Click="OnDoUpdate"
@@ -3951,7 +3951,7 @@
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         Grid.Row="1"
                                                                         Grid.Column="2"
-                                                                        Height="26"
+                                                                        Height="30"
                                                                         Padding="10,0"
                                                                         Click="OnOpenExeDir">
                                         <StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_folder-open_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="打开文件夹" /></StackPanel>
@@ -3979,7 +3979,7 @@
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         Grid.Row="2"
                                                                         Grid.Column="2"
-                                                                        Height="26"
+                                                                        Height="30"
                                                                         Padding="10,0"
                                                                         Click="OnOpenDataDir">
                                         <StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_folder-open_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="打开文件夹" /></StackPanel>
@@ -4115,7 +4115,7 @@
                                                                         TextTrimming="CharacterEllipsis" />
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         Grid.Column="2"
-                                                                        Height="26"
+                                                                        Height="30"
                                                                         Padding="12,0"
                                                                         Click="OnChangeLogDir">
                                         <StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_pencil_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="更改…" /></StackPanel>
@@ -4128,7 +4128,7 @@
                                                                     </Button>
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         Grid.Column="3"
-                                                                        Height="26"
+                                                                        Height="30"
                                                                         Padding="12,0"
                                                                         Click="OnResetLogDir">
                                         <StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center" Source="/icons/ui_rotate-ccw_24_dark.png" /><TextBlock VerticalAlignment="Center" Text="恢复默认" /></StackPanel>
@@ -4284,7 +4284,7 @@
                                                                         FontSize="12.5"
                                                                         Foreground="{StaticResource TextT2}" />
                                                                     <Button Style="{StaticResource BtnSecondary}"
-                                                                        Height="26"
+                                                                        Height="30"
                                                                         Margin="12,0,0,0"
                                                                         Padding="12,0"
                                                                         Click="OnOpenRepo">
