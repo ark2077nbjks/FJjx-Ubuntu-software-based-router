@@ -4189,9 +4189,17 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             _routeNics = list.OrderBy(x => x.Metric).ToList();
             RenderRouteRows();
             FillRouteCombos();
+
+            // 只有一块网卡时分流没有意义——按钮禁用 + 明确提示，别让用户点了才报错
+            var canSplit = _routeNics.Count >= 2;
+            BtnApplySplit.IsEnabled = canSplit;
+            BtnResetRoute.IsEnabled = _routeNics.Count >= 1;
+
             TxtMultiRouteInfo.Text = _routeNics.Count == 0
                 ? "读不到网卡（可能需要管理员权限）"
-                : $"共 {_routeNics.Count} 块网卡；跃点数越小越优先";
+                : canSplit
+                    ? $"共 {_routeNics.Count} 块网卡；跃点数越小越优先"
+                    : $"只有 {_routeNics.Count} 块网卡——接入第二个网络（热点或网线）后才能分流";
         }
         catch (Exception ex)
         {
@@ -4219,11 +4227,11 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         foreach (var n in _routeNics)
         {
             var g = new Grid { Margin = new Thickness(0, 3, 0, 3) };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star), MinWidth = 110 });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 100 });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 100 });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 60 });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 56 });
 
             void Add(int col, string text, Brush? fg = null, FontWeight? fw = null)
             {
