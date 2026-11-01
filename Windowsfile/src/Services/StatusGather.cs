@@ -55,6 +55,18 @@ public sealed class Snapshot
     public List<RemoteNic> RemoteNics = new();
     public int RemoteVirtualNics;
     public List<RemoteVnic> RemoteVnics = new();
+
+    // 远端健康指标（供状态页顶部的总览卡片使用）
+    public string MiniLoad = "";
+    public string MiniMemText = "";
+    public int MiniMemPct;
+    public string MiniTemp = "";
+    public string MiniClients = "";
+    public string MiniConn = "";
+    public string MiniDisk = "";
+    public string MiniUptime = "";
+    public string MiniRtt = "";
+    public string MiniGw = "";
 }
 
 public static class StatusGather
@@ -491,6 +503,37 @@ public static class StatusGather
             int.TryParse(kvInfo.GetValueOrDefault("MEM_USED_MB"), out var memUsed);
             int.TryParse(kvInfo.GetValueOrDefault("MEM_PCT"), out var memPct);
             int.TryParse(kvInfo.GetValueOrDefault("TEMP_C"), out var tempC);
+
+            // 供总览卡片使用
+            snap.MiniLoad = kvInfo.GetValueOrDefault("LOAD1", "—") + " · " + kvInfo.GetValueOrDefault("CORES", "—") + " 核";
+            snap.MiniMemText = $"{memUsed / 1024.0:F1} / {memTotal / 1024.0:F1} GB";
+            snap.MiniMemPct = memPct;
+            if (tempC > 0) snap.MiniTemp = tempC + " ℃";
+            snap.MiniClients = ClientCn(kvInfo.GetValueOrDefault("CLIENTS", ""));
+            var _cn = kvInfo.GetValueOrDefault("CONNTRACK", "");
+            if (_cn.Length > 0)
+            {
+                var _cm = kvInfo.GetValueOrDefault("CONNTRACK_MAX", "");
+                snap.MiniConn = _cm.Length > 0 ? $"{_cn} / {_cm}" : _cn;
+            }
+            var _dp = kvInfo.GetValueOrDefault("DISK_PCT", "");
+            if (_dp.Length > 0) snap.MiniDisk = _dp + " · 剩 " + kvInfo.GetValueOrDefault("DISK_FREE", "—");
+            var _up = kvInfo.GetValueOrDefault("UPTIME", "");
+            if (_up.Length > 0) snap.MiniUptime = CnUptime(_up);
+
+            // 网关延迟（对标 pfSense Gateways widget：RTT + 在线状态）
+            snap.MiniGw = kvInfo.GetValueOrDefault("GATEWAY", "");
+            if (snap.MiniGw.Length > 0 && snap.MiniOnline)
+            {
+                try
+                {
+                    using var pg = new Ping();
+                    var rtt = await pg.SendPingAsync(snap.MiniGw, 1500);
+                    if (rtt.Status == IPStatus.Success) snap.MiniRtt = rtt.RoundtripTime + " ms";
+                    else snap.MiniRtt = "不通";
+                }
+                catch { snap.MiniRtt = ""; }
+            }
 
             secSys.Rows.Add(new StatusRow
             {
