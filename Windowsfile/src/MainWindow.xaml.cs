@@ -4353,6 +4353,61 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         await RefreshRoutesAsync();
     }
 
+    /// <summary>状态页顶部总览：4 个关键指标卡片（参考 pfSense Dashboard widget 的做法）。</summary>
+    private void RenderOverview(Snapshot snap)
+    {
+        StpOverview.Children.Clear();
+        var gray = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8));
+        var green = new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57));
+        var red = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
+        var dark = new SolidColorBrush(Color.FromRgb(0x2B, 0x3A, 0x55));
+
+        void Card(string title, string value, Brush fg)
+        {
+            var b = new Border
+            {
+                Margin = new Thickness(0, 0, 10, 10),
+                Padding = new Thickness(14, 9, 14, 9),
+                Background = Brushes.White,
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE9, 0xEF, 0xF7)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                MinWidth = 138,
+            };
+            var sp = new StackPanel();
+            sp.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = 11.5,
+                Foreground = gray,
+                Margin = new Thickness(0, 0, 0, 3),
+            });
+            sp.Children.Add(new TextBlock
+            {
+                Text = value,
+                FontSize = 15,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = fg,
+            });
+            b.Child = sp;
+            StpOverview.Children.Add(b);
+        }
+
+        Card("外网", snap.CampusOk ? "已认证 · 能上网" : "未认证", snap.CampusOk ? green : red);
+        Card("软路由", snap.MiniOnline ? "已连接" : "未连接", snap.MiniOnline ? green : gray);
+        Card("负载", string.IsNullOrEmpty(snap.MiniLoad) ? "—" : snap.MiniLoad, dark);
+        Card("远端内存", string.IsNullOrEmpty(snap.MiniMemText) ? "—" : $"{snap.MiniMemPct}% · {snap.MiniMemText}", dark);
+        Card("在线客户端", string.IsNullOrEmpty(snap.MiniClients) ? "—" : snap.MiniClients, dark);
+        Card("并发连接", string.IsNullOrEmpty(snap.MiniConn) ? "—" : snap.MiniConn, dark);
+        Card("磁盘", string.IsNullOrEmpty(snap.MiniDisk) ? "—" : snap.MiniDisk, dark);
+        Card("已运行", string.IsNullOrEmpty(snap.MiniUptime) ? "—" : snap.MiniUptime, dark);
+        if (snap.MiniRtt.Length > 0)
+            Card("网关延迟", snap.MiniRtt == "不通" ? "不通" : $"{snap.MiniGw} · {snap.MiniRtt}",
+                snap.MiniRtt == "不通" ? red : green);
+        if (!string.IsNullOrEmpty(snap.MiniTemp))
+            Card("温度", snap.MiniTemp, dark);
+    }
+
     private async Task RefreshAsync(bool manual = false)
     {
         if (_busy) return;
@@ -4362,6 +4417,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         try
         {
             var snap = await StatusGather.CollectAsync();
+            RenderOverview(snap);
             RenderSections(StpLocal, snap.LocalSections);
             RenderSections(StpCampus, snap.CampusSections);
             RenderSections(StpMini, snap.MiniSections);
@@ -4554,10 +4610,12 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private async Task LoadSqmAsync()
     {
         if (_sqmBusy) return;
-        var cfg = RemoteConfig.Load();
-        if (!cfg.IsConfigured) { TxtSqmState.Text = "软路由没连上"; return; }
+        SpnSqm.Visibility = Visibility.Visible;
         try
         {
+            var cfg = RemoteConfig.Load();
+            if (!cfg.IsConfigured) { TxtSqmState.Text = "软路由没连上"; return; }
+
             var (ok, detail) = await RouterCtl.RunAsync(cfg, "sqm-get");
             if (!ok) { TxtSqmState.Text = "× " + detail; return; }
 
@@ -4595,6 +4653,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             }
         }
         catch (Exception ex) { TxtSqmState.Text = "× " + ex.Message; }
+        finally { SpnSqm.Visibility = Visibility.Collapsed; }
     }
 
     private async void OnSqmApply(object sender, RoutedEventArgs e)

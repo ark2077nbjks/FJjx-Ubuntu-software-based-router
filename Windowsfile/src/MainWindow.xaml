@@ -104,9 +104,11 @@
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             <Grid.Children>
+                                <WrapPanel x:Name="StpOverview" Grid.Row="1" Margin="0,0,0,10" />
                                 <Grid Margin="0,0,0,12" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
@@ -255,7 +257,7 @@
                                         </StackPanel>
                                     </Grid.Children>
                                 </Grid>
-                                <Grid Row="1">
+                                <Grid Row="2">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="1.05*" />
                                         <ColumnDefinition Width="1*" />
@@ -1872,6 +1874,7 @@
                                         <StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="智能队列（cake）" />
+                                                <ctrl:Spinner x:Name="SpnSqm" Margin="0,0,6,0" VerticalAlignment="Center" />
                                                 <TextBlock x:Name="TxtSqmState" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT3}" Text="读取中…" />
                                             </StackPanel>
                                             <TextBlock
