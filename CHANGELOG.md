@@ -1,3 +1,13 @@
+## 1.51.4 · 2026-11-01
+
+### 修复
+- **审计仓库属主错误**：`/var/lib/grayrouter/etcsnap` 由 root 拥有，普通用户 `git log` 报 dubious ownership。`audit init` 后把属主交还 `$SUDO_USER` 并写入 `safe.directory`
+- **多余的跨段 nft 表**：`forward` 策略为 `accept` 时本来就能互通，`lan-usb.sh rules` 不再建 `gray_lan2`，并清掉旧表
+- **`opt-backup` 无限增长**：每次开机 `apply` 新增一份，现在只保留最近 2 份
+
+### 校验
+包内 `SHA256SUMS` 为逐文件哈希；`Ubuntuflie/SHA256SUMS` 为 zip + exe 哈希。
+
 ## 1.51.3 · 2026-10-31
 
 ### 修复（安装器，仅影响新装机器）
