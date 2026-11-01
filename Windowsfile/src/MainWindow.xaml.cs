@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Text;
@@ -146,13 +146,14 @@ public partial class MainWindow : Window
             {
                 "ap" or "wifi" or "无线频段" => "无线",
                 "网址检测" or "代理检测" or "游戏延迟" or "diag" => "诊断",
-                "other" => "其他",
+                "other" => "关于",
                 "status" => "状态",
                 "log" or "logs" => "日志",
                 "nic" => "网卡",
                 "device" => "设备",
                 "traffic" => "流量",
                 "conn" => "连接",
+                "sys" => "系统",
                 "campus" => "校园网",
                 _ => sp,
             };
@@ -2386,7 +2387,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private async void OnNavChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.Source, NavTabs)) return;   // 子页签（诊断/无线）也会冒泡，必须只认导航栏
-        if (CurrentPage == "其他") _ = RefreshCronStateAsync();
+        if (CurrentPage == "关于") _ = RefreshCronStateAsync();
         if (CurrentPage == "诊断") EnsureSitesEmptyHint();
         if (CurrentPage == "系统") { _ = RefreshSysAsync(); StartSysStream(); }
         else StopSysStream();
@@ -2430,6 +2431,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         if (page == "网卡")
         {
             _ = PollAdaptersAsync(); _ = LoadRolesAsync(); _ = LoadWanFailAsync(); _ = LoadSqmAsync();
+            _ = RefreshRoutesAsync();
             _wanPoll.Start();
             _sqmUpPrev = -1; _sqmDownPrev = -1; _sqmPrevAt = DateTime.MinValue;
             _sqmStatPoll.Start();
@@ -2443,7 +2445,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             _ = RefreshCampusIfacesAsync();
         }
 
-        if (page == "其他") RefreshOtherRuntime();
+        if (page == "关于") RefreshOtherRuntime();
 
         if (page != "连接" || _detectTried) return;
         _detectTried = true;
@@ -4002,6 +4004,346 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     }
 
     private async void OnRefreshNics(object sender, RoutedEventArgs e) => await RefreshNicsAsync();
+
+    // ---------------- 多网卡路由（外网/内网分流） ----------------
+
+    /// <summary>调一条外部命令，返回 stdout（按 GBK 解码，中文系统）。失败返回空串。</summary>
+    private static string RunTool(string file, string args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(file, args)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.GetEncoding(936),
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return "";
+            var s = p.StandardOutput.ReadToEnd();
+            _ = p.StandardError.ReadToEnd();
+            p.WaitForExit(8000);
+            return s;
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log($"[路由] 调 {file} {args} 失败: {ex.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>执行命令并检查退出码（0 才算成功）。</summary>
+    private static bool RunToolOk(string file, string args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(file, args)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.GetEncoding(936),
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return false;
+            _ = p.StandardOutput.ReadToEnd();
+            _ = p.StandardError.ReadToEnd();
+            if (!p.WaitForExit(8000)) { try { p.Kill(); } catch { } return false; }
+            return p.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log($"[路由] 调 {file} {args} 失败: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>分流前的原状态，用于「恢复自动」精确还原。</summary>
+    private sealed class RouteDivState
+    {
+        public string OutNic = "";
+        public int OrigMetric;
+        public string CreatedAt = "";
+    }
+
+    private static string RouteDivFile =>
+        System.IO.Path.Combine(AppPaths.DataDir, "routediv.json");
+
+    private static void SaveRouteDivState(string outNic, int origMetric)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(AppPaths.DataDir);
+            var st = new RouteDivState
+            {
+                OutNic = outNic,
+                OrigMetric = origMetric,
+                CreatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+            };
+            System.IO.File.WriteAllText(RouteDivFile, JsonSerializer.Serialize(st));
+            AppPaths.Log($"[路由] 记录原状态：{outNic} metric={origMetric}");
+        }
+        catch (Exception ex) { AppPaths.Log("[路由] 记录原状态失败: " + ex.Message); }
+    }
+
+    private static RouteDivState? LoadRouteDivState()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(RouteDivFile)) return null;
+            return JsonSerializer.Deserialize<RouteDivState>(System.IO.File.ReadAllText(RouteDivFile));
+        }
+        catch { return null; }
+    }
+
+    private static void DeleteRouteDivState()
+    {
+        try { if (System.IO.File.Exists(RouteDivFile)) System.IO.File.Delete(RouteDivFile); } catch { }
+    }
+
+    /// <summary>读 netsh 的网卡跃点数表（接口索引 → 跃点数）。读不到返回空表。</summary>
+    private static Dictionary<int, int> ReadNicMetrics()
+    {
+        var d = new Dictionary<int, int>();
+        var netsh = System.IO.Path.Combine(Environment.SystemDirectory, "netsh.exe");
+        var txt = RunTool(netsh, "interface ipv4 show interfaces");
+        foreach (var raw in txt.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            var m = System.Text.RegularExpressions.Regex.Match(
+                line, @"^\s*(\d+)\s+(\d+)\s+\d+\s+(\S+)\s+(.+?)\s*$");
+            if (!m.Success) continue;
+            if (!int.TryParse(m.Groups[1].Value, out var idx)) continue;
+            if (!int.TryParse(m.Groups[2].Value, out var met)) continue;
+            d[idx] = met;
+        }
+        return d;
+    }
+
+    /// <summary>由 IP 与掩码算出网段前缀，如 192.168.60.0/24。</summary>
+    private static string CalcPrefix(System.Net.IPAddress ip, System.Net.IPAddress mask)
+    {
+        try
+        {
+            var i = ip.GetAddressBytes();
+            var m = mask.GetAddressBytes();
+            var n = new byte[4];
+            var bits = 0;
+            for (var k = 0; k < 4; k++)
+            {
+                n[k] = (byte)(i[k] & m[k]);
+                for (var b = 7; b >= 0; b--)
+                    if ((m[k] & (1 << b)) != 0) bits++;
+            }
+            return $"{n[0]}.{n[1]}.{n[2]}.{n[3]}/{bits}";
+        }
+        catch { return ""; }
+    }
+
+    private sealed class RouteNicRow
+    {
+        public string Name = "";
+        public string Ip = "";
+        public string Gw = "";
+        public int Metric;
+        public string State = "";
+        public string Prefix = "";   // 真实网段，形如 192.168.60.0/24（由 IP + 掩码算出）
+    }
+
+    private List<RouteNicRow> _routeNics = new();
+
+    private async Task RefreshRoutesAsync()
+    {
+        try
+        {
+            var metrics = ReadNicMetrics();
+            var list = new List<RouteNicRow>();
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                var props = ni.GetIPProperties();
+                var v4 = props.UnicastAddresses.FirstOrDefault(
+                    a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                if (v4 == null) continue;
+                var ipStr = v4.Address.ToString();
+                if (ipStr.StartsWith("169.254.")) continue;   // APIPA：没拿到 DHCP，非真实网卡
+                if (ni.Name.Contains("本地连接*")) continue;    // Wi-Fi Direct 虚拟适配器
+                var gw = props.GatewayAddresses.FirstOrDefault(
+                    a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                var ifIdx = -1;
+                try { ifIdx = props.GetIPv4Properties()?.Index ?? -1; } catch { }
+                list.Add(new RouteNicRow
+                {
+                    Name = ni.Name,
+                    Ip = ipStr,
+                    Gw = gw?.Address.ToString() ?? "",
+                    Metric = metrics.TryGetValue(ifIdx, out var met) ? met : 0,
+                    Prefix = CalcPrefix(v4.Address, v4.IPv4Mask),
+                    State = ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
+                        ? "已连接" : "未连接",
+                });
+            }
+            _routeNics = list.OrderBy(x => x.Metric).ToList();
+            RenderRouteRows();
+            FillRouteCombos();
+            TxtMultiRouteInfo.Text = _routeNics.Count == 0
+                ? "读不到网卡（可能需要管理员权限）"
+                : $"共 {_routeNics.Count} 块网卡；跃点数越小越优先";
+        }
+        catch (Exception ex)
+        {
+            AppPaths.Log("[路由] 刷新异常: " + ex.Message);
+            TxtMultiRouteInfo.Text = "读取失败：" + ex.Message;
+        }
+        await Task.CompletedTask;
+    }
+
+    private void RenderRouteRows()
+    {
+        PanelRoutes.Children.Clear();
+        if (_routeNics.Count == 0)
+        {
+            PanelRoutes.Children.Add(new TextBlock
+            {
+                Text = "没有可用的 IPv4 网卡",
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)),
+                Margin = new Thickness(0, 6, 0, 6),
+                FontSize = 12.5,
+            });
+            return;
+        }
+
+        foreach (var n in _routeNics)
+        {
+            var g = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            void Add(int col, string text, Brush? fg = null, FontWeight? fw = null)
+            {
+                var tb = new TextBlock
+                {
+                    Text = text,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontSize = 12.5,
+                };
+                if (fg != null) tb.Foreground = fg;
+                if (fw != null) tb.FontWeight = fw.Value;
+                Grid.SetColumn(tb, col);
+                g.Children.Add(tb);
+            }
+
+            Add(0, n.Name, null, FontWeights.SemiBold);
+            Add(1, n.Ip);
+            Add(2, string.IsNullOrEmpty(n.Gw) ? "（无）" : n.Gw);
+            Add(3, n.Metric.ToString());
+            Add(4, n.State, n.State == "已连接"
+                ? new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57))
+                : new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8)));
+
+            PanelRoutes.Children.Add(g);
+        }
+    }
+
+    private void FillRouteCombos()
+    {
+        var names = _routeNics.Select(x => x.Name).ToList();
+        var outCur = CmbOutNic.SelectedItem as string;
+        var inCur = CmbInNic.SelectedItem as string;
+        CmbOutNic.ItemsSource = null;
+        CmbOutNic.ItemsSource = names;
+        CmbInNic.ItemsSource = null;
+        CmbInNic.ItemsSource = names;
+        if (outCur != null && names.Contains(outCur)) CmbOutNic.SelectedItem = outCur;
+        else if (names.Count > 0) CmbOutNic.SelectedIndex = 0;
+        if (inCur != null && names.Contains(inCur)) CmbInNic.SelectedItem = inCur;
+        else if (names.Count > 1) CmbInNic.SelectedIndex = 1;
+    }
+
+    private async void OnRefreshRoutes(object sender, RoutedEventArgs e) => await RefreshRoutesAsync();
+
+    private async void OnApplySplitRoute(object sender, RoutedEventArgs e)
+    {
+        var outName = CmbOutNic.SelectedItem as string;
+        var inName = CmbInNic.SelectedItem as string;
+        if (string.IsNullOrWhiteSpace(outName) || string.IsNullOrWhiteSpace(inName))
+        { Toast("先选外网网卡和内网网卡", false); return; }
+        if (outName == inName)
+        { Toast("外网和内网不能是同一块网卡", false); return; }
+
+        var outNic = _routeNics.FirstOrDefault(x => x.Name == outName);
+        var inNic = _routeNics.FirstOrDefault(x => x.Name == inName);
+        if (outNic == null || inNic == null) { Toast("网卡信息已过期，先点刷新", false); return; }
+
+        if (string.IsNullOrWhiteSpace(inNic.Gw))
+        { Toast($"{inNic.Name} 没有默认网关，不能当内网出口", false); return; }
+        if (!inNic.Prefix.Contains('/'))
+        { Toast($"{inNic.Name} 读不到子网掩码", false); return; }
+
+        var gwIp = inNic.Gw;                  // 用实际网关，不做「末位换成 .1」的推导
+        var netPrefix = inNic.Prefix;         // 真实网段，如 192.168.60.0/24
+        var netAddr = netPrefix.Split('/')[0];
+
+        var ret = MessageBox.Show(
+            $"将执行三步：\n\n① {outNic.Name} 跃点数 {outNic.Metric} → 10（外网优先）\n" +
+            $"② 删除 {inNic.Name} 的默认路由（网关 {gwIp}）\n" +
+            $"③ 加持久路由 {netPrefix} → {gwIp}\n\n" +
+            "原跃点数会被记录，出问题点「恢复自动」可精确还原。\n继续？",
+            "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        if (ret != MessageBoxResult.OK) return;
+
+        SaveRouteDivState(outNic.Name, outNic.Metric);
+
+        var fails = new List<string>();
+        if (!RunToolOk("netsh", $"interface ipv4 set interface \"{outNic.Name}\" metric=10"))
+            fails.Add($"设 {outNic.Name} 跃点数");
+        if (!RunToolOk("route", $"delete 0.0.0.0 mask 0.0.0.0 {gwIp}"))
+            fails.Add($"删 {inNic.Name} 默认路由");
+        RunToolOk("route", $"delete {netAddr} mask 255.255.255.0");   // 已存在也算正常
+        if (!RunToolOk("route", $"add {netAddr} mask 255.255.255.0 {gwIp} metric 1 -p"))
+            fails.Add($"加持久路由 {netPrefix}");
+
+        AppPaths.Log($"[路由] 分流：{outNic.Name}({outNic.Metric}→10) / 内网 {inNic.Name} / {netPrefix} via {gwIp} / 失败 {fails.Count} 项");
+        Toast(fails.Count == 0 ? "分流已应用" : "失败：" + string.Join("、", fails), fails.Count == 0);
+        await RefreshRoutesAsync();
+    }
+
+    private async void OnResetRoutes(object sender, RoutedEventArgs e)
+    {
+        var st = LoadRouteDivState();
+        var tip = st == null
+            ? "（没有原状态记录，将改为系统自动跃点数）"
+            : $"（{st.OutNic} 跃点数还原为 {st.OrigMetric}）";
+        if (MessageBox.Show("恢复网卡跃点数，并删除分流用的持久路由？\n\n" + tip,
+            "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+
+        var fails = new List<string>();
+        if (st != null && !string.IsNullOrWhiteSpace(st.OutNic))
+        {
+            if (!RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}"))
+                fails.Add($"还原 {st.OutNic} 跃点数");
+        }
+        else
+        {
+            foreach (var n in _routeNics)
+                RunToolOk("netsh", $"interface ipv4 set interface \"{n.Name}\" metric=automatic");
+        }
+
+        foreach (var p in new[] { "192.168.50.0", "192.168.60.0" })
+            RunToolOk("route", $"delete {p} mask 255.255.255.0");
+
+        DeleteRouteDivState();
+        AppPaths.Log($"[路由] 恢复：失败 {fails.Count} 项");
+        Toast(fails.Count == 0 ? "已恢复" : "部分失败：" + string.Join("、", fails), fails.Count == 0);
+        await RefreshRoutesAsync();
+    }
 
     private async Task RefreshAsync(bool manual = false)
     {

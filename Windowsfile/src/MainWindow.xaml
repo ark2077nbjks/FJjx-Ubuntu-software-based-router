@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <Window
     x:Class="NetPanel.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -301,6 +301,42 @@
                                                         </StackPanel.Children>
                                                     </StackPanel>
                                                     <StackPanel x:Name="StpCampus" />
+                                                            <Border Margin="0,10,0,0" Padding="16,14" Background="#FFFFFFFF"
+                                                                BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                                                <Border.Child>
+                                                                    <StackPanel>
+                                                                        <Grid Margin="0,0,0,10">
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="*" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <Grid.Children>
+                                                                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                                                                    FontSize="13" FontWeight="SemiBold"
+                                                                                    Foreground="{StaticResource TextT1}" Text="内存优化" />
+                                                                                <TextBlock Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                                                    FontSize="11.5" Foreground="{StaticResource TextT3}"
+                                                                                    Text="清工作集 · 刷修改页 · 清待机列表"
+                                                                                    TextTrimming="CharacterEllipsis" />
+                                                                                <Button Style="{StaticResource BtnSecondary}" x:Name="BtnMemOptimize"
+                                                                                    Grid.Column="2" Height="32" Padding="16,0" Click="OnMemOptimize">
+                                                                                    优化内存
+                                                                                    <Button.FontSize>12.5</Button.FontSize>
+                                                                                    <Button.Background>#FF2D8CFF</Button.Background>
+                                                                                    <Button.Foreground>#FFFFFFFF</Button.Foreground>
+                                                                                    <Button.BorderThickness>0</Button.BorderThickness>
+                                                                                    <Button.Cursor>Hand</Button.Cursor>
+                                                                                </Button>
+                                                                            </Grid.Children>
+                                                                        </Grid>
+                                                                        <TextBlock x:Name="TxtMemAvail" Margin="0,0,0,6" FontSize="12.5"
+                                                                            Foreground="{StaticResource TextT2}" />
+                                                                        <TextBlock x:Name="TxtMemResult" FontSize="12.5"
+                                                                            Foreground="#FF1E8E5A" TextWrapping="Wrap" />
+                                                                    </StackPanel>
+                                                                </Border.Child>
+                                                            </Border>
                                                 </StackPanel.Children>
                                             </StackPanel>
                                         </ScrollViewer>
@@ -1690,6 +1726,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             <Grid.Children>
@@ -1869,8 +1906,71 @@
                                     </Border.Child>
                                 </Border>
 
+                                <!-- 多网卡路由：外网/内网分流 -->
                                 <Border
                                     Grid.Row="4"
+                                    Margin="0,0,0,10"
+                                    Padding="12,10,12,10"
+                                    Background="#FFFFFFFF"
+                                    BorderBrush="{StaticResource LineHair}"
+                                    BorderThickness="1"
+                                    CornerRadius="10">
+                                    <Border.Child>
+                                        <StackPanel>
+                                            <StackPanel Margin="0,0,0,6" Orientation="Horizontal">
+                                                <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="多网卡路由" />
+                                                <TextBlock x:Name="TxtMultiRouteInfo" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="11.5" Foreground="{StaticResource TextT3}"
+                                                           Text="外网走热点、内网走网线，一键切换" />
+                                                <Button Style="{StaticResource BtnSecondary}" Height="26" Margin="12,0,0,0" Padding="12,0"
+                                                        Click="OnRefreshRoutes" Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Image Width="14" Height="14" Margin="0,0,6,0" Source="/icons/ui_refresh-cw_24_dark.png" />
+                                                        <TextBlock Text="刷新" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+
+                                            <Grid Margin="0,0,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="170" />
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="70" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextT3}" Text="网卡" />
+                                                <TextBlock Grid.Column="1" FontSize="11" Foreground="{StaticResource TextT3}" Text="IP 地址" />
+                                                <TextBlock Grid.Column="2" FontSize="11" Foreground="{StaticResource TextT3}" Text="默认网关" />
+                                                <TextBlock Grid.Column="3" FontSize="11" Foreground="{StaticResource TextT3}" Text="跃点数" />
+                                                <TextBlock Grid.Column="4" FontSize="11" Foreground="{StaticResource TextT3}" Text="状态" />
+                                            </Grid>
+
+                                            <StackPanel x:Name="PanelRoutes" />
+
+                                            <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Text="外网走" />
+                                                <ComboBox x:Name="CmbOutNic" Width="170" Height="28" Margin="6,0,0,0" VerticalContentAlignment="Center" />
+                                                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT2}" Margin="14,0,0,0" Text="内网走" />
+                                                <ComboBox x:Name="CmbInNic" Width="170" Height="28" Margin="6,0,0,0" VerticalContentAlignment="Center" />
+                                                <Button Style="{StaticResource BtnSecondary}" Height="28" Margin="14,0,0,0" Padding="14,0"
+                                                        Click="OnApplySplitRoute" Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Image Width="14" Height="14" Margin="0,0,6,0" Source="/icons/ui_route_24_blue.png" />
+                                                        <TextBlock Text="一键分流" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource BtnGhost}" Height="28" Margin="8,0,0,0" Padding="14,0"
+                                                        Click="OnResetRoutes" Cursor="Hand">
+                                                    <TextBlock Text="恢复自动" />
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border.Child>
+                                </Border>
+
+                                <Border
+                                    Grid.Row="5"
                                     Padding="12,10,12,10"
                                     Background="#FFFFFFFF"
                                     BorderBrush="{StaticResource LineHair}"
@@ -3127,6 +3227,7 @@
                             </Grid.Children>
                         </Grid>
                     </TabItem>
+<TabItem Style="{StaticResource NavGroupLabel}" Header="系统" />
 <TabItem AutomationProperties.Name="日志">
                         <TabItem.Header>
                             <StackPanel Orientation="Horizontal">
@@ -3322,7 +3423,95 @@
                                                     <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" Source="/icons/ui_cpu_24_blue.png" />
                                                     <TextBlock Style="{StaticResource PageTitle}" Text="系统" />
                                                 </StackPanel>
-                                                <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="服务 · 电源 · 更新 · 进程（只读采集，不改任何配置）" />
+                                                <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="远端软路由 · 服务 / 电源 / 更新 / 调优 / 备份（只读采集，不改任何配置）" />
+                                            <Border
+                                                Margin="0,0,0,10"
+                                                Padding="16,14"
+                                                Background="#FFFFFFFF"
+                                                BorderBrush="{StaticResource LineHair}"
+                                                BorderThickness="1"
+                                                CornerRadius="10">
+                                                <Border.Child>
+                                                    <StackPanel>
+                                                        <TextBlock Text="备份与恢复" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
+                                                        <TextBlock Text="软路由配置的备份 / 恢复 / 漂移检查 / 快照对比（恢复前自动备份，可回滚）" Margin="0,4,0,10" FontSize="12" Foreground="{StaticResource TextT3}" TextWrapping="Wrap" />
+                                                        <WrapPanel>
+                                                                    <Button
+                                                                        Style="{StaticResource BtnSecondary}"
+                                                                        Margin="0,0,8,8"
+                                                                        Click="OnExportBackup"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="把软路由的配置、连接参数、运行快照打包下载到本机（只读，不改任何设置）">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <StackPanel.Children>
+                                                                                <Image
+                                                                                    Width="15"
+                                                                                    Height="15"
+                                                                                    Margin="0,0,6,0"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Source="/icons/ui_download_24_dark.png" />
+                                                                                <TextBlock VerticalAlignment="Center" Text="导出配置备份" />
+                                                                            </StackPanel.Children>
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                                    <Button
+                                                                        Style="{StaticResource BtnSecondary}"
+                                                                        Margin="0,0,8,8"
+                                                                        Click="OnRestoreBackup"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="从备份包恢复配置（先自动备份当前配置，失败可回滚）">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <StackPanel.Children>
+                                                                                <Image
+                                                                                    Width="15"
+                                                                                    Height="15"
+                                                                                    Margin="0,0,6,0"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Source="/icons/ui_upload_24_dark.png" />
+                                                                                <TextBlock VerticalAlignment="Center" Text="恢复配置" />
+                                                                            </StackPanel.Children>
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                                    <Button
+                                                                        Style="{StaticResource BtnSecondary}"
+                                                                        Margin="0,0,8,8"
+                                                                        Click="OnDriftCheck"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="对比最近一次快照，看配置有没有被人手改过（只读）">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <StackPanel.Children>
+                                                                                <Image
+                                                                                    Width="15"
+                                                                                    Height="15"
+                                                                                    Margin="0,0,6,0"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Source="/icons/ui_git-compare_24_dark.png" />
+                                                                                <TextBlock VerticalAlignment="Center" Text="检查配置漂移" />
+                                                                            </StackPanel.Children>
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                                    <Button
+                                                                        Style="{StaticResource BtnSecondary}"
+                                                                        Margin="0,0,8,8"
+                                                                        Click="OnSnapshotDiff"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="选两份配置快照，逐文件看差异（只读，参照 OPNsense 配置历史）">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <StackPanel.Children>
+                                                                                <Image
+                                                                                    Width="15"
+                                                                                    Height="15"
+                                                                                    Margin="0,0,6,0"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Source="/icons/ui_monitor-smartphone_24_dark.png" />
+                                                                                <TextBlock VerticalAlignment="Center" Text="快照对比" />
+                                                                            </StackPanel.Children>
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                        </WrapPanel>
+                                                    </StackPanel>
+                                                </Border.Child>
+                                            </Border>
                                             </StackPanel.Children>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -3506,54 +3695,6 @@
                                                 <TextBlock x:Name="TxtProcEmpty" Margin="2,8,0,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="还没有数据 · 点右上「刷新」" />
                                             </StackPanel>
                                         </Border>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Grid.Children>
-                        </Grid>
-                    </TabItem>
-<TabItem AutomationProperties.Name="其他">
-                        <TabItem.Header>
-                            <StackPanel Orientation="Horizontal">
-                                <StackPanel.Children>
-                                    <Image
-                                        Width="20"
-                                        Height="20"
-                                        Margin="0,0,10,0"
-                                        VerticalAlignment="Center"
-                                        Source="/icons/ui_settings_32_dark.png" />
-                                    <TextBlock Style="{StaticResource NavText}" Text="其他" />
-                                </StackPanel.Children>
-                            </StackPanel>
-                        </TabItem.Header>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <Grid.Children>
-                                <StackPanel
-                                    Grid.Row="0"
-                                    Margin="0,0,0,10"
-                                    Orientation="Horizontal">
-                                    <StackPanel.Children>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
-                                                   Source="/icons/ui_settings_24_blue.png" />
-                                            <TextBlock VerticalAlignment="Center"
-                                            Style="{StaticResource PageTitle}"
-                                            Text="其他" />
-                                        </StackPanel>
-                                        <TextBlock
-                                            Margin="12,0,0,0"
-                                            VerticalAlignment="Center"
-                                            FontSize="12"
-                                            Foreground="{StaticResource TextT3}"
-                                            Text="关于、文件入口、运行环境" />
-                                    </StackPanel.Children>
-                                </StackPanel>
-                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                        <StackPanel.Children>
                                             <Border Margin="0,0,0,10" Padding="16,14" Background="#FFFFFFFF"
                                                 BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
                                                 <Border.Child>
@@ -3585,6 +3726,54 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Grid.Children>
+                        </Grid>
+                    </TabItem>
+<TabItem AutomationProperties.Name="关于">
+                        <TabItem.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <StackPanel.Children>
+                                    <Image
+                                        Width="20"
+                                        Height="20"
+                                        Margin="0,0,10,0"
+                                        VerticalAlignment="Center"
+                                        Source="/icons/ui_settings_32_dark.png" />
+                                    <TextBlock Style="{StaticResource NavText}" Text="关于" />
+                                </StackPanel.Children>
+                            </StackPanel>
+                        </TabItem.Header>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid.Children>
+                                <StackPanel
+                                    Grid.Row="0"
+                                    Margin="0,0,0,10"
+                                    Orientation="Horizontal">
+                                    <StackPanel.Children>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                   Source="/icons/ui_settings_24_blue.png" />
+                                            <TextBlock VerticalAlignment="Center"
+                                            Style="{StaticResource PageTitle}"
+                                            Text="关于" />
+                                        </StackPanel>
+                                        <TextBlock
+                                            Margin="12,0,0,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="12"
+                                            Foreground="{StaticResource TextT3}"
+                                            Text="面板自身 · 版本 / 路径 / 运行环境 / 配置备份" />
+                                    </StackPanel.Children>
+                                </StackPanel>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
+                                        <StackPanel.Children>
                                             <Border
                                                 Margin="0,0,0,10"
                                                 Padding="16,14"
@@ -3695,67 +3884,6 @@
                                                                 FontSize="11.5"
                                                                 Foreground="{StaticResource TextT3}"
                                                                 Text=""
-                                                                TextWrapping="Wrap" />
-                                                        </StackPanel.Children>
-                                                    </StackPanel>
-                                                </Border.Child>
-                                            </Border>
-                                            <Border
-                                                Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
-                                                <Border.Child>
-                                                    <StackPanel>
-                                                        <StackPanel.Children>
-                                                            <Grid Margin="0,0,0,10">
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="Auto" />
-                                                                    <ColumnDefinition Width="*" />
-                                                                    <ColumnDefinition Width="Auto" />
-                                                                </Grid.ColumnDefinitions>
-                                                                <Grid.Children>
-                                                                    <TextBlock
-                                                                        Grid.Column="0"
-                                                                        VerticalAlignment="Center"
-                                                                        FontSize="13"
-                                                                        FontWeight="SemiBold"
-                                                                        Foreground="{StaticResource TextT1}"
-                                                                        Text="内存优化" />
-                                                                    <TextBlock
-                                                                        Grid.Column="1"
-                                                                        Margin="12,0,0,0"
-                                                                        VerticalAlignment="Center"
-                                                                        FontSize="11.5"
-                                                                        Foreground="{StaticResource TextT3}"
-                                                                        Text="清工作集 · 刷修改页 · 清待机列表（原理同 PCL2 百宝箱）"
-                                                                        TextTrimming="CharacterEllipsis" />
-                                                                    <Button Style="{StaticResource BtnSecondary}"
-                                                                        x:Name="BtnMemOptimize"
-                                                                        Grid.Column="2"
-                                                                        Height="32"
-                                                                        Padding="16,0"
-                                                                        Click="OnMemOptimize">
-                                                                        优化内存
-                                                                        <Button.FontSize>12.5</Button.FontSize>
-                                                                        <Button.Background>#FF2D8CFF</Button.Background>
-                                                                        <Button.Foreground>#FFFFFFFF</Button.Foreground>
-                                                                        <Button.BorderThickness>0</Button.BorderThickness>
-                                                                        <Button.Cursor>Hand</Button.Cursor>
-                                                                    </Button>
-                                                                </Grid.Children>
-                                                            </Grid>
-                                                            <TextBlock
-                                                                x:Name="TxtMemAvail"
-                                                                Margin="0,0,0,6"
-                                                                FontSize="12.5"
-                                                                Foreground="{StaticResource TextT2}" />
-                                                            <TextBlock
-                                                                x:Name="TxtMemResult"
-                                                                FontSize="12.5"
-                                                                Foreground="#FF1E8E5A"
                                                                 TextWrapping="Wrap" />
                                                         </StackPanel.Children>
                                                     </StackPanel>
@@ -3900,78 +4028,6 @@
                                                                                     VerticalAlignment="Center"
                                                                                     Source="/icons/ui_network_24_dark.png" />
                                                                                 <TextBlock VerticalAlignment="Center" Text="设置文件" />
-                                                                            </StackPanel.Children>
-                                                                        </StackPanel>
-                                                                    </Button>
-                                                                    <Button
-                                                                        Style="{StaticResource BtnSecondary}"
-                                                                        Margin="0,0,8,8"
-                                                                        Click="OnExportBackup"
-                                                                        Cursor="Hand"
-                                                                        ToolTip="把软路由的配置、连接参数、运行快照打包下载到本机（只读，不改任何设置）">
-                                                                        <StackPanel Orientation="Horizontal">
-                                                                            <StackPanel.Children>
-                                                                                <Image
-                                                                                    Width="15"
-                                                                                    Height="15"
-                                                                                    Margin="0,0,6,0"
-                                                                                    VerticalAlignment="Center"
-                                                                                    Source="/icons/ui_download_24_dark.png" />
-                                                                                <TextBlock VerticalAlignment="Center" Text="导出配置备份" />
-                                                                            </StackPanel.Children>
-                                                                        </StackPanel>
-                                                                    </Button>
-                                                                    <Button
-                                                                        Style="{StaticResource BtnSecondary}"
-                                                                        Margin="0,0,8,8"
-                                                                        Click="OnRestoreBackup"
-                                                                        Cursor="Hand"
-                                                                        ToolTip="从备份包恢复配置（先自动备份当前配置，失败可回滚）">
-                                                                        <StackPanel Orientation="Horizontal">
-                                                                            <StackPanel.Children>
-                                                                                <Image
-                                                                                    Width="15"
-                                                                                    Height="15"
-                                                                                    Margin="0,0,6,0"
-                                                                                    VerticalAlignment="Center"
-                                                                                    Source="/icons/ui_upload_24_dark.png" />
-                                                                                <TextBlock VerticalAlignment="Center" Text="恢复配置" />
-                                                                            </StackPanel.Children>
-                                                                        </StackPanel>
-                                                                    </Button>
-                                                                    <Button
-                                                                        Style="{StaticResource BtnSecondary}"
-                                                                        Margin="0,0,8,8"
-                                                                        Click="OnDriftCheck"
-                                                                        Cursor="Hand"
-                                                                        ToolTip="对比最近一次快照，看配置有没有被人手改过（只读）">
-                                                                        <StackPanel Orientation="Horizontal">
-                                                                            <StackPanel.Children>
-                                                                                <Image
-                                                                                    Width="15"
-                                                                                    Height="15"
-                                                                                    Margin="0,0,6,0"
-                                                                                    VerticalAlignment="Center"
-                                                                                    Source="/icons/ui_git-compare_24_dark.png" />
-                                                                                <TextBlock VerticalAlignment="Center" Text="检查配置漂移" />
-                                                                            </StackPanel.Children>
-                                                                        </StackPanel>
-                                                                    </Button>
-                                                                    <Button
-                                                                        Style="{StaticResource BtnSecondary}"
-                                                                        Margin="0,0,8,8"
-                                                                        Click="OnSnapshotDiff"
-                                                                        Cursor="Hand"
-                                                                        ToolTip="选两份配置快照，逐文件看差异（只读，参照 OPNsense 配置历史）">
-                                                                        <StackPanel Orientation="Horizontal">
-                                                                            <StackPanel.Children>
-                                                                                <Image
-                                                                                    Width="15"
-                                                                                    Height="15"
-                                                                                    Margin="0,0,6,0"
-                                                                                    VerticalAlignment="Center"
-                                                                                    Source="/icons/ui_monitor-smartphone_24_dark.png" />
-                                                                                <TextBlock VerticalAlignment="Center" Text="快照对比" />
                                                                             </StackPanel.Children>
                                                                         </StackPanel>
                                                                     </Button>
