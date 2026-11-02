@@ -559,6 +559,85 @@
             <Setter Property="TextElement.Foreground" Value="#FF23324A" />
             <Setter Property="FrameworkElement.VerticalAlignment" Value="Center" />
         </Style>
+        <!-- 页面标题图标方块（照设计图：56×56 蓝色圆角方块） -->
+        <Style x:Key="PageHeaderIcon" TargetType="{x:Type Border}">
+            <Setter Property="Width" Value="52" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Background" Value="#FF4597FE" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <!-- 卡片标题前的蓝色竖线 -->
+        <Style x:Key="CardAccent" TargetType="{x:Type Border}">
+            <Setter Property="Width" Value="3" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Background" Value="#FF4597FE" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- ========== 组件库（12 页通用，照设计图抽取） ========== -->
+        <!-- 卡片容器：白底 + 圆角16 + 细边框（只统一样式，不设 Margin/Padding 以免布局位移） -->
+        <Style x:Key="CardBorder" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="#FFFFFFFF" />
+            <Setter Property="BorderBrush" Value="#FFE6EDF7" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+        <!-- 卡片标题文字（配合 CardTitle 使用） -->
+        <Style x:Key="CardTitleText" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource TextT1}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <!-- 卡片标题（自带左侧蓝色竖线）：<ContentControl Style="{StaticResource CardTitle}" Content="标题"/> -->
+        <Style x:Key="CardTitle" TargetType="{x:Type ContentControl}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ContentControl}">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border Width="3" Height="14" Background="#FF4597FE"
+                                    CornerRadius="2" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <ContentPresenter VerticalAlignment="Center"
+                                              TextBlock.FontSize="13"
+                                              TextBlock.FontWeight="SemiBold"
+                                              TextBlock.Foreground="{StaticResource TextT1}" />
+                        </StackPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 表格表头文字 -->
+        <Style x:Key="TableHeadText" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Foreground" Value="{StaticResource TextT3}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <!-- 表格行分隔线 -->
+        <Style x:Key="TableRowLine" TargetType="{x:Type Border}">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Background" Value="#FFEDF1F7" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <!-- 统计卡数值 -->
+        <Style x:Key="StatValue" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource TextT1}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <!-- 统计卡标签 -->
+        <Style x:Key="StatLabel" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource TextT3}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
         <Style x:Key="Head" TargetType="{x:Type TextBlock}">
             <Setter Property="TextElement.FontSize" Value="13" />
             <Setter Property="TextElement.FontWeight" Value="SemiBold" />
@@ -624,23 +703,54 @@
                     <ControlTemplate TargetType="{x:Type TabControl}">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="172" />
+                                <ColumnDefinition Width="210" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Grid.Children>
                                 <Border
-                                    Padding="0,10"
-                                    Background="#FFF7FAFE"
+                                    Padding="0"
+                                    Background="#FFFDFDFE"
                                     BorderBrush="#FFE9EFF7"
                                     BorderThickness="1"
-                                    CornerRadius="8">
+                                    CornerRadius="16">
                                     <Border.Child>
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                                      HorizontalScrollBarVisibility="Disabled"
-                                                      Focusable="False"
-                                                      Padding="0,0,2,0">
-                                            <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1" />
-                                        </ScrollViewer>
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Grid.Children>
+                                                <!-- 品牌区（照设计图） -->
+                                                <StackPanel Grid.Row="0" Margin="16,16,16,10" HorizontalAlignment="Center">
+                                                    <Image Width="44" Height="44" HorizontalAlignment="Center" Source="/icons/app.png" />
+                                                    <TextBlock Text="NetPanel" FontSize="17" FontWeight="Bold"
+                                                               Foreground="#FF4597FE" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                                                    <TextBlock Text="软路由管理面板" FontSize="11"
+                                                               Foreground="#FF8A99B8" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <!-- 导航项 -->
+                                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                                              HorizontalScrollBarVisibility="Disabled"
+                                                              Focusable="False" Padding="0,0,2,0">
+                                                    <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1" />
+                                                </ScrollViewer>
+                                                <!-- 底部状态卡（照设计图） -->
+                                                <Border Grid.Row="2" Margin="10,8,10,12" Padding="10,8"
+                                                        Background="#FFF0F6FF" CornerRadius="10">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Ellipse Width="8" Height="8" Fill="#FF047857"
+                                                                     VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                            <TextBlock Text="NetPanel 运行中" FontSize="11.5"
+                                                                       Foreground="#FF2B3A55" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="v1.51.7" FontSize="10.5"
+                                                                   Foreground="#FF8A99B8" Margin="14,3,0,0" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid.Children>
+                                        </Grid>
                                     </Border.Child>
                                 </Border>
                                 <Border
