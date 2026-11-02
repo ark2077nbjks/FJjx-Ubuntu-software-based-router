@@ -2680,13 +2680,88 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     private void StopApWatch() => _apTick.Stop();
 
+    /// <summary>SSID 输入变化：实时显示 UTF-8 字节数（802.11 上限 32 字节）</summary>
+    private void OnSsidInputChanged(object sender, TextChangedEventArgs e) => UpdateSsidBytes();
+
+    private void UpdateSsidBytes()
+    {
+        if (TxtSsidBytes == null || TxtSsidInput == null) return;
+        var s = TxtSsidInput.Text ?? "";
+        int bytes = Encoding.UTF8.GetByteCount(s);
+        bool hasSpace = s.Any(char.IsWhiteSpace);
+        bool bad = bytes > 32 || hasSpace;
+        TxtSsidBytes.Text = hasSpace ? "含空格 ✗" : $"{bytes}/32 字节";
+        TxtSsidBytes.Foreground = bad
+            ? new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28))
+            : new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8));
+        if (BtnSsidSave != null) BtnSsidSave.IsEnabled = !bad && bytes > 0;
+    }
+
+    /// <summary>保存 WiFi 名称：远端改 SSID 并重启 AP（面板走有线，不受影响）</summary>
+    private async void OnSsidSave(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteConfig.Load();
+        if (!cfg.IsConfigured) { MessageBox.Show("先在「连接」页填远端地址。", "无线名称"); return; }
+
+        var name = (TxtSsidInput.Text ?? "").Trim();
+        int bytes = Encoding.UTF8.GetByteCount(name);
+        if (name.Length == 0) { MessageBox.Show("名字不能为空。", "无线名称"); return; }
+        if (name.Any(char.IsWhiteSpace))
+        {
+            MessageBox.Show("名字不能含空格（远端遥控通道按空格分隔参数）。\n可以用下划线 _ 或短横线 - 代替。", "无线名称");
+            return;
+        }
+        if (bytes > 32)
+        {
+            MessageBox.Show($"名字太长：当前 {bytes} 字节，上限 32 字节。\n一个汉字算 3 字节，纯中文最多 10 个字。", "无线名称");
+            return;
+        }
+
+        var ask = MessageBox.Show(
+            $"把 WiFi 名称改成「{name}」？\n\n" +
+            "过程：备份原名 → 改设置 → 重启 AP（约 10~20 秒）。\n" +
+            "所有无线设备会断开，需要用新名字重新连接。\n" +
+            "本面板走有线，不受影响；改失败会自动改回原名。",
+            "无线名称", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+        if (ask != MessageBoxResult.OK) return;
+
+        BtnSsidSave.IsEnabled = false;
+        try
+        {
+            if (!await RouterCtl.IsInstalledAsync(cfg))
+            {
+                var yes = MessageBox.Show(
+                    "改名字需要远端助手（一次 sudo 密码，之后不用再输）。\n现在就装吗？",
+                    "需要安装", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (yes != MessageBoxResult.Yes) { TxtApProgress.Text = "已取消（没装助手）"; return; }
+                var inst = await RouterCtl.InstallAsync(cfg);
+                TxtApProgress.Text = inst.Detail;
+                if (inst.Ok)
+                    MessageBox.Show("文件已传到远端，终端窗口里输一次密码。\n装完看到 ✅ 之后，再点一次「保存名称」。", "无线名称");
+                return;
+            }
+
+            TxtApProgress.Text = "正在修改名称…";
+            var (ok, detail) = await RouterCtl.SetSsidAsync(cfg, name, m => TxtApProgress.Text = m);
+            TxtApProgress.Text = (ok ? "✅ " : "❌ ") + detail;
+            if (ok)
+            {
+                TxtApSsid.Text = name;
+                _ = ApTickAsync();     // 重新读远端实际值确认
+            }
+            MessageBox.Show(
+                ok ? $"名称已改成「{name}」。\n所有无线设备请用新名字重新连接。" : "没改成：\n" + detail,
+                "无线名称");
+        }
+        finally { UpdateSsidBytes(); }
+    }
+
     private async Task ApTickAsync()
     {
         if (_apBusy) return;
         _apBusy = true;
         try
-        {
-            var ap = await ApGather.ReadAsync();
+        {            var ap = await ApGather.ReadAsync();
             _apLast = ap;
             if (CmbApBand.Items.Count == 0) { if (ap.Ok) PopulateApSelectors(ap); }
             else UpdateApplyState();
@@ -2695,6 +2770,12 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             TxtApWidth.Text = ap.WidthText;
             TxtApPower.Text = ap.PowerText;
             TxtApSsid.Text = ap.SsidText;
+            // 输入框只在「用户没动过」时同步当前 SSID，避免覆盖正在编辑的内容
+            if (ap.Ok && string.IsNullOrEmpty(TxtSsidInput.Text))
+            {
+                TxtSsidInput.Text = ap.SsidText;
+                UpdateSsidBytes();
+            }
             TxtApSta.Text = ap.Ok ? $"{ap.StaCount} 台" : "—";
 
             if (ap.Ok)
@@ -3080,12 +3161,29 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     // ---------------- 日志页 ----------------
 
+    private sealed class LogRow
+    {
+        public string Time { get; set; } = "";
+        public string Level { get; set; } = "INFO";
+        public string Msg { get; set; } = "";
+        public Brush BadgeBg { get; set; } = Brushes.Transparent;
+        public Brush BadgeFg { get; set; } = Brushes.Gray;
+    }
+
+    private static Brush HexBrush(string hex) => (Brush)new BrushConverter().ConvertFrom(hex)!;
+    private static readonly Brush _logInfoBg = HexBrush("#FFE6F1FF");
+    private static readonly Brush _logInfoFg = HexBrush("#FF2D6FD8");
+    private static readonly Brush _logWarnBg = HexBrush("#FFFFF4E0");
+    private static readonly Brush _logWarnFg = HexBrush("#FFB26A00");
+    private static readonly Brush _logErrBg = HexBrush("#FFFFE9E9");
+    private static readonly Brush _logErrFg = HexBrush("#FFC62828");
+
     private void LoadLog()
     {
         try
         {
             var f = AppPaths.LogFile;
-            if (!File.Exists(f)) { TxtLog.Text = "（还没有日志）"; TxtLogInfo.Text = ""; return; }
+            if (!File.Exists(f)) { LstLog.ItemsSource = null; TxtLogInfo.Text = "（还没有日志）"; return; }
 
             var fi = new FileInfo(f);
             const long maxBytes = 300 * 1024;      // 只读最后 300KB，大文件也不卡
@@ -3096,19 +3194,64 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 fs.Seek(skip, SeekOrigin.Begin);
                 using var sr = new StreamReader(fs, Encoding.UTF8);
                 text = sr.ReadToEnd();
-                if (skip > 0) text = $"…（更早的 {skip / 1024} KB 已省略）\n" + text;
             }
 
-            var lines = text.Replace("\r\n", "\n").Split('\n');
-            // 最新的排在上面，省得往下滚
-            TxtLog.Text = string.Join("\n", lines.Reverse());
+            var raw = text.Replace("\r\n", "\n").Split('\n');
+            // 只渲染最近 300 行：页面内容被套在导航模板的 ScrollViewer 里，
+            // ListBox 拿不到有限高度，虚拟化会失效，行数一多就卡死（实测 3840 行 → 345MB / 无响应）
+            const int MaxRows = 300;
+            int skipped = 0;
+            if (raw.Length > MaxRows)
+            {
+                skipped = raw.Length - MaxRows;
+                raw = raw.Skip(skipped).ToArray();
+            }
+            var rows = new List<LogRow>();
+            foreach (var ln in raw)
+            {
+                var s2 = ln.TrimEnd();
+                if (s2.Length == 0) continue;
+                string t = "", m = s2;
+                // 标准行格式：yyyy-MM-dd HH:mm:ss  消息
+                if (s2.Length > 19 && s2[4] == '-' && s2[7] == '-' && s2[13] == ':')
+                {
+                    t = s2.Substring(0, 19);
+                    m = s2.Substring(19).Trim();
+                }
+                // 日志文件不带级别字段，展示层按关键字推断（不改写入逻辑）
+                var low = m.ToLowerInvariant();
+                string lv = "INFO";
+                if (low.Contains("失败") || low.Contains("错误") || low.Contains("异常") || low.Contains("error") || low.Contains("fail") || low.Contains("拒绝") || low.Contains("异常"))
+                    lv = "ERROR";
+                else if (low.Contains("警告") || low.Contains("超时") || low.Contains("warn") || low.Contains("不稳定") || low.Contains("跳过") || low.Contains("未配置"))
+                    lv = "WARN";
+                rows.Add(new LogRow
+                {
+                    Time = t,
+                    Msg = m,
+                    Level = lv,
+                    BadgeBg = lv == "ERROR" ? _logErrBg : lv == "WARN" ? _logWarnBg : _logInfoBg,
+                    BadgeFg = lv == "ERROR" ? _logErrFg : lv == "WARN" ? _logWarnFg : _logInfoFg
+                });
+            }
+            rows.Reverse();                        // 最新的排在上面
+            LstLog.ItemsSource = rows;
+
             int rolls = 0;
             for (int k = 1; k < AppPaths.MaxLogFiles; k++)
                 if (File.Exists(AppPaths.RolledLogFile(k))) rolls++;
-            TxtLogInfo.Text = $"{AppPaths.Human(fi.Length)} / 上限 {AppPaths.Human(AppPaths.MaxLogBytes)} · 历史 {rolls} 份 · {lines.Length} 行 · 最后修改 {fi.LastWriteTime:MM-dd HH:mm:ss}";
-            TxtLog.ScrollToHome();
+            TxtLogInfo.Text = skipped > 0
+                ? $"{AppPaths.Human(fi.Length)} · 最近 {rows.Count} 行（省略 {skipped} 行）· 历史 {rolls} 份"
+                : $"{AppPaths.Human(fi.Length)} · {rows.Count} 行 · 历史 {rolls} 份";
+            if (rows.Count > 0) LstLog.ScrollIntoView(rows[0]);
         }
-        catch (Exception ex) { TxtLog.Text = "读取日志失败：" + ex.Message; }
+        catch (Exception ex)
+        {
+            LstLog.ItemsSource = new List<LogRow>
+            {
+                new LogRow { Time = "", Msg = "读取日志失败：" + ex.Message, Level = "ERROR", BadgeBg = _logErrBg, BadgeFg = _logErrFg }
+            };
+        }
     }
 
     private void OnRefreshLog(object sender, RoutedEventArgs e)
@@ -4354,58 +4497,201 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     }
 
     /// <summary>状态页顶部总览：4 个关键指标卡片（参考 pfSense Dashboard widget 的做法）。</summary>
+    /// <summary>状态页顶部总览：9 个指标卡片（3×3，参照 pfSense Dashboard / PrivateRouter MD3 设计图）。</summary>
     private void RenderOverview(Snapshot snap)
     {
         StpOverview.Children.Clear();
         var gray = new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8));
         var green = new SolidColorBrush(Color.FromRgb(0x04, 0x78, 0x57));
         var red = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
-        var dark = new SolidColorBrush(Color.FromRgb(0x2B, 0x3A, 0x55));
+        var dark = new SolidColorBrush(Color.FromRgb(0x1E, 0x2A, 0x3B));
+        var blue = new SolidColorBrush(Color.FromRgb(0x45, 0x97, 0xFE));
 
-        void Card(string title, string value, Brush fg)
+        void Card(string kind, string title, string value, Brush color, double? ringPct = null, double? barPct = null, bool spark = false, bool bars = false)
         {
             var b = new Border
             {
-                Margin = new Thickness(0, 0, 10, 10),
-                Padding = new Thickness(14, 9, 14, 9),
+                Margin = new Thickness(5),
+                Padding = new Thickness(18, 14, 18, 14),
                 Background = Brushes.White,
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE9, 0xEF, 0xF7)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0xEF, 0xF9)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                MinWidth = 138,
+                CornerRadius = new CornerRadius(16),
             };
-            var sp = new StackPanel();
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var icon = new Image
+            {
+                Source = LucideIcons.Create(kind, blue, 2),
+                Width = 34,
+                Height = 34,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 14, 0),
+            };
+            Grid.SetColumn(icon, 0);
+            grid.Children.Add(icon);
+
+            var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             sp.Children.Add(new TextBlock
             {
                 Text = title,
-                FontSize = 11.5,
+                FontSize = 13,
                 Foreground = gray,
-                Margin = new Thickness(0, 0, 0, 3),
+                Margin = new Thickness(0, 0, 0, 4),
             });
             sp.Children.Add(new TextBlock
             {
                 Text = value,
-                FontSize = 15,
+                FontSize = 18,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = fg,
+                Foreground = color,
+                TextTrimming = TextTrimming.CharacterEllipsis,
             });
-            b.Child = sp;
+            Grid.SetColumn(sp, 1);
+            grid.Children.Add(sp);
+
+            // 右侧图形：环形进度（内存）或横向进度条（磁盘）
+            if (ringPct.HasValue)
+            {
+                double pct = Math.Max(0, Math.Min(100, ringPct.Value));
+                var ring = new Grid { Width = 44, Height = 44, VerticalAlignment = VerticalAlignment.Center };
+                ring.Children.Add(new Ellipse
+                {
+                    Stroke = new SolidColorBrush(Color.FromRgb(0xE2, 0xEA, 0xF6)),
+                    StrokeThickness = 5,
+                });
+                var arc = new Ellipse
+                {
+                    Stroke = blue,
+                    StrokeThickness = 5,
+                    StrokeDashCap = PenLineCap.Round,
+                    RenderTransform = new RotateTransform(-90, 22, 22),
+                };
+                // 圆周长 ≈ π × 直径；dash 单位是线宽倍数
+                double circumference = Math.PI * 39;
+                arc.StrokeDashArray = new DoubleCollection { pct / 100.0 * circumference / 5.0, 1000 };
+                ring.Children.Add(arc);
+                ring.Children.Add(new TextBlock
+                {
+                    Text = $"{pct:F0}%",
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = blue,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                Grid.SetColumn(ring, 2);
+                grid.Children.Add(ring);
+            }
+            else if (barPct.HasValue)
+            {
+                double pct = Math.Max(0, Math.Min(100, barPct.Value));
+                var barHost = new Grid { Width = 90, Height = 8, VerticalAlignment = VerticalAlignment.Center };
+                barHost.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(4),
+                    Background = new SolidColorBrush(Color.FromRgb(0xE2, 0xEA, 0xF6)),
+                });
+                barHost.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(4),
+                    Background = blue,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Width = 90 * pct / 100.0,
+                });
+                Grid.SetColumn(barHost, 2);
+                grid.Children.Add(barHost);
+            }
+            else if (spark)
+            {
+                // 装饰性波形（照设计图：负载/延迟卡片右侧的折线）
+                var host = new Grid { Width = 80, Height = 32, VerticalAlignment = VerticalAlignment.Center };
+                host.Children.Add(new System.Windows.Shapes.Path
+                {
+                    Data = Geometry.Parse("M0,26 L10,14 L20,20 L30,8 L40,18 L50,4 L60,14 L70,9 L80,22"),
+                    Stroke = blue,
+                    StrokeThickness = 2,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                    StrokeLineJoin = PenLineJoin.Round,
+                });
+                Grid.SetColumn(host, 2);
+                grid.Children.Add(host);
+            }
+            else if (bars)
+            {
+                // 装饰性柱状（照设计图：并发连接卡片右侧）
+                var host = new Grid { Width = 56, Height = 32, VerticalAlignment = VerticalAlignment.Center };
+                var heights = new[] { 14.0, 22.0, 30.0, 18.0, 26.0 };
+                for (int i = 0; i < heights.Length; i++)
+                {
+                    host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    var bar = new Border
+                    {
+                        Width = 7,
+                        Height = heights[i],
+                        CornerRadius = new CornerRadius(2),
+                        Background = new SolidColorBrush(Color.FromRgb(0x93, 0xBB, 0xF8)),
+                        VerticalAlignment = VerticalAlignment.Bottom,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                    };
+                    Grid.SetColumn(bar, i);
+                    host.Children.Add(bar);
+                }
+                Grid.SetColumn(host, 2);
+                grid.Children.Add(host);
+            }
+
+            // 无图形的卡片放半透明大图标水印（照设计图）
+            if (!ringPct.HasValue && !barPct.HasValue && !spark && !bars)
+            {
+                var wm = new Image
+                {
+                    Source = LucideIcons.Create(kind, new SolidColorBrush(Color.FromArgb(0x14, 0x45, 0x97, 0xFE)), 1.2),
+                    Width = 62,
+                    Height = 62,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, -6, 0),
+                    IsHitTestVisible = false,
+                };
+                Grid.SetColumn(wm, 2);
+                grid.Children.Add(wm);
+            }
+
+            b.Child = grid;
             StpOverview.Children.Add(b);
         }
 
-        Card("外网", snap.CampusOk ? "已认证 · 能上网" : "未认证", snap.CampusOk ? green : red);
-        Card("软路由", snap.MiniOnline ? "已连接" : "未连接", snap.MiniOnline ? green : gray);
-        Card("负载", string.IsNullOrEmpty(snap.MiniLoad) ? "—" : snap.MiniLoad, dark);
-        Card("远端内存", string.IsNullOrEmpty(snap.MiniMemText) ? "—" : $"{snap.MiniMemPct}% · {snap.MiniMemText}", dark);
-        Card("在线客户端", string.IsNullOrEmpty(snap.MiniClients) ? "—" : snap.MiniClients, dark);
-        Card("并发连接", string.IsNullOrEmpty(snap.MiniConn) ? "—" : snap.MiniConn, dark);
-        Card("磁盘", string.IsNullOrEmpty(snap.MiniDisk) ? "—" : snap.MiniDisk, dark);
-        Card("已运行", string.IsNullOrEmpty(snap.MiniUptime) ? "—" : snap.MiniUptime, dark);
-        if (snap.MiniRtt.Length > 0)
-            Card("网关延迟", snap.MiniRtt == "不通" ? "不通" : $"{snap.MiniGw} · {snap.MiniRtt}",
-                snap.MiniRtt == "不通" ? red : green);
-        if (!string.IsNullOrEmpty(snap.MiniTemp))
-            Card("温度", snap.MiniTemp, dark);
+        // 演示模式：NETPANEL_DEMO=1 时用假数据，仅用于验证图表效果
+        var demo = Environment.GetEnvironmentVariable("NETPANEL_DEMO") == "1";
+
+        Card("globe", "外网", snap.CampusOk || demo ? "已认证 · 能上网" : "未认证", snap.CampusOk ? green : red);
+        Card("server", "软路由", snap.MiniOnline || demo ? "已连接" : "未连接", (snap.MiniOnline || demo) ? green : gray);
+        Card("activity", "负载", demo ? "0.15 · 4 核" : (string.IsNullOrEmpty(snap.MiniLoad) ? "—" : snap.MiniLoad), dark, spark: true);
+        Card("cpu", "远端内存", demo ? "1.2 / 2.9 GB" : (string.IsNullOrEmpty(snap.MiniMemText) ? "—" : snap.MiniMemText), dark,
+            ringPct: demo ? 42 : (string.IsNullOrEmpty(snap.MiniMemText) ? null : snap.MiniMemPct));
+        Card("users", "在线客户端", demo ? "4 台" : (string.IsNullOrEmpty(snap.MiniClients) ? "—" : snap.MiniClients), dark);
+        Card("network", "并发连接", demo ? "1240 / 65536" : (string.IsNullOrEmpty(snap.MiniConn) ? "—" : snap.MiniConn), dark, bars: true);
+        Card("hard-drive", "磁盘", demo ? "45%" : (ParseFirstPct(snap.MiniDisk) is double dp ? $"{dp:F0}%" : "—"), dark,
+            barPct: demo ? 45 : ParseFirstPct(snap.MiniDisk));
+        Card("clock", "已运行", demo ? "12 天 3 小时" : (string.IsNullOrEmpty(snap.MiniUptime) ? "—" : snap.MiniUptime), dark);
+        Card("gauge", "网关延迟",
+            demo ? "46 ms"
+            : string.IsNullOrEmpty(snap.MiniRtt) ? "—"
+            : snap.MiniRtt == "不通" ? "不通" : snap.MiniRtt,
+            snap.MiniRtt == "不通" ? red : green, spark: true);
+    }
+
+    /// <summary>从 "45% 已用 · 剩 3.2G" 这类文本里取出百分比。</summary>
+    private static double? ParseFirstPct(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(s, @"(\d+(?:\.\d+)?)\s*%");
+        return m.Success && double.TryParse(m.Groups[1].Value, out var v) ? v : null;
     }
 
     private async Task RefreshAsync(bool manual = false)
@@ -4443,9 +4729,13 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
             TxtHint.Text = snap.MiniOnline ? "远端已连接" : "远端未连接";
             SetDot(ImgDotLink, snap.MiniOnline ? "on" : "off");
-            TxtFoot.Text = manual
-                ? $"√ 已手动刷新 {DateTime.Now:HH:mm:ss}"
-                : $"自动刷新 {DateTime.Now:HH:mm:ss}";
+            var _footParts = new List<string>
+            {
+                snap.MiniOnline ? "● 软路由在线" : "○ 软路由离线",
+            };
+            if (!string.IsNullOrEmpty(snap.MiniUptime)) _footParts.Add($"运行 {snap.MiniUptime}");
+            _footParts.Add(manual ? $"已手动刷新 {DateTime.Now:HH:mm:ss}" : $"自动刷新 {DateTime.Now:HH:mm:ss}");
+            TxtFoot.Text = string.Join("  ·  ", _footParts);
             TxtFoot.ToolTip = $"数据目录：{AppPaths.DataDir}";
             SetDot(ImgDotLocal, "on");
             SetDot(ImgDotCampus, snap.CampusOk ? "on" : "bad");

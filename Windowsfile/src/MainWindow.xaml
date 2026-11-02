@@ -108,7 +108,7 @@
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             <Grid.Children>
-                                <WrapPanel x:Name="StpOverview" Grid.Row="1" Margin="0,0,0,10" />
+                                <UniformGrid x:Name="StpOverview" Grid.Row="1" Columns="3" Margin="0,0,0,10" />
                                 <Grid Margin="0,0,0,12" Row="0">
                                     <Grid.Children>
                                         <StackPanel Orientation="Horizontal">
@@ -303,8 +303,7 @@
                                                         </StackPanel.Children>
                                                     </StackPanel>
                                                     <StackPanel x:Name="StpCampus" />
-                                                            <Border Margin="0,10,0,0" Padding="16,14" Background="#FFFFFFFF"
-                                                                BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                                            <Border Style="{StaticResource CardBorder}" Margin="0,10,0,0" Padding="16,14">
                                                                 <Border.Child>
                                                                     <StackPanel>
                                                                         <Grid Margin="0,0,0,10">
@@ -546,14 +545,10 @@
                                             Text="srun 认证 · 由 minipc 执行" />
                                     </DockPanel.Children>
                                 </DockPanel>
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="1"
                                     Margin="0,0,0,10"
-                                    Padding="16,14,16,14"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="16,14,16,14">
                                     <Border.Child>
                                         <StackPanel>
                                             <StackPanel.Children>
@@ -698,12 +693,8 @@
                                         </StackPanel>
                                     </Border.Child>
                                 </Border>
-                                <Border
-                                    Grid.Row="2"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                <Border Style="{StaticResource CardBorder}"
+                                    Grid.Row="2">
                                     <Border.Child>
                                         <TextBox
                                             x:Name="TxtCampusLog"
@@ -910,12 +901,8 @@
                                     Foreground="{StaticResource TextT3}"
                                     Text="点「扫描」看当前网段有哪些设备。快速模式：读邻居表 + 问路由器要名字 + 每台发 1 个 ping 测延迟（约 2 秒）"
                                     TextWrapping="Wrap" />
-                                <Border
-                                    Grid.Row="2"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                <Border Style="{StaticResource CardBorder}"
+                                    Grid.Row="2">
                                     <Border.Child>
                                         <Grid>
                                         <DataGrid
@@ -1081,13 +1068,15 @@
                                         </StackPanel>
                                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                                             <StackPanel.Children>
-                                                <TextBlock
-                                                    x:Name="TxtTrafficLive"
-                                                    Margin="0,0,14,0"
-                                                    VerticalAlignment="Center"
-                                                    FontSize="12"
-                                                    Foreground="#FF2D8CFF"
-                                                    Text="" />
+                                                <Border Background="#FFF0F6FF" CornerRadius="9" Padding="12,5"
+                                                        Margin="0,0,14,0" VerticalAlignment="Center">
+                                                    <TextBlock
+                                                        x:Name="TxtTrafficLive"
+                                                        FontSize="13"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="#FF2D6FD8"
+                                                        Text="" />
+                                                </Border>
                                                 <Button Style="{StaticResource BtnSecondary}"
                                                     x:Name="BtnTrafficRefresh"
                                                     Height="30"
@@ -1157,13 +1146,9 @@
                                     Foreground="{StaticResource TextT3}"
                                     Text="每 1 分钟记一次网卡收发量。只读系统计数器，不发包、不影响网速。"
                                     TextWrapping="Wrap" />
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="2"
-                                    Padding="12,10,12,6"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,6">
                                     <Border.Child>
                                         <Grid>
                                             <Grid.RowDefinitions>
@@ -1217,14 +1202,10 @@
                                         </Grid>
                                     </Border.Child>
                                 </Border>
-                                                            <Border
+                                                            <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="3"
                                     Margin="0,10,0,0"
-                                    Padding="12,10,12,8"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,8">
                                     <Border.Child>
                                         <Grid>
                                             <Grid.RowDefinitions>
@@ -1380,12 +1361,8 @@
                                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                     <StackPanel>
                                         <StackPanel.Children>
-                                            <Border
-                                                Padding="16"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                            <Border Style="{StaticResource CardBorder}"
+                                                Padding="16">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -1462,11 +1439,43 @@
                                                                         Width="96"
                                                                         FontSize="13"
                                                                         Foreground="{StaticResource TextT3}"
-                                                                        Text="SSID" />
+                                                                        Text="SSID"
+                                                                        VerticalAlignment="Center" />
+                                                                    <TextBox
+                                                                        x:Name="TxtSsidInput"
+                                                                        Width="190"
+                                                                        Height="28"
+                                                                        Padding="8,0"
+                                                                        VerticalContentAlignment="Center"
+                                                                        FontSize="13"
+                                                                        VerticalAlignment="Center"
+                                                                        TextChanged="OnSsidInputChanged"
+                                                                        ToolTip="WiFi 名字：不能含空格，最多 32 字节（一个汉字算 3 字节）" />
+                                                                    <TextBlock
+                                                                        x:Name="TxtSsidBytes"
+                                                                        Width="76"
+                                                                        Margin="8,0,0,0"
+                                                                        VerticalAlignment="Center"
+                                                                        FontSize="11.5"
+                                                                        Foreground="{StaticResource TextT3}"
+                                                                        Text="0/32 字节" />
+                                                                    <Button Style="{StaticResource BtnSecondary}"
+                                                                        x:Name="BtnSsidSave"
+                                                                        Height="28"
+                                                                        Margin="8,0,0,0"
+                                                                        Padding="12,0"
+                                                                        Click="OnSsidSave"
+                                                                        Cursor="Hand"
+                                                                        IsEnabled="False"
+                                                                        FontSize="13">
+                                                                        <TextBlock VerticalAlignment="Center" Text="保存名称" />
+                                                                    </Button>
                                                                     <TextBlock
                                                                         x:Name="TxtApSsid"
-                                                                        FontSize="13"
-                                                                        Foreground="#FF1E2A3B"
+                                                                        Margin="10,0,0,0"
+                                                                        FontSize="12"
+                                                                        Foreground="{StaticResource TextT3}"
+                                                                        VerticalAlignment="Center"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
@@ -1488,13 +1497,9 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,10,0,0"
-                                                Padding="16"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -1508,13 +1513,9 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,10,0,0"
-                                                Padding="16"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -1598,7 +1599,7 @@
                                                 Background="#FFF7F9FC"
                                                 BorderBrush="{StaticResource SurfaceChip}"
                                                 BorderThickness="1"
-                                                CornerRadius="10">
+                                                CornerRadius="16">
                                                 <Border.Child>
                                                     <TextBlock
                                                         FontSize="12"
@@ -1734,19 +1735,20 @@
                             <Grid.Children>
                                 <StackPanel
                                     Grid.Row="0"
-                                    Margin="0,0,0,10"
+                                    Margin="0,0,0,14"
                                     Orientation="Horizontal">
                                     <StackPanel.Children>
-                                        <WrapPanel>
-                                            <Image Width="20" Height="20" Margin="0,0,6,0" VerticalAlignment="Center"
-                                                   Source="/icons/ui_route_24_blue.png" />
-                                            <TextBlock VerticalAlignment="Center"
-                                            Style="{StaticResource PageTitle}"
-                                            Text="线路与故障转移" />
-                                        </WrapPanel>
+                                        <Border Style="{StaticResource PageHeaderIcon}">
+                                            <Image Width="26" Height="26" Source="/icons/ui_route_24_white.png" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock FontSize="24" FontWeight="Bold" Foreground="#FF1E2A3B" Text="网络接口" />
+                                            <TextBlock FontSize="13" Foreground="#FF8A99B8" Margin="0,4,0,0"
+                                                       Text="线路 / 故障转移 / 智能队列 / 分流" />
+                                        </StackPanel>
                                         <TextBlock
                                             x:Name="TxtWanFailInfo"
-                                            Margin="14,0,0,0"
+                                            Margin="16,0,0,0"
                                             VerticalAlignment="Center"
                                             FontSize="12"
                                             Foreground="{StaticResource TextT3}"
@@ -1754,16 +1756,16 @@
                                     </StackPanel.Children>
                                 </StackPanel>
 
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="1"
                                     Margin="0,0,0,10"
-                                    Padding="12,10,12,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,10">
                                     <Border.Child>
                                         <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                <Border Style="{StaticResource CardAccent}" />
+                                                <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="线路状态" />
+                                            </StackPanel>
                                             <Grid Margin="0,0,0,6">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="150" />
@@ -1794,17 +1796,14 @@
                                     </Border.Child>
                                 </Border>
 
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="2"
                                     Margin="0,0,0,10"
-                                    Padding="12,10,12,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,10">
                                     <Border.Child>
                                         <StackPanel>
                                             <StackPanel Orientation="Horizontal">
+                                                <Border Style="{StaticResource CardAccent}" />
                                                 <TextBlock
                                                     Margin="0,0,16,0"
                                                     VerticalAlignment="Center"
@@ -1862,18 +1861,14 @@
                                     </Border.Child>
                                 </Border>
 
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="3"
                                     Margin="0,0,0,10"
-                                    Padding="12,10,12,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,10">
                                     <Border.Child>
                                         <StackPanel>
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="智能队列（cake）" />
+                                                <Border Style="{StaticResource CardAccent}" /><TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="智能队列（cake）" />
                                                 <ctrl:Spinner x:Name="SpnSqm" Margin="0,0,6,0" VerticalAlignment="Center" />
                                                 <TextBlock x:Name="TxtSqmState" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextT3}" Text="读取中…" />
                                             </StackPanel>
@@ -1910,18 +1905,14 @@
                                 </Border>
 
                                 <!-- 多网卡路由：外网/内网分流 -->
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="4"
                                     Margin="0,0,0,10"
-                                    Padding="12,10,12,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,10">
                                     <Border.Child>
                                         <StackPanel>
                                             <WrapPanel Margin="0,0,0,6">
-                                                <TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="多网卡路由" />
+                                                <Border Style="{StaticResource CardAccent}" /><TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="多网卡路由" />
                                                 <TextBlock x:Name="TxtMultiRouteInfo" Margin="12,0,0,0" VerticalAlignment="Center"
                                                            FontSize="11.5" Foreground="{StaticResource TextT3}"
                                                            Text="外网走热点、内网走网线，一键切换" />
@@ -1972,13 +1963,9 @@
                                     </Border.Child>
                                 </Border>
 
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="5"
-                                    Padding="12,10,12,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="12,10,12,10">
                                     <Border.Child>
                                         <Grid>
                                             <Grid.RowDefinitions>
@@ -2187,13 +2174,9 @@
                                     FontSize="12"
                                     Foreground="{StaticResource TextT3}"
                                     Text="一行一个可批量；结果显示状态码与各段耗时" />
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="3"
-                                    Padding="14,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="14,10">
                                     <Border.Child>
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                             <StackPanel x:Name="PanelSiteResults" />
@@ -2267,14 +2250,10 @@
                                         </StackPanel>
                                     </Grid.Children>
                                 </Grid>
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="1"
                                     Margin="0,0,0,10"
-                                    Padding="14,10"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="14,10">
                                     <Border.Child>
                                         <StackPanel Orientation="Horizontal">
                                             <StackPanel.Children>
@@ -2294,12 +2273,8 @@
                                         </StackPanel>
                                     </Border.Child>
                                 </Border>
-                                <Border
-                                    Grid.Row="2"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                <Border Style="{StaticResource CardBorder}"
+                                    Grid.Row="2">
                                     <Border.Child>
                                         <TextBox
                                             x:Name="TxtProxyDetail"
@@ -2473,13 +2448,9 @@
                                         </StackPanel>
                                     </StackPanel.Children>
                                 </StackPanel>
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="3"
-                                    Padding="14,12,14,12"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="14,12,14,12">
                                     <Border.Child>
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                             <StackPanel>
@@ -2682,14 +2653,10 @@
                                         </StackPanel>
                                     </StackPanel.Children>
                                 </StackPanel>
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="1"
                                     Margin="0,0,0,10"
-                                    Padding="10,6,14,8"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="10,6,14,8">
                                     <Border.Child>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -2919,12 +2886,8 @@
                                         </Grid>
                                     </Border.Child>
                                 </Border>
-                                <Border
-                                    Grid.Row="2"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                <Border Style="{StaticResource CardBorder}"
+                                    Grid.Row="2">
                                     <Border.Child>
                                         <Canvas
                                             x:Name="ChartCanvas"
@@ -3032,13 +2995,9 @@
                                         </StackPanel>
                                     </Grid.Children>
                                 </Grid>
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="1"
-                                    Padding="16,12"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Padding="16,12">
                                     <Border.Child>
                                         <StackPanel>
                                             <StackPanel.Children>
@@ -3206,13 +3165,9 @@
                                         </StackPanel>
                                     </Border.Child>
                                 </Border>
-                                <Border
+                                <Border Style="{StaticResource CardBorder}"
                                     Grid.Row="2"
-                                    Margin="0,10,0,0"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                    Margin="0,10,0,0">
                                     <Border.Child>
                                         <TextBox
                                             x:Name="TxtConnLog"
@@ -3379,25 +3334,59 @@
                                         </StackPanel>
                                     </Grid.Children>
                                 </Grid>
-                                <Border
-                                    Grid.Row="1"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="{StaticResource LineHair}"
-                                    BorderThickness="1"
-                                    CornerRadius="10">
+                                <Border Style="{StaticResource CardBorder}"
+                                    Grid.Row="1">
                                     <Border.Child>
-                                        <TextBox
-                                            x:Name="TxtLog"
-                                            Padding="10,8"
-                                            Background="#00FFFFFF"
-                                            BorderThickness="0"
-                                            FontFamily="Consolas"
-                                            FontSize="12"
-                                            Foreground="{StaticResource TextT1}"
-                                            HorizontalScrollBarVisibility="Auto"
-                                            IsReadOnly="True"
-                                            TextWrapping="NoWrap"
-                                            VerticalScrollBarVisibility="Auto" />
+                                        <ListBox x:Name="LstLog"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                 ScrollViewer.CanContentScroll="True"
+                                                 VirtualizingPanel.IsVirtualizing="True"
+                                                 VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="{x:Type ListBoxItem}">
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="Margin" Value="0" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                                <ContentPresenter />
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="#FFF0F4FA" BorderThickness="0,0,0,1" Padding="6,7">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="148" />
+                                                                    <ColumnDefinition Width="74" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Grid.Column="0" Text="{Binding Time}" FontSize="11.5"
+                                                                           FontFamily="Consolas" Foreground="#FF8A99B8"
+                                                                           VerticalAlignment="Center" />
+                                                                <Border Grid.Column="1" HorizontalAlignment="Left" Padding="7,1"
+                                                                        CornerRadius="4" Background="{Binding BadgeBg}" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding Level}" FontSize="10.5" FontWeight="SemiBold"
+                                                                               Foreground="{Binding BadgeFg}" />
+                                                                </Border>
+                                                                <TextBlock Grid.Column="2" Text="{Binding Msg}" FontSize="12"
+                                                                           Foreground="{StaticResource TextT1}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                        </ListBox>
                                     </Border.Child>
                                 </Border>
                             </Grid.Children>
@@ -3427,13 +3416,9 @@
                                                     <TextBlock Style="{StaticResource PageTitle}" Text="系统" />
                                                 </StackPanel>
                                                 <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="远端软路由 · 服务 / 电源 / 更新 / 调优 / 备份（只读采集，不改任何配置）" />
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <TextBlock Text="备份与恢复" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
@@ -3529,7 +3514,7 @@
                                 </Grid>
                                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                     <StackPanel>
-                                        <Border Margin="0,0,0,10" Padding="16,14" Background="#FFFFFFFF" BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="16,14">
                                             <StackPanel>
                                                 <TextBlock Text="服务状态" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
                                                 <TextBlock Margin="0,4,0,10" FontSize="12" Foreground="{StaticResource TextT3}" Text="grayrouter-* 与 ssh / NetworkManager / docker。重启只影响单个单元，不会重启整机。" />
@@ -3556,7 +3541,7 @@
                                                 <ColumnDefinition Width="10" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Padding="16,14" Background="#FFFFFFFF" BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                            <Border Style="{StaticResource CardBorder}" Grid.Column="0" Padding="16,14">
                                                 <StackPanel>
                                                     <TextBlock Text="电源与网络" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
                                                     <TextBlock Margin="0,4,0,10" FontSize="12" Foreground="{StaticResource TextT3}" Text="每个动作都会二次确认。重启网络断 1-2 秒；重启整机断 30-60 秒，之后自动恢复软路由。" />
@@ -3582,7 +3567,7 @@
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
-                                            <Border Grid.Column="2" Padding="16,14" Background="#FFFFFFFF" BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                            <Border Style="{StaticResource CardBorder}" Grid.Column="2" Padding="16,14">
                                                 <StackPanel>
                                                     <TextBlock Text="系统更新" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
                                                     <TextBlock Margin="0,4,0,2" FontSize="12" Foreground="{StaticResource TextT3}" Text="只检查，不安装。内核升级建议先 hold，避免驱动漂移。" />
@@ -3592,7 +3577,7 @@
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
-                                        <Border Margin="0,0,0,10" Padding="16,14" Background="#FFFFFFFF" BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="16,14">
                                             <StackPanel>
                                                 <TextBlock Text="系统调优" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
                                                 <TextBlock Margin="0,4,0,10" FontSize="12" Foreground="{StaticResource TextT3}" Text="BBR / 日志限额 / DNS 缓存 / AP 频段。开机由 grayrouter-opt.service 自动应用，这里可以手动重放或撤销。" />
@@ -3665,7 +3650,7 @@
                                                 </Grid>
                                             </StackPanel>
                                         </Border>
-                                        <Border Margin="0,0,0,10" Padding="16,14" Background="#FFFFFFFF" BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="16,14">
                                             <StackPanel>
                                                 <TextBlock Text="实时负载" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
                                                 <TextBlock Margin="0,4,0,8" FontSize="12" Foreground="{StaticResource TextT3}" Text="3 秒一采样，只看最近 3 分钟；离开本页立刻停，不占带宽。" />
@@ -3684,7 +3669,7 @@
                                                 </Grid>
                                             </StackPanel>
                                         </Border>
-                                        <Border Margin="0,0,0,10" Padding="16,14" Background="#FFFFFFFF" BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="16,14">
                                             <StackPanel>
                                                 <TextBlock Text="进程 Top5" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextT1}" />
                                                 <TextBlock Margin="0,4,0,10" FontSize="12" Foreground="{StaticResource TextT3}" Text="按 CPU 占用排序，用来快速定位卡顿元凶。" />
@@ -3698,8 +3683,7 @@
                                                 <TextBlock x:Name="TxtProcEmpty" Margin="2,8,0,0" FontSize="12" Foreground="{StaticResource TextT3}" Text="还没有数据 · 点右上「刷新」" />
                                             </StackPanel>
                                         </Border>
-                                            <Border Margin="0,0,0,10" Padding="16,14" Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}" BorderThickness="1" CornerRadius="10">
+                                            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <TextBlock Text="自动备份" FontSize="13" FontWeight="SemiBold"
@@ -3775,15 +3759,11 @@
                                     </StackPanel.Children>
                                 </StackPanel>
                                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                        <StackPanel.Children>
-                                            <Border
+                                    <WrapPanel ItemWidth="430">
+                                        <WrapPanel.Children>
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -3841,8 +3821,8 @@
                                                                     <Button Style="{StaticResource BtnSecondary}"
                                                                         x:Name="BtnUpdCheck"
                                                                         Height="30"
-                                                                        Margin="24,0,0,0"
-                                                                        Padding="14,0"
+                                                                        Margin="10,0,0,0"
+                                                                        Padding="12,0"
                                                                         Click="OnCheckUpdate"
                                                                         Cursor="Hand"
                                                                         FontSize="13">
@@ -3892,13 +3872,9 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -3998,13 +3974,9 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -4076,13 +4048,9 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -4171,13 +4139,9 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
+                                            <Border Style="{StaticResource CardBorder}"
                                                 Margin="0,0,0,10"
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -4264,12 +4228,8 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                            <Border
-                                                Padding="16,14"
-                                                Background="#FFFFFFFF"
-                                                BorderBrush="{StaticResource LineHair}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
+                                            <Border Style="{StaticResource CardBorder}"
+                                                Padding="16,14">
                                                 <Border.Child>
                                                     <StackPanel>
                                                         <StackPanel.Children>
@@ -4304,8 +4264,8 @@
                                                     </StackPanel>
                                                 </Border.Child>
                                             </Border>
-                                        </StackPanel.Children>
-                                    </StackPanel>
+                                        </WrapPanel.Children>
+                                    </WrapPanel>
                                 </ScrollViewer>
                             </Grid.Children>
                         </Grid>

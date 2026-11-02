@@ -87,6 +87,12 @@ case "$cmd" in
   harden)        SCRIPT=/usr/local/bin/grayrouter-harden.sh ;;
   wifi-5g)       SCRIPT=$HOMEDIR/grayrouter-wifi/set-band.sh; ARGS="5g ${arg:-36}" ;;
   wifi-2g)       SCRIPT=$HOMEDIR/grayrouter-wifi/set-band.sh; ARGS="2g ${arg:-6}" ;;
+  wifi-ssid)     SCRIPT=$HOMEDIR/grayrouter-ctl/set-ssid.sh; ARGS="$rest"
+                 printf '%s' "$rest" | grep -qE '^[^[:space:][:cntrl:]]+$' || {
+                   write_res "error" 74 "WiFi 名字不能含空格：$rest"; log "拒绝 wifi-ssid: $rest"; exit 0; }
+                 _b=$(printf '%s' "$rest" | wc -c | tr -d ' ')
+                 if [ "$_b" -lt 1 ] || [ "$_b" -gt 32 ]; then
+                   write_res "error" 75 "WiFi 名字须 1~32 字节（当前 ${_b} 字节）"; exit 0; fi ;;
   dev-block)     SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="block $rest"; DEVCAP=1 ;;
   dev-unblock)   SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="unblock $rest"; DEVCAP=1 ;;
   dev-unblock-all) SCRIPT=$HOMEDIR/grayrouter-devmgr/grayrouter-devices.sh; ARGS="unblock-all"; DEVCAP=1 ;;
@@ -195,8 +201,92 @@ echo "✅ 装好了：面板现在可以切模式 / 回滚 / 加固伪装，都�
 echo "   日志：/var/log/grayrouter-ctl.log"
 """;
 
+    /// <summary>改 WiFi 名称（SSID）的远端脚本：只写配置 + 重应用 + 轮询验证，绝不 down 连接（down 会连带断有线）</summary>
+    private const string SsidScript = """
+#!/usr/bin/env bash
+# ============================================================
+#  set-ssid.sh <新名字>  —— 改 WiFi 名称（SSID）
+#
+#  设计要点（踩坑教训）：
+#   · 绝不 nmcli con down —— 会让 NetworkManager 重排整卡网络，有线一起断
+#   · 失败不自动回滚     —— 回滚要再断一次，伤害更大
+#   · 只写配置 + con up + 轮询验证
+#   · 802.11 标准：SSID 上限 32 字节（一个汉字 3 字节）
+# ============================================================
+set -uo pipefail
+NEW="${1:-}"
+CON="Gray-Router"
+DIR="/root/grayrouter-backup"
+BAK="$DIR/ssid.bak"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "需要管理员权限，正在提权…"
+  exec sudo bash "$0" "$@"
+fi
+
+[ -n "$NEW" ] || { echo "用法：set-ssid.sh <新名字>"; exit 2; }
+
+if ! printf '%s' "$NEW" | grep -qE '^[^[:space:][:cntrl:]]+$'; then
+  echo "❌ 名字不合法：不能含空格或控制字符"
+  exit 2
+fi
+BYTES=$(printf '%s' "$NEW" | wc -c | tr -d ' ')
+if [ "$BYTES" -lt 1 ] || [ "$BYTES" -gt 32 ]; then
+  echo "❌ 名字太长：当前 ${BYTES} 字节，上限 32 字节（一个汉字算 3 字节）"
+  exit 2
+fi
+
+OLD=$(nmcli -g 802-11-wireless.ssid con show "$CON" 2>/dev/null)
+if [ -z "$OLD" ]; then
+  echo "❌ 找不到无线连接 $CON"
+  exit 1
+fi
+
+if [ "$OLD" = "$NEW" ]; then
+  echo "√ 已经是这个名字：$NEW"
+  exit 0
+fi
+
+echo "===== 修改 WiFi 名称 ====="
+echo "原名称：$OLD"
+echo "新名称：$NEW"
+
+mkdir -p "$DIR" 2>/dev/null
+printf '%s\n' "$OLD" > "$BAK"
+echo "[1/3] 已记录原名（不会自动回滚，需要时用它改回）"
+
+if ! nmcli con modify "$CON" 802-11-wireless.ssid "$NEW"; then
+  echo "❌ 写配置失败，设置未改动"
+  exit 1
+fi
+echo "[2/3] 已写入新名称"
+
+# 只重应用，不 down（关键：down 会连带断有线）
+nmcli con up "$CON" >/dev/null 2>&1 || true
+echo "[3/3] 正在重启 AP 应用新名字…"
+
+CUR=""
+for i in $(seq 1 20); do
+  sleep 1
+  CUR=$(nmcli -g 802-11-wireless.ssid con show "$CON" 2>/dev/null)
+  [ "$CUR" = "$NEW" ] && break
+done
+
+if [ "$CUR" = "$NEW" ]; then
+  echo "✅ 成功：WiFi 名称已改为 $NEW"
+  echo "   无线设备需用新名字重连（约 10~20 秒）；有线不受影响。"
+  exit 0
+fi
+
+echo "❌ 读回不一致（当前=${CUR:-空}）"
+echo "   配置里已是新名字，下次无线重连或重启会自动生效。"
+echo "   本次不自动回滚（避免再断一次）。要改回原名可手动："
+echo "   nmcli con modify $CON 802-11-wireless.ssid \"$OLD\" && nmcli con up $CON"
+exit 1
+""";
+
     private static readonly string[] Names =
-        { "grayrouter-ctl.sh", "grayrouter-ctl.service", "grayrouter-ctl.path", "install-ctl.sh" };
+        { "grayrouter-ctl.sh", "grayrouter-ctl.service", "grayrouter-ctl.path", "install-ctl.sh", "set-ssid.sh" };
 
     private static string StageFiles()
     {
@@ -208,18 +298,20 @@ echo "   日志：/var/log/grayrouter-ctl.log"
             ("grayrouter-ctl.service", Service),
             ("grayrouter-ctl.path", PathUnit),
             ("install-ctl.sh", Install),
+            ("set-ssid.sh", SsidScript),
         };
         foreach (var (name, body) in map)
             File.WriteAllText(Path.Combine(dir, name), body.Replace("\r\n", "\n"), new UTF8Encoding(false));
         return dir;
     }
 
-    /// <summary>远端装没装（看 systemd 单元在不在）</summary>
+    /// <summary>远端装没装（systemd 单元在 + 改 WiFi 名脚本在）</summary>
     public static async Task<bool> IsInstalledAsync(RemoteConfig cfg)
     {
         if (!cfg.IsConfigured) return false;
         var (rc, o, _) = await Remote.RunAsync("ssh.exe",
-            Remote.BaseArgs(cfg, true) + cfg.Target + " \"test -f /etc/systemd/system/grayrouter-ctl.path && echo YES\"");
+            Remote.BaseArgs(cfg, true) + cfg.Target +
+            " \"test -f /etc/systemd/system/grayrouter-ctl.path && test -f ~/grayrouter-ctl/set-ssid.sh && echo YES\"");
         return rc == 0 && o.Contains("YES");
     }
 
@@ -250,6 +342,10 @@ echo "   日志：/var/log/grayrouter-ctl.log"
     /// <summary>切回 2.4GHz</summary>
     public static Task<(bool Ok, string Detail)> Set2GAsync(RemoteConfig cfg, int channel = 6, Action<string>? progress = null)
         => RunAsync(cfg, "wifi-2g " + channel, progress);
+
+    /// <summary>改 WiFi 名称（SSID）。远端会重启 AP，无线客户端需用新名字重连；面板走有线不受影响。</summary>
+    public static Task<(bool Ok, string Detail)> SetSsidAsync(RemoteConfig cfg, string ssid, Action<string>? progress = null)
+        => RunAsync(cfg, "wifi-ssid " + ssid, progress);
 
     /// <summary>发一条命令，等远端执行完（最多等 4 分钟）</summary>
     private static readonly SemaphoreSlim _gate = new(1, 1);
