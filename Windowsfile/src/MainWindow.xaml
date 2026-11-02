@@ -1496,7 +1496,7 @@
                                                                 Margin="0,4,0,12"
                                                                 FontSize="12"
                                                                 Foreground="{StaticResource TextT3}"
-                                                                Text="切换时 WiFi 会断 15~25 秒，本面板也会短暂失去连接；远端有 150 秒死手保险，5G 起不来会自动回滚到 2.4G。重启后回到 2.4G（AP 配置由 netplan 管理）。"
+                                                                Text="切换时 WiFi 会断 15~25 秒，无线设备需重连；本面板走有线，不受影响。远端有 150 秒死手保险，5G 起不来会自动回滚到 2.4G。重启后回到 2.4G（AP 由 NetworkManager / nmcli 管理）。"
                                                                 TextWrapping="Wrap" />
                                                             <StackPanel Orientation="Horizontal">
                                                                 <StackPanel.Children>
@@ -3758,8 +3758,8 @@
                                                                         TextWrapping="Wrap" />
                                                                 </Grid.Children>
                                                             </Grid>
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <StackPanel.Children>
+                                                            <WrapPanel>
+                                                                <WrapPanel.Children>
                                                                     <TextBlock
                                                                         VerticalAlignment="Center"
                                                                         FontSize="12.5"
@@ -3827,8 +3827,8 @@
                                                                             </StackPanel.Children>
                                                                         </StackPanel>
                                                                     </Button>
-                                                                </StackPanel.Children>
-                                                            </StackPanel>
+                                                                </WrapPanel.Children>
+                                                            </WrapPanel>
                                                             <TextBlock
                                                                 x:Name="TxtUpdTip"
                                                                 Margin="0,9,0,0"
