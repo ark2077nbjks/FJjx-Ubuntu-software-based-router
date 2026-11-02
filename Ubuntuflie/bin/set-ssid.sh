@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # ============================================================
 #  set-ssid.sh <新名字>  —— 改 WiFi 名称（SSID）
-#    · 改前备份原名称，改后重启 AP 并读回验证
-#    · 验证失败自动回滚到原名
-#    · 名字限制：1~32 个字符，不能含空格（遥控通道按空格分隔参数）
+#
+#  设计要点（踩坑教训）：
+#   · 绝不 nmcli con down —— 会让 NetworkManager 重排整卡网络，有线一起断
+#   · 失败不自动回滚     —— 回滚要再断一次，伤害更大
+#   · 只写配置 + con up + 轮询验证
+#   · 802.11 标准：SSID 上限 32 字节（一个汉字 3 字节）
 # ============================================================
 set -uo pipefail
 NEW="${1:-}"
@@ -18,7 +21,6 @@ fi
 
 [ -n "$NEW" ] || { echo "用法：set-ssid.sh <新名字>"; exit 2; }
 
-# 校验：不含空白/控制字符，UTF-8 字节数 1~32（802.11 标准上限 32 octets）
 if ! printf '%s' "$NEW" | grep -qE '^[^[:space:][:cntrl:]]+$'; then
   echo "❌ 名字不合法：不能含空格或控制字符"
   exit 2
@@ -31,12 +33,12 @@ fi
 
 OLD=$(nmcli -g 802-11-wireless.ssid con show "$CON" 2>/dev/null)
 if [ -z "$OLD" ]; then
-  echo "❌ 找不到无线连接 $CON（先确认 AP 已配置）"
+  echo "❌ 找不到无线连接 $CON"
   exit 1
 fi
 
 if [ "$OLD" = "$NEW" ]; then
-  echo "√ 名称没变，当前就是 $NEW"
+  echo "√ 已经是这个名字：$NEW"
   exit 0
 fi
 
@@ -46,37 +48,33 @@ echo "新名称：$NEW"
 
 mkdir -p "$DIR" 2>/dev/null
 printf '%s\n' "$OLD" > "$BAK"
-echo "[1/4] 已备份原名"
+echo "[1/3] 已记录原名（不会自动回滚，需要时用它改回）"
 
 if ! nmcli con modify "$CON" 802-11-wireless.ssid "$NEW"; then
-  echo "❌ 写入失败，无线设置未改动"
+  echo "❌ 写配置失败，设置未改动"
   exit 1
 fi
-echo "[2/4] 已写入新名称"
+echo "[2/3] 已写入新名称"
 
-nmcli con down "$CON" >/dev/null 2>&1 || true
-sleep 2
+# 只重应用，不 down（关键：down 会连带断有线）
 nmcli con up "$CON" >/dev/null 2>&1 || true
-echo "[3/4] 正在重启 AP…"
-sleep 8
+echo "[3/3] 正在重启 AP 应用新名字…"
 
-CUR=$(nmcli -g 802-11-wireless.ssid con show "$CON" 2>/dev/null)
+CUR=""
+for i in $(seq 1 20); do
+  sleep 1
+  CUR=$(nmcli -g 802-11-wireless.ssid con show "$CON" 2>/dev/null)
+  [ "$CUR" = "$NEW" ] && break
+done
+
 if [ "$CUR" = "$NEW" ]; then
-  echo "[4/4] ✅ 成功：WiFi 名称已改为 $NEW"
-  echo "     所有无线设备需用新名称重新连接（约 10~20 秒）"
+  echo "✅ 成功：WiFi 名称已改为 $NEW"
+  echo "   无线设备需用新名字重连（约 10~20 秒）；有线不受影响。"
   exit 0
 fi
 
-echo "[4/4] ❌ 读回不一致（当前=$CUR），正在回滚…"
-nmcli con modify "$CON" 802-11-wireless.ssid "$OLD" >/dev/null 2>&1
-nmcli con down "$CON" >/dev/null 2>&1 || true
-sleep 2
-nmcli con up "$CON" >/dev/null 2>&1 || true
-sleep 6
-RB=$(nmcli -g 802-11-wireless.ssid con show "$CON" 2>/dev/null)
-if [ "$RB" = "$OLD" ]; then
-  echo "✅ 已回滚到原名称 $OLD"
-else
-  echo "⚠ 回滚也没成功（当前=$RB），请用有线 SSH 手动检查 Gray-Router 连接"
-fi
+echo "❌ 读回不一致（当前=${CUR:-空}）"
+echo "   配置里已是新名字，下次无线重连或重启会自动生效。"
+echo "   本次不自动回滚（避免再断一次）。要改回原名可手动："
+echo "   nmcli con modify $CON 802-11-wireless.ssid \"$OLD\" && nmcli con up $CON"
 exit 1
