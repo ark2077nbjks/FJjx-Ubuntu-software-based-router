@@ -2680,82 +2680,6 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     private void StopApWatch() => _apTick.Stop();
 
-    /// <summary>SSID 输入变化：实时显示 UTF-8 字节数（802.11 上限 32 字节）</summary>
-    private void OnSsidInputChanged(object sender, TextChangedEventArgs e) => UpdateSsidBytes();
-
-    private void UpdateSsidBytes()
-    {
-        if (TxtSsidBytes == null || TxtSsidInput == null) return;
-        var s = TxtSsidInput.Text ?? "";
-        int bytes = Encoding.UTF8.GetByteCount(s);
-        bool hasSpace = s.Any(char.IsWhiteSpace);
-        bool bad = bytes > 32 || hasSpace;
-        TxtSsidBytes.Text = hasSpace ? "含空格 ✗" : $"{bytes}/32 字节";
-        TxtSsidBytes.Foreground = bad
-            ? new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28))
-            : new SolidColorBrush(Color.FromRgb(0x8A, 0x99, 0xB8));
-        if (BtnSsidSave != null) BtnSsidSave.IsEnabled = !bad && bytes > 0;
-    }
-
-    /// <summary>保存 WiFi 名称：远端改 SSID 并重启 AP（面板走有线，不受影响）</summary>
-    private async void OnSsidSave(object sender, RoutedEventArgs e)
-    {
-        var cfg = RemoteConfig.Load();
-        if (!cfg.IsConfigured) { MessageBox.Show("先在「连接」页填远端地址。", "无线名称"); return; }
-
-        var name = (TxtSsidInput.Text ?? "").Trim();
-        int bytes = Encoding.UTF8.GetByteCount(name);
-        if (name.Length == 0) { MessageBox.Show("名字不能为空。", "无线名称"); return; }
-        if (name.Any(char.IsWhiteSpace))
-        {
-            MessageBox.Show("名字不能含空格（远端遥控通道按空格分隔参数）。\n可以用下划线 _ 或短横线 - 代替。", "无线名称");
-            return;
-        }
-        if (bytes > 32)
-        {
-            MessageBox.Show($"名字太长：当前 {bytes} 字节，上限 32 字节。\n一个汉字算 3 字节，纯中文最多 10 个字。", "无线名称");
-            return;
-        }
-
-        var ask = MessageBox.Show(
-            $"把 WiFi 名称改成「{name}」？\n\n" +
-            "过程：备份原名 → 改设置 → 重启 AP（约 10~20 秒）。\n" +
-            "所有无线设备会断开，需要用新名字重新连接。\n" +
-            "本面板走有线，不受影响；改失败会自动改回原名。",
-            "无线名称", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
-        if (ask != MessageBoxResult.OK) return;
-
-        BtnSsidSave.IsEnabled = false;
-        try
-        {
-            if (!await RouterCtl.IsInstalledAsync(cfg))
-            {
-                var yes = MessageBox.Show(
-                    "改名字需要远端助手（一次 sudo 密码，之后不用再输）。\n现在就装吗？",
-                    "需要安装", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (yes != MessageBoxResult.Yes) { TxtApProgress.Text = "已取消（没装助手）"; return; }
-                var inst = await RouterCtl.InstallAsync(cfg);
-                TxtApProgress.Text = inst.Detail;
-                if (inst.Ok)
-                    MessageBox.Show("文件已传到远端，终端窗口里输一次密码。\n装完看到 ✅ 之后，再点一次「保存名称」。", "无线名称");
-                return;
-            }
-
-            TxtApProgress.Text = "正在修改名称…";
-            var (ok, detail) = await RouterCtl.SetSsidAsync(cfg, name, m => TxtApProgress.Text = m);
-            TxtApProgress.Text = (ok ? "✅ " : "❌ ") + detail;
-            if (ok)
-            {
-                TxtApSsid.Text = name;
-                _ = ApTickAsync();     // 重新读远端实际值确认
-            }
-            MessageBox.Show(
-                ok ? $"名称已改成「{name}」。\n所有无线设备请用新名字重新连接。" : "没改成：\n" + detail,
-                "无线名称");
-        }
-        finally { UpdateSsidBytes(); }
-    }
-
     private async Task ApTickAsync()
     {
         if (_apBusy) return;
@@ -2770,12 +2694,6 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             TxtApWidth.Text = ap.WidthText;
             TxtApPower.Text = ap.PowerText;
             TxtApSsid.Text = ap.SsidText;
-            // 输入框只在「用户没动过」时同步当前 SSID，避免覆盖正在编辑的内容
-            if (ap.Ok && string.IsNullOrEmpty(TxtSsidInput.Text))
-            {
-                TxtSsidInput.Text = ap.SsidText;
-                UpdateSsidBytes();
-            }
             TxtApSta.Text = ap.Ok ? $"{ap.StaCount} 台" : "—";
 
             if (ap.Ok)

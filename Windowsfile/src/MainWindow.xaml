@@ -1439,43 +1439,11 @@
                                                                         Width="96"
                                                                         FontSize="13"
                                                                         Foreground="{StaticResource TextT3}"
-                                                                        Text="SSID"
-                                                                        VerticalAlignment="Center" />
-                                                                    <TextBox
-                                                                        x:Name="TxtSsidInput"
-                                                                        Width="190"
-                                                                        Height="28"
-                                                                        Padding="8,0"
-                                                                        VerticalContentAlignment="Center"
-                                                                        FontSize="13"
-                                                                        VerticalAlignment="Center"
-                                                                        TextChanged="OnSsidInputChanged"
-                                                                        ToolTip="WiFi 名字：不能含空格，最多 32 字节（一个汉字算 3 字节）" />
-                                                                    <TextBlock
-                                                                        x:Name="TxtSsidBytes"
-                                                                        Width="76"
-                                                                        Margin="8,0,0,0"
-                                                                        VerticalAlignment="Center"
-                                                                        FontSize="11.5"
-                                                                        Foreground="{StaticResource TextT3}"
-                                                                        Text="0/32 字节" />
-                                                                    <Button Style="{StaticResource BtnSecondary}"
-                                                                        x:Name="BtnSsidSave"
-                                                                        Height="28"
-                                                                        Margin="8,0,0,0"
-                                                                        Padding="12,0"
-                                                                        Click="OnSsidSave"
-                                                                        Cursor="Hand"
-                                                                        IsEnabled="False"
-                                                                        FontSize="13">
-                                                                        <TextBlock VerticalAlignment="Center" Text="保存名称" />
-                                                                    </Button>
+                                                                        Text="SSID" />
                                                                     <TextBlock
                                                                         x:Name="TxtApSsid"
-                                                                        Margin="10,0,0,0"
-                                                                        FontSize="12"
-                                                                        Foreground="{StaticResource TextT3}"
-                                                                        VerticalAlignment="Center"
+                                                                        FontSize="13"
+                                                                        Foreground="#FF1E2A3B"
                                                                         Text="—" />
                                                                 </StackPanel.Children>
                                                             </StackPanel>
