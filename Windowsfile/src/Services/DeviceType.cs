@@ -137,11 +137,19 @@ public static class DeviceType
         return false;
     }
 
-    /// <summary>展示用名字：名字有信息就用名字，否则用 IP，再不行用 MAC。</summary>
+    /// <summary>展示用名字：有名字用名字；没名字用 MAC 尾号（设备身份）；连 MAC 都没有才退回 IP。</summary>
     public static string DisplayName(string? name, string? ip, string? mac)
     {
         if (!IsWeakName(name)) return name!.Trim();
-        if (!string.IsNullOrWhiteSpace(ip)) return ip!.Trim();
-        return (mac ?? "").Trim();
+
+        // 没名字时**不能拿 IP 当设备名**：IP 是位置（DHCP 会变），MAC 才是设备身份。
+        // 成熟面板（iKuai / pfSense）也是这么做的：无名字显示 MAC 尾号。
+        var m = (mac ?? "").Trim().Replace(":", "").Replace("-", "");
+        if (m.Length >= 4)
+            return "未知设备·" + m.Substring(m.Length - 4).ToUpperInvariant();
+        if (m.Length > 0)
+            return "未知设备·" + m.ToUpperInvariant();
+
+        return (ip ?? "").Trim();
     }
 }

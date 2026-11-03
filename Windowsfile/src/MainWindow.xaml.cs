@@ -1595,13 +1595,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (DgDevices.Columns.Count < 8 || double.IsNaN(w) || w <= 0) return;
+            if (DgDevices.Columns.Count < 9 || double.IsNaN(w) || w <= 0) return;
             int iw = (int)Math.Round(w);
             if (iw == _devColWidth) return;
             _devColWidth = iw;
             bool wide = iw >= 1000;
-            DgDevices.Columns[6].Visibility = wide ? Visibility.Visible : Visibility.Collapsed;   // 延迟
-            DgDevices.Columns[2].MinWidth = wide ? 150 : 120;                                    // 名称
+            // 列顺序：0 图标 / 1 IP / 2 MAC / 3 名称 / 4 连接 / 5 状态 / 6 实时速率 / 7 延迟 / 8 固定 / 9 操作
+            DgDevices.Columns[7].Visibility = wide ? Visibility.Visible : Visibility.Collapsed;   // 延迟
+            DgDevices.Columns[3].MinWidth = wide ? 150 : 120;                                    // 名称
         }
         catch { }
     }
