@@ -94,6 +94,9 @@ public partial class MainWindow : Window
         TxtBadge.Text = $"{Ver.Text()} · 网段自适应";   // 版本号跟着程序集走，不再写死
         AppPaths.Log($"窗口创建  {Ver.Text()}  数据目录={AppPaths.DataDir}");
 
+        // 状态页总览：窗口宽度变化时调整列数（窄窗口自动 2/1 列）
+        StpOverview.SizeChanged += (_, e) => ApplyOverviewColumns(e.NewSize.Width);
+
         Loaded += async (_, _) =>
         {
                         TxtFoot.Text = "正在初始化…";
@@ -1571,6 +1574,21 @@ public partial class MainWindow : Window
     private string _lastCidr = "";
 
     private int _devColWidth = -1;
+    private int _ovCols = -1;
+
+    /// <summary>状态页总览列数：窄窗口自动降为 2 列 / 1 列，避免卡片内容被截断</summary>
+    private void ApplyOverviewColumns(double w)
+    {
+        try
+        {
+            if (double.IsNaN(w) || w <= 0) return;
+            int want = w >= 760 ? 3 : (w >= 500 ? 2 : 1);
+            if (want == _ovCols) return;
+            _ovCols = want;
+            if (StpOverview != null) StpOverview.Columns = want;
+        }
+        catch { }
+    }
 
     /// <summary>设备表按可用宽度自适应：宽了就全显示，窄了收起「延迟」列，避免横向滚动条</summary>
     private void ApplyDeviceColumns(double w)
@@ -4569,11 +4587,11 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 var wm = new Image
                 {
                     Source = LucideIcons.Create(kind, new SolidColorBrush(Color.FromArgb(0x14, 0x45, 0x97, 0xFE)), 1.2),
-                    Width = 62,
-                    Height = 62,
+                    Width = 46,
+                    Height = 46,
                     HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, -6, 0),
+                    Margin = new Thickness(0, 0, -4, 0),
                     IsHitTestVisible = false,
                 };
                 Grid.SetColumn(wm, 2);
