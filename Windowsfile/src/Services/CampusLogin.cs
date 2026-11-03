@@ -117,10 +117,12 @@ public static class CampusLogin
         var line = (outp ?? "").Split('\n').FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? "";
         var ip = System.Text.RegularExpressions.Regex.Match(line, @"\b(\d+\.\d+\.\d+\.\d+)\b").Groups[1].Value;
         if (string.IsNullOrWhiteSpace(ip))
+        {
             // 连不上远端 = 预检本身没跑通，放行（后续登录会自己快速报错），不因为预检失败拦人
             if (code != 0)
                 return (true, "", $"预检没跑通（{(err ?? "").Split('\n').FirstOrDefault()?.Trim()}），直接尝试");
             return (false, "", $"网卡 {iface} 没有 IPv4 地址（没插线 / 没连通）");
+        }
         if (IsCampusIp(ip))
             return (true, ip, "");
         return (false, ip, $"网卡 {iface} 的地址是 {ip}，不在校园网段（10.149 / 10.150）");
