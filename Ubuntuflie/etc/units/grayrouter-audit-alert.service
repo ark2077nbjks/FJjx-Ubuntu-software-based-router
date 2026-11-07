@@ -1,0 +1,6 @@
+[Unit]
+Description=GrayRouter 审计失败提醒（写日志，供面板/人工查看）
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "$(date "+%%F %%T") audit service failed, see /var/log/grayrouter-audit.log" >> /var/log/grayrouter-audit-alert.log'
