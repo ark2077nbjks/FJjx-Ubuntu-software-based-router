@@ -354,21 +354,34 @@ echo "   日志：/var/log/grayrouter-ctl.log"
         finally { _gate.Release(); }
     }
 
+    private static string NewId()
+        => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + (_seq++ % 1000).ToString("D3");
+
     private static async Task<(bool Ok, string Detail)> RunCoreAsync(RemoteConfig cfg, string cmd, Action<string>? progress = null)
     {
         if (!cfg.IsConfigured) return (false, "还没配置远端地址");
 
-        var id = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() + (_seq++ % 1000).ToString("D3");
-        var write = "echo '" + id + " " + cmd + "' > /run/grayrouter/request 2>/dev/null && echo CTL_OK";
+        var id = NewId();
+        var writeFor = new Func<string, string>(wid =>
+            "echo '" + wid + " " + cmd + "' > /run/grayrouter/request 2>/dev/null && echo CTL_OK");
         var (rc, o, e) = await Remote.RunAsync("ssh.exe",
-            Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + write + "\"");
+            Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + writeFor(id) + "\"");
         var txt = (o + e).Trim();
         if (rc != 0 || !txt.Contains("CTL_OK"))
             return (false, "远端没接受命令——遥控助手可能还没装（先点「安装遥控」）");
 
         var miss = 0;
+        var retries = 0;
         for (int i = 0; i < 80; i++)
         {
+            // 单文件通道的已知问题：别的写者（如 SQM 轮询）覆盖 request 会让本条命令被静默吞掉。
+            // 轮询中每约 8 秒用新 id 重写一次（最多 3 次）；换新 id 是为了绕开 ctl 的 SEEN 去重。
+            if (i > 0 && i % 15 == 0 && retries < 3)
+            {
+                retries++;
+                id = NewId();
+                await Remote.RunAsync("ssh.exe", Remote.BaseArgs(cfg, true) + cfg.Target + " \"" + writeFor(id) + "\"");
+            }
             // 快起步：前 12 次 0.4 秒一探，之后 1 秒，再往后 3 秒；短命令（读状态/列租约）不再干等 3 秒
             var waitMs = i < 12 ? 400 : i < 30 ? 1000 : 3000;
             await Task.Delay(waitMs);
