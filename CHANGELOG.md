@@ -1,3 +1,25 @@
+## 1.51.9 · 2026-11-08
+
+### 修复
+- **ctl 命令静默丢失（根因）**：面板把命令写进单文件 `/run/grayrouter/request`，后写覆盖前写；且 ctl.service 忙碌时 systemd `.path` 不再触发——两条叠加导致命令彻底丢失（「导出配置备份」一直转圈就是这么来的）。改为队列化：`mv` 原子抢占、处理完循环检查新请求、`flock` 防双实例、`mv` 后立即重建空 request(666) 保证写者可用；崩溃残留的高危命令（还原/重启/切模式/改角色）不自动重放
+- **配置审计静默失败 7 天**：审计仓库属主是普通用户、timer 却以 root 运行，被 git 的 dubious ownership 拒绝；脚本 `set -uo pipefail` 无 `-e`，失败被吞后仍写「成功」日志。修复：仓库属主统一 root:root(700)、每步显式检查、提交前后计数断言、心跳文件 + `verify` 子命令、systemd `OnFailure` 告警
+- **面板「导出配置备份」失效**：原调用 `~/grayrouter-backup.sh`（该脚本已不存在），改走 ctl 通道调新备份脚本
+- **面板 SQM 统计挤占命令通道**：每 2 秒一次 `sqm-stats` 把通道占满，改为 ssh 直读（`sqm stats` 不需要 root）
+
+### 新增
+- **配置备份/还原**（`grayrouter-configbackup.sh`）：白名单全量快照（tar + manifest + 标准 sha256 清单），`save/list/verify/restore/export` 五个命令；还原前自动存 pre-restore 还原点、两阶段提交（先写 `.tmp` 再原子 mv）、路径穿越校验、保留最近 10 份
+- **日志轮转**：`/etc/logrotate.d/grayrouter`（1MB 或每周，留 4 份压缩，copytruncate）
+- **审计无变化日志**：每小时都留一行 `run: 无变化`，日志不再看起来像停摆
+
+### 改进
+- 面板状态页刷新 60 秒 → 15 秒
+- ctl 命令失败自动换新 id 重试（最多 3 次），配合队列化双保险
+- `.gitignore` 排除编译产物 `Windowsfile/publish*/`
+
+### 部署注意
+- 本版 ctl 需要 root 安装：`install -m 755 bin/grayrouter-ctl.sh /usr/local/bin/`
+- 备份脚本需同时安装 `grayrouter-configbackup.sh`，否则 ctl 的 backup-* 命令会提示找不到脚本
+
 ## 1.51.8 · 2026-11-02
 
 ### 新增
