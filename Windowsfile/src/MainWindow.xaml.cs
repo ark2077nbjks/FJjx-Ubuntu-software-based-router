@@ -19,7 +19,7 @@ namespace NetPanel;
 
 public partial class MainWindow : Window
 {
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(60) };
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(15) };
     // 网卡热插拔轮询（8 秒一次，只查名字，很轻）
     // 网卡页改成纯手动：不再 8 秒轮询，进页查一次 + 点「刷新」才查
     private readonly DispatcherTimer _nicPoll = new() { Interval = TimeSpan.FromSeconds(8) };
@@ -114,7 +114,7 @@ public partial class MainWindow : Window
                 new DeployWindow(host, RemoteConfig.Load().User) { Owner = this }.Show();
             }
         };
-        _timer.Tick += async (_, _) => { _timer.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(60)); await RefreshAsync(); };
+        _timer.Tick += async (_, _) => { _timer.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(15)); await RefreshAsync(); };
         _wanPoll.Tick += async (_, _) => { _wanPoll.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(10)); await LoadWanFailAsync(); };
         _sqmStatPoll.Tick += async (_, _) => await TickSqmStatAsync();
         _devTick.Tick += async (_, _) => { _devTick.Interval = RouterCtl.Backoff(TimeSpan.FromSeconds(3), 60); await PollDevRateAsync(); };
@@ -2265,7 +2265,7 @@ public partial class MainWindow : Window
     private void ResumeTicksForPage()
     {
         var page = CurrentPage;
-        if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(60); _timer.Start(); _ = RefreshAsync(); }
+        if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(15); _timer.Start(); _ = RefreshAsync(); }
                 if (page == "流量") _ = LoadUsageAsync(true);
 if (page == "网卡") { _wanPoll.Interval = TimeSpan.FromSeconds(10); _wanPoll.Start(); }
         if (page == "设备") { _devTick.Interval = TimeSpan.FromSeconds(3); _devTick.Start(); _ = PrimeDevRateAsync(); UpdateDevEmpty(); }
@@ -2417,7 +2417,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             _ = WatchNicsAsync();
 
         // 代理检测页：进来开始实时刷新，离开就停（省资源）
-        if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(60); _timer.Start(); }
+        if (page == "状态") { _timer.Interval = TimeSpan.FromSeconds(15); _timer.Start(); }
         else _timer.Stop();
 
         // 诊断页 · 代理与出口 子页签：可见才起实时刷新
@@ -3696,6 +3696,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         new SnapshotDiffWindow { Owner = this }.ShowDialog();
     }
 
+    /// <summary>导出配置备份：走 ctl 触发远端新备份（带 manifest），再下载到本机</summary>
     private async void OnExportBackup(object sender, RoutedEventArgs e)
     {
         var cfg = RemoteConfig.Load();
@@ -3709,26 +3710,50 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             Title = "保存配置备份",
             Filter = "压缩包 (*.tar.gz)|*.tar.gz|所有文件 (*.*)|*.*",
-            FileName = $"grayrouter-backup-{DateTime.Now:yyyyMMdd-HHmmss}.tar.gz",
+            FileName = $"grayrouter-config-{DateTime.Now:yyyyMMdd-HHmmss}.tar.gz",
             InitialDirectory = Directory.Exists(AppPaths.DataDir) ? AppPaths.DataDir : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         };
         if (dlg.ShowDialog() != true) return;
         var local = dlg.FileName;
 
-        using var busy = UiFeedback.Busy(sender as Button ?? new Button(), "导出中…");
+        // SQM 统计轮询每 2 秒也走 ctl 通道，会和备份请求抢同一个请求文件 —— 备份期间先停掉
+        var sqmWasOn = _sqmStatPoll.IsEnabled;
+        _sqmStatPoll.Stop();
+        using var busy = UiFeedback.Busy(sender as Button ?? new Button(), "备份中…");
         try
         {
-            var (rc, outp, errp) = await Remote.RunAsync("ssh.exe",
-                $"-o ConnectTimeout=6 -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 -p {cfg.Port} {cfg.Target} " +
-                "\"bash ~/grayrouter-backup.sh\"", 60);
-            var remote = outp.Split('\n').Select(x => x.Trim())
-                             .LastOrDefault(x => x.StartsWith("/") && x.EndsWith(".tar.gz"));
-            if (rc != 0 || remote == null)
+            // 1) 远端生成备份（以 root 走 ctl 通道，不需要 sudo 密码）
+            var (ok1, d1) = await RouterCtl.RunAsync(cfg, "backup-save");
+            if (!ok1)
             {
-                MessageBox.Show("远端打包失败：\n" + (errp + outp).Trim(), "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("远端备份失败：\n" + d1, "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var m = System.Text.RegularExpressions.Regex.Match(d1, @"grayrouter-config-\d{8}-\d{6}(-\d{2})?");
+            if (!m.Success)
+            {
+                MessageBox.Show("没拿到备份 id，远端输出：\n" + d1, "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var id = m.Value;
+
+            // 2) 导出到家目录（备份包本体 600 root，普通用户直接下不了）
+            var (ok2, d2) = await RouterCtl.RunAsync(cfg, "backup-export " + id);
+            if (!ok2)
+            {
+                MessageBox.Show("导出失败：\n" + d2, "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var remote = d2.Split('\n').Select(x => x.Trim())
+                             .LastOrDefault(x => System.Text.RegularExpressions.Regex.IsMatch(
+                                 x, @"^/home/[A-Za-z0-9_.-]+/grayrouter-export-grayrouter-config-\d{8}-\d{6}(-\d{2})?\.tar\.gz$"));
+            if (remote == null)
+            {
+                MessageBox.Show("没拿到合法的远端文件路径：\n" + d2, "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
+            // 3) 下载到本机
             var (src, _, serr) = await Remote.RunAsync("scp.exe",
                 $"-P {cfg.Port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 {cfg.Target}:{remote} \"{local}\"", 120);
             if (src != 0 || !File.Exists(local) || new FileInfo(local).Length < 512)
@@ -3737,17 +3762,22 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 return;
             }
 
-            var kb = new FileInfo(local).Length / 1024;
-            AppPaths.Log($"[备份] 已导出 {local}（{kb} KB）");
+            // 4) 清理远端导出副本
             _ = Remote.RunAsync("ssh.exe",
                 $"-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o NumberOfPasswordPrompts=0 -p {cfg.Port} {cfg.Target} \"rm -f {remote}\"", 20);
 
+            var kb = new FileInfo(local).Length / 1024;
+            AppPaths.Log($"[备份] 已导出 {local}（{kb} KB，id={id}）");
             Toast($"已导出 {kb} KB → {System.IO.Path.GetFileName(local)}");
         }
         catch (Exception ex)
         {
             AppPaths.Log("[备份] 失败：" + ex.Message);
             MessageBox.Show("导出失败：" + ex.Message, "导出配置", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            if (sqmWasOn) _sqmStatPoll.Start();
         }
     }
 
@@ -4754,12 +4784,19 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     {
         var cfg = RemoteConfig.Load();
         if (!cfg.IsConfigured) { TxtSqmStat.Text = ""; SqmChart?.Reset(); return; }
-        var (ok, detail) = await RouterCtl.RunAsync(cfg, "sqm-stats");
-        if (!ok) { TxtSqmStat.Text = "实时读数不可用：" + detail; return; }
+        // SQM 统计是高频只读数据，不该占 ctl 命令通道（会挤掉备份等有副作用的命令）。
+        // 直接走 ssh 读远端脚本输出（sqm stats 不需要 root）。
+        var (rc, outp, errp) = await Remote.RunAsync("ssh.exe",
+            Remote.BaseArgs(cfg, true) + cfg.Target + " \"bash /usr/local/bin/grayrouter-sqm.sh stats 2>/dev/null\"");
+        if (rc != 0 || string.IsNullOrWhiteSpace(outp))
+        {
+            TxtSqmStat.Text = "实时读数不可用";
+            return;
+        }
 
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(ExtractJson(detail));
+            using var doc = System.Text.Json.JsonDocument.Parse(ExtractJson(outp));
             var rootEl = doc.RootElement;
             if (!rootEl.TryGetProperty("enabled", out var en) || en.GetInt32() != 1)
             {

@@ -20,3 +20,4 @@ _release/
 # 构建产物：只走 GitHub Releases，不进历史（每个 13 MB，会让 .git 暴涨）
 Windowsfile/NetPanel.exe
 Ubuntuflie/GrayRouter-*.zip
+Windowsfile/publish*/

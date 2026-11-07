@@ -23,8 +23,36 @@ mkdir -p /run/grayrouter 2>/dev/null
 [ -f "$REQ" ] || { : > "$REQ"; chmod 666 "$REQ" 2>/dev/null; }
 [ "$(id -u)" -eq 0 ] || exit 0
 
-raw=$(tr -d '\r\n' < "$REQ" 2>/dev/null || true)
-[ -z "${raw// /}" ] && exit 0
+# ---------- 队列化：mv 抢占请求文件，处理完再检查有没有新请求 ----------
+exec 9>/run/grayrouter/ctl.lock 2>/dev/null || true
+if [ -e /proc/self/fd/9 ]; then
+  flock -n 9 2>/dev/null || { echo "$(date '+%F %T') WARN: 另一个 ctl 实例在跑，本次跳过" >> "$LOG"; exit 0; }
+else
+  echo "$(date '+%F %T') WARN: 打不开锁文件，继续执行（不防并发）" >> "$LOG"
+fi
+
+# 上次异常退出残留的请求：高危命令不自动重放（防把执行到一半的还原/重启再来一遍）
+if [ -s "$REQ.proc" ]; then
+  precmd=$(tr -d "\r\n" < "$REQ.proc" 2>/dev/null | awk '{print $2}')
+  case "${precmd:-}" in
+    backup-restore|restore-file|snapshot-restore|snapshot-restore-soft|sys-restart|sys-power|mode-router|mode-hotspot|roles-set)
+      echo "$(date '+%F %T') WARN: 残留高危命令 $precmd，不自动重放" >> "$LOG"
+      rm -f "$REQ.proc" ;;
+    *)
+      mv "$REQ.proc" "$REQ" 2>/dev/null && chmod 666 "$REQ" 2>/dev/null || true ;;
+  esac
+fi
+
+while :; do
+  [ -s "$REQ" ] || { sleep 0.2; [ -s "$REQ" ] || break; }
+  mv "$REQ" "$REQ.proc" 2>/dev/null || break
+  # mv 走后立刻重建一个空 request（666）：/run/grayrouter 是 root 755，
+  # 不重建的话普通用户（面板）下次写入会「权限不够」
+  : > "$REQ" 2>/dev/null; chmod 666 "$REQ" 2>/dev/null || true
+  raw=$(tr -d "\r\n" < "$REQ.proc" 2>/dev/null || true)
+  rm -f "$REQ.proc" 2>/dev/null || true
+  [ -z "${raw// /}" ] && continue
+
 
 rid=$(printf '%s' "$raw" | awk '{print $1}')
 cmd=$(printf '%s' "$raw" | awk '{print $2}')
@@ -32,10 +60,8 @@ arg=$(printf '%s' "$raw" | awk '{print $3}')
 rest=$(printf '%s' "$raw" | cut -d' ' -f3- | tr -d '\r')
 case "${arg:-}" in ''|*[!0-9]*) arg="" ;; esac
 
-# 同一个 id 只执行一次（避免 path 重复触发）
-last=$(cat "$SEEN" 2>/dev/null || echo "")
-[ "$rid" = "$last" ] && exit 0
-echo "$rid" > "$SEEN"
+# 注：队列化后每个请求被 mv 消费一次，天然只处理一次。
+# 原来的 SEEN 去重已删除——它会把「崩溃残留后恢复」的请求当重复吞掉，让重放机制失效。
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
@@ -50,7 +76,10 @@ d = {"state": os.environ["STATE"], "exit": int(os.environ["CODE"]),
      "msg": os.environ["MSG"], "ts": int(time.time())}
 for p in (os.environ["RES"], os.path.join(os.environ["RDIR"], os.environ["RID"] + ".json")):
     try:
-        json.dump(d, open(p, "w"), ensure_ascii=False)
+        tmp = p + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, p)
     except Exception:
         pass
 PY
@@ -64,14 +93,14 @@ PY
 case "$cmd" in
   dev-block|dev-unblock)
     printf '%s' "$rest" | grep -qiE '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || {
-      write_res "error" 65 "MAC 格式不对：$rest"; log "拒绝 MAC: $rest"; exit 0; } ;;
+      write_res "error" 65 "MAC 格式不对：$rest"; log "拒绝 MAC: $rest"; continue; } ;;
   sqm-apply)
     printf '%s' "$rest" | grep -qE '^[0-9]{1,4} [0-9]{1,4}$' || {
-      write_res "error" 65 "带宽参数不对：$rest"; log "拒绝 sqm-apply: $rest"; exit 0; } ;;
+      write_res "error" 65 "带宽参数不对：$rest"; log "拒绝 sqm-apply: $rest"; continue; } ;;
   sys-restart)
-    printf '%s' "$rest" | grep -qE '^[a-zA-Z0-9@._-]+\.service$' || { write_res "error" 65 "单元名不合法：$rest"; log "拒绝 sys-restart: $rest"; exit 0; } ;;
+    printf '%s' "$rest" | grep -qE '^[a-zA-Z0-9@._-]+\.service$' || { write_res "error" 65 "单元名不合法：$rest"; log "拒绝 sys-restart: $rest"; continue; } ;;
   sys-power)
-    case "$rest" in net-restart|reboot|shutdown) : ;; *) write_res "error" 65 "电源动作不允许：$rest"; exit 0 ;; esac ;;
+    case "$rest" in net-restart|reboot|shutdown) : ;; *) write_res "error" 65 "电源动作不允许：$rest"; continue ;; esac ;;
   dev-*) : ;;
 esac
 
@@ -99,7 +128,7 @@ case "$cmd" in
   snapshot-list)  SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="list"; DEVCAP=1 ;;
   snapshot-restore-soft) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore-soft ${rest:-latest}"; DEVCAP=1
                  printf '%s' "${rest:-latest}" | grep -Eq '^[A-Za-z0-9_.+-]+$' || {
-                   write_res "error" 72 "快照名不合法：$rest"; exit 0; } ;;
+                   write_res "error" 72 "快照名不合法：$rest"; continue; } ;;
   snapshot-restore) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore ${rest:-latest}"; DEVCAP=1 ;;
   usbnet-now)    SCRIPT=/usr/local/bin/grayrouter-usbnet-now.sh; ARGS=""; DEVCAP=1 ;;
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
@@ -110,26 +139,26 @@ case "$cmd" in
   snap-list)     SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="list"; DEVCAP=1 ;;
   snap-diff)     SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="diff $rest"; DEVCAP=1
                  printf '%s' "$rest" | grep -Eq '^[A-Za-z0-9_.+-]+[[:space:]]+[A-Za-z0-9_.+-]+$' || {
-                   write_res "error" 71 "快照名不合法：$rest"; exit 0; } ;;
+                   write_res "error" 71 "快照名不合法：$rest"; continue; } ;;
   netdiag-trace) SCRIPT=/usr/local/bin/grayrouter-netdiag.sh; ARGS="trace ${rest:-223.5.5.5}"; DEVCAP=1
                  printf '%s' "${rest:-}" | grep -Eq '^[A-Za-z0-9.:_-]*$' || {
-                   write_res "error" 69 "主机名不合法：$rest"; log "拒绝 netdiag: $rest"; exit 0; } ;;
+                   write_res "error" 69 "主机名不合法：$rest"; log "拒绝 netdiag: $rest"; continue; } ;;
   netdiag-mtu)   SCRIPT=/usr/local/bin/grayrouter-netdiag.sh; ARGS="mtu ${rest:-223.5.5.5}"; DEVCAP=1
                  printf '%s' "${rest:-}" | grep -Eq '^[A-Za-z0-9.:_-]*$' || {
-                   write_res "error" 70 "主机名不合法：$rest"; log "拒绝 netdiag: $rest"; exit 0; } ;;
+                   write_res "error" 70 "主机名不合法：$rest"; log "拒绝 netdiag: $rest"; continue; } ;;
   lease-list)    SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="list"; DEVCAP=1 ;;
   lease-set)     SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="set $rest"; DEVCAP=1
                  printf '%s' "$rest" | grep -Eqi '^([0-9a-f]{2}:){5}[0-9a-f]{2} +([0-9]{1,3}\.){3}[0-9]{1,3}' || {
-                   write_res "error" 66 "参数要 MAC IP [备注]：$rest"; log "拒绝 lease-set: $rest"; exit 0; } ;;
+                   write_res "error" 66 "参数要 MAC IP [备注]：$rest"; log "拒绝 lease-set: $rest"; continue; } ;;
   lease-del)     SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="del $rest"; DEVCAP=1
                  printf '%s' "$rest" | grep -Eqi '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || {
-                   write_res "error" 67 "参数要 MAC：$rest"; log "拒绝 lease-del: $rest"; exit 0; } ;;
+                   write_res "error" 67 "参数要 MAC：$rest"; log "拒绝 lease-del: $rest"; continue; } ;;
   lease-apply)   SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="apply"; DEVCAP=1 ;;
   lease-clear)   SCRIPT=/usr/local/bin/grayrouter-lease.sh; ARGS="clear"; DEVCAP=1 ;;
   drift-check)   SCRIPT=/usr/local/bin/grayrouter-drift.sh; ARGS="${rest:-}"; DEVCAP=1 ;;
   restore-file)  SCRIPT=/usr/local/bin/grayrouter-restore.sh; ARGS="$rest"; DEVCAP=1
                  printf '%s' "$rest" | grep -Eq '^/home/[A-Za-z0-9._/-]+\.tar\.gz$' || {
-                   write_res "error" 68 "参数要备份包绝对路径：$rest"; log "拒绝 restore-file: $rest"; exit 0; } ;;
+                   write_res "error" 68 "参数要备份包绝对路径：$rest"; log "拒绝 restore-file: $rest"; continue; } ;;
   cron-get)      SCRIPT=/usr/local/bin/grayrouter-cron.sh; ARGS="get"; DEVCAP=1 ;;
   cron-set)      SCRIPT=/usr/local/bin/grayrouter-cron.sh; ARGS="set $rest"; DEVCAP=1 ;;
   cron-off)      SCRIPT=/usr/local/bin/grayrouter-cron.sh; ARGS="off"; DEVCAP=1 ;;
@@ -150,21 +179,30 @@ case "$cmd" in
   opt-rollback)  SCRIPT=/usr/local/bin/grayrouter-opt.sh; ARGS="rollback"; DEVCAP=1 ;;
   guard-arm)     SCRIPT=/usr/local/bin/grayrouter-guard.sh; ARGS="arm ${rest}"; DEVCAP=1
                  printf '%s' "$rest" | grep -qE '^[0-9]{2,3} (router|hotspot)$' || {
-                   write_res "error" 66 "守卫参数不合法：$rest"; exit 0; } ;;
+                   write_res "error" 66 "守卫参数不合法：$rest"; continue; } ;;
   guard-ok)      SCRIPT=/usr/local/bin/grayrouter-guard.sh; ARGS="confirm"; DEVCAP=1 ;;
   sys-restart)   SCRIPT=/usr/local/bin/grayrouter-sys.sh; ARGS="restart ${rest}"; DEVCAP=1 ;;
   sys-power)     SCRIPT=/usr/local/bin/grayrouter-sys.sh; ARGS="power ${rest}"; DEVCAP=1 ;;
+  # ---- 配置备份 / 还原（grayrouter-backup.sh，与面板的备份按钮对接）----
+  backup-save)   SCRIPT=/usr/local/bin/grayrouter-configbackup.sh; ARGS="save panel"; DEVCAP=1 ;;
+  backup-list)   SCRIPT=/usr/local/bin/grayrouter-configbackup.sh; ARGS="list"; DEVCAP=1 ;;
+  backup-export) SCRIPT=/usr/local/bin/grayrouter-configbackup.sh; ARGS="export $rest ${GR_USER:-zy-star}"; DEVCAP=1
+                 printf '%s' "$rest" | grep -Eq '^grayrouter-config-[0-9]{8}-[0-9]{6}(-[0-9]{2})?$' || {
+                   write_res "error" 73 "备份 id 不合法：$rest"; log "拒绝 backup-export: $rest"; continue; } ;;
+  backup-restore) SCRIPT=/usr/local/bin/grayrouter-configbackup.sh; ARGS="restore $rest --yes"; DEVCAP=1
+                 printf '%s' "$rest" | grep -Eq '^grayrouter-config-[0-9]{8}-[0-9]{6}(-[0-9]{2})?$' || {
+                   write_res "error" 74 "备份 id 不合法：$rest"; log "拒绝 backup-restore: $rest"; continue; } ;;
   *)
     write_res "unknown" 64 "不认识的命令：$cmd"
     log "拒绝：$cmd"
-    exit 0
+    continue
     ;;
 esac
 
 if [ ! -f "$SCRIPT" ]; then
   write_res "error" 66 "找不到脚本：$SCRIPT"
   log "找不到 $SCRIPT"
-  exit 0
+  continue
 fi
 
 write_res "running" 0 "开始执行 $cmd ${ARGS:-}"
@@ -189,3 +227,6 @@ else
   write_res "error" "$code" "$tailmsg"
   log "失败 $cmd (exit $code)"
 fi
+
+
+done

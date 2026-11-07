@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NetPanel.Services;
 
 namespace NetPanel;
 
@@ -137,18 +138,23 @@ public static class DeviceType
         return false;
     }
 
-    /// <summary>展示用名字：有名字用名字；没名字用 MAC 尾号（设备身份）；连 MAC 都没有才退回 IP。</summary>
+    /// <summary>展示用名字：有名字用名字；没名字用「厂商·MAC尾4」；再不行「未知设备·MAC尾4」；最后才 IP。</summary>
     public static string DisplayName(string? name, string? ip, string? mac)
     {
         if (!IsWeakName(name)) return name!.Trim();
 
         // 没名字时**不能拿 IP 当设备名**：IP 是位置（DHCP 会变），MAC 才是设备身份。
-        // 成熟面板（iKuai / pfSense）也是这么做的：无名字显示 MAC 尾号。
+        // 成熟面板（iKuai / pfSense）做法：OUI 厂商 + MAC 尾号。
         var m = (mac ?? "").Trim().Replace(":", "").Replace("-", "");
-        if (m.Length >= 4)
-            return "未知设备·" + m.Substring(m.Length - 4).ToUpperInvariant();
+        var tail = m.Length >= 4 ? m.Substring(m.Length - 4).ToUpperInvariant() : m.ToUpperInvariant();
+
         if (m.Length > 0)
-            return "未知设备·" + m.ToUpperInvariant();
+        {
+            var vendor = LanScan.Vendor(mac ?? "");
+            if (!string.IsNullOrWhiteSpace(vendor) && vendor != "—")
+                return vendor + "·" + tail;
+            return "未知设备·" + tail;
+        }
 
         return (ip ?? "").Trim();
     }
