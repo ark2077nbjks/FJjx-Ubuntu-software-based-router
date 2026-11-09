@@ -288,6 +288,40 @@ confirm "确认开始安装？" "y" || die "已取消"
 
 # ---------- 6. 执行 ----------
 step "6/7 安装"
+
+# ---- 部署门禁：源脚本语法预检，不过不落盘 ----
+GATE_BAD=0
+for _f in "$HERE"/bin/*.sh; do
+  [ -e "$_f" ] || continue
+  if ! bash -n "$_f" 2>/dev/null; then
+    warn "语法错误：$(basename "$_f")"
+    GATE_BAD=$((GATE_BAD + 1))
+  fi
+done
+[ "$GATE_BAD" -eq 0 ] || die "有 $GATE_BAD 个脚本语法错误，已中止（未改动任何文件）"
+ok "部署门禁：$(( $(ls "$HERE"/bin/*.sh 2>/dev/null | wc -l) )) 个脚本语法预检通过"
+
+# ---- 装前脚本快照：出事能一条命令回滚 ----
+SNAP_DIR="$GR_VAR/snapshots"
+SNAP_TAR="$SNAP_DIR/scripts-$(date '+%Y%m%d_%H%M%S')_pre-install.tar.gz"
+if mkdir -p "$SNAP_DIR" 2>/dev/null; then
+  SNAP_LIST=$(mktemp 2>/dev/null || echo /tmp/gr-snaplist.$$)
+  { ls /usr/local/bin/grayrouter-*.sh 2>/dev/null; ls "$GR_OPT"/bin/grayrouter-*.sh 2>/dev/null; } > "$SNAP_LIST"
+  if [ -s "$SNAP_LIST" ]; then
+    if tar czf "$SNAP_TAR" -P -T "$SNAP_LIST" 2>/dev/null; then
+      ok "装前脚本快照：$(basename "$SNAP_TAR")（$(du -h "$SNAP_TAR" | cut -f1)）"
+      ls -t "$SNAP_DIR"/scripts-*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f 2>/dev/null || true
+    else
+      warn "装前快照失败（继续安装，回滚能力会缺一份）"
+    fi
+  else
+    warn "没有现存脚本可快照（首次安装）"
+  fi
+  rm -f "$SNAP_LIST"
+else
+  warn "创建快照目录失败（继续安装）"
+fi
+
 mkdir -p "$GR_ETC" "$GR_OPT/bin" "$GR_VAR"
 jinit
 track_dir "$GR_ETC"; track_dir "$GR_OPT"; track_dir "$GR_VAR"
