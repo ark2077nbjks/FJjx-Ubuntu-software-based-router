@@ -4331,6 +4331,24 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     }
 
     /// <summary>
+    /// 验证门⑥：外网是否真的还能上网。
+    /// 前五道门全在保「内网别断、别泄漏」，没有一道验证「外网没被改坏」——
+    /// 这是 glm 终审点出的缺口。这里查两样：DNS 真能解析 + 直连外网 IP 能通。
+    /// </summary>
+    private static bool ExternalOk()
+    {
+        try
+        {
+            var dnsOk = false;
+            try { dnsOk = System.Net.Dns.GetHostAddresses("www.baidu.com").Length > 0; }
+            catch { dnsOk = false; }
+            var tcpOk = TcpReachable("223.5.5.5", 53) || TcpReachable("1.1.1.1", 53);
+            return dnsOk && tcpOk;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
     /// 验证门：内网是否还可达。
     /// 软路由不回 ICMP（实测），所以不能靠 ping；这里三档降级：
     ///   TCP 22 → TCP 80 → ARP 表里有这个 IP（二层可达）
@@ -4362,8 +4380,73 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     }
 
     /// <summary>
-    /// 自动回滚：分流过程中任何验证门失败，就地把网络退回分流前状态。
-    /// 优先按状态文件精确还原；状态文件不可用时用兜底重置。
+    /// 按状态文件精确还原（回滚和「恢复自动」共用同一套逻辑）。
+    /// glm 终审要求：不能再有第二份平行实现，否则两边迟早分叉。
+    /// @return 失败项清单（空 = 全部成功）
+    /// </summary>
+    private static List<string> RestoreFromState(RouteDivState st)
+    {
+        var fails = new List<string>();
+        if (st == null || string.IsNullOrWhiteSpace(st.OutNic))
+        {
+            SoftResetNetwork();
+            return fails;
+        }
+
+        // ① 外网跃点数
+        if (!RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}"))
+            fails.Add($"还原 {st.OutNic} 跃点数");
+
+        var inIfNow = ResolveIfIndex(st.InGuid, st.InIf);
+
+        // ② 内网网段路由 + 默认路由（按原样重建）
+        if (!string.IsNullOrWhiteSpace(st.InNet))
+        {
+            RunToolOk("route", $"delete {st.InNet} mask 255.255.255.0 {st.InGw}");
+
+            if (st.InHadNetRoute)
+            {
+                var nh = string.IsNullOrWhiteSpace(st.InOrigNetNextHop) ? st.InIp : st.InOrigNetNextHop;
+                var ifa = inIfNow > 0 ? $" if {inIfNow}" : "";
+                if (!RunToolOk("route", $"add {st.InNet} mask 255.255.255.0 {nh}{ifa} metric 1 -p"))
+                    fails.Add($"重建网段路由 {st.InNet}");
+            }
+            else if (!EnsureOnLinkRoute(st.InNet, st.InIp, inIfNow))
+            {
+                fails.Add($"补内网直连路由 {st.InNet}（请重启一次以太网卡）");
+            }
+
+            if (st.InHadDefaultGw && !string.IsNullOrWhiteSpace(st.InOrigDefaultGw))
+            {
+                var ifa2 = inIfNow > 0 ? $" if {inIfNow}" : "";
+                if (!RunToolOk("route", $"add 0.0.0.0 mask 0.0.0.0 {st.InOrigDefaultGw}{ifa2} metric 1 -p"))
+                    fails.Add($"重建内网默认路由 {st.InOrigDefaultGw}");
+            }
+        }
+
+        // ③ 内网 DNS
+        if (!string.IsNullOrWhiteSpace(st.InNic))
+        {
+            if (st.InDnsIsDhcp || string.IsNullOrWhiteSpace(st.OrigInDns))
+            {
+                if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" source=dhcp"))
+                    fails.Add($"还原 {st.InNic} DNS 为 DHCP");
+            }
+            else
+            {
+                var firstDns = st.OrigInDns.Split(',')[0];
+                if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" static {firstDns} primary"))
+                    fails.Add($"还原 {st.InNic} DNS 为 {firstDns}");
+            }
+            // ④ IPv6 / NetBIOS 按原值
+            RestoreInnerNicByState(st.InNic, inIfNow, st.InOrigIpV6, st.OrigNetbios);
+        }
+
+        return fails;
+    }
+
+    /// <summary>
+    /// 自动回滚：验证门失败时调用，直接复用 RestoreFromState（不再自己实现一套）。
     /// </summary>
     private static void RollbackSplit(string reason)
     {
@@ -4371,44 +4454,10 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             AppPaths.Log("[路由] 验证门失败，自动回滚：" + reason);
             var st = LoadRouteDivState();
-            if (st != null && !string.IsNullOrWhiteSpace(st.OutNic))
-            {
-                RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}");
-                var inIfNow = ResolveIfIndex(st.InGuid, st.InIf);
-                if (!string.IsNullOrWhiteSpace(st.InNet))
-                {
-                    RunToolOk("route", $"delete {st.InNet} mask 255.255.255.0 {st.InGw}");
-
-                    // 原来有网段路由 → 按原下一跳重建（On-link 时用网卡自身 IP）
-                    if (st.InHadNetRoute)
-                    {
-                        var nh = string.IsNullOrWhiteSpace(st.InOrigNetNextHop) ? st.InIp : st.InOrigNetNextHop;
-                        var ifa = inIfNow > 0 ? $" if {inIfNow}" : "";
-                        RunToolOk("route", $"add {st.InNet} mask 255.255.255.0 {nh}{ifa} metric 1 -p");
-                    }
-                    // 原来有默认路由 → 重建（分流时被我们删掉了，不重建就永久丢失）
-                    if (st.InHadDefaultGw && !string.IsNullOrWhiteSpace(st.InOrigDefaultGw))
-                    {
-                        var ifa2 = inIfNow > 0 ? $" if {inIfNow}" : "";
-                        RunToolOk("route", $"add 0.0.0.0 mask 0.0.0.0 {st.InOrigDefaultGw}{ifa2} metric 1 -p");
-                    }
-                    RestoreInnerNicByState(st.InNic, inIfNow, st.InOrigIpV6, st.OrigNetbios);
-                }
-                if (!string.IsNullOrWhiteSpace(st.InNic))
-                {
-                    // 原本是 DHCP 下发的 → 交回 DHCP（让路由器重新下发真实 DNS）；
-                    // 原本是静态的 → 写回原值。只看值不看来源的话，会被"改过的值"污染，永远回不到 DHCP。
-                    if (st.InDnsIsDhcp || string.IsNullOrWhiteSpace(st.OrigInDns))
-                        RunTool("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" source=dhcp");
-                    else
-                        RunTool("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" static {st.OrigInDns.Split(',')[0]} primary");
-                }
-            }
-            else
-            {
-                SoftResetNetwork();
-            }
-            schtasksDeleteDnsGuard();   // 计划任务也要撤，否则登录时又会把 DNS 改回去
+            var fails = RestoreFromState(st);
+            if (fails.Count > 0)
+                AppPaths.Log("[路由] 回滚中有失败项：" + string.Join("；", fails));
+            schtasksDeleteDnsGuard();
             AppPaths.Log("[路由] 已自动回滚");
         }
         catch (Exception ex) { AppPaths.Log("[路由] 自动回滚失败: " + ex.Message); }
@@ -4588,12 +4637,17 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             var ps1 = System.IO.Path.Combine(AppPaths.DataDir, "fix-dns-leak.ps1");
             var body =
                 "$p = '" + RouteDivFile + "'\n" +
-                "if (-not (Test-Path $p)) { exit 0 }\n" +
+                // 自愈：状态文件没了 = 分流已被恢复，这个任务也就没用了 → 自删，不留孤儿
+                "if (-not (Test-Path $p)) { schtasks /Delete /TN 'NetPanel-DnsLeakGuard' /F 2>$null | Out-Null; exit 0 }\n" +
                 "try { $s = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json } catch { exit 0 }\n" +
                 "if (-not $s.OutNic -or -not $s.InNic) { exit 0 }\n" +
                 "$dns = @(Get-DnsClientServerAddress -InterfaceAlias $s.OutNic -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)\n" +
                 "if ($dns.Count -eq 0) { exit 0 }\n" +
-                "Set-DnsClientServerAddress -InterfaceAlias $s.InNic -ServerAddresses $dns[0] -ErrorAction SilentlyContinue\n";
+                "Set-DnsClientServerAddress -InterfaceAlias $s.InNic -ServerAddresses $dns[0] -ErrorAction SilentlyContinue\n" +
+                // 最大盲区补丁（glm 终审）：DHCP 续租/重连会把内网默认路由悄悄带回来，
+                // 只守 DNS 不够，这里顺手把内网卡上的默认路由清掉。
+                "$inIf = (Get-NetAdapter -Name $s.InNic -ErrorAction SilentlyContinue).ifIndex\n" +
+                "if ($inIf) { Get-NetRoute -DestinationPrefix '0.0.0.0/0' -InterfaceIndex $inIf -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue }\n";
             System.IO.File.WriteAllText(ps1, body, new UTF8Encoding(true));   // 带 BOM：PS 5.1 才按 UTF-8 解析
 
             var tr = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + ps1 + "\"";
@@ -4970,6 +5024,10 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             if (!NetbiosOffOn(inNic.IfIndex))
                 fails.Add("验证门⑤：NetBIOS 没关掉");
         }
+
+        // ===== 验证门⑥：外网必须还能上（前五门都没查外网有没有被改坏）=====
+        if (!ExternalOk())
+            fails.Add("验证门⑥：外网不通或 DNS 解析失败");
 
         // ===== 任一验证门失败 → 自动回滚（成熟实践：没有测过的回滚就不许变更）=====
         if (fails.Count > 0)
