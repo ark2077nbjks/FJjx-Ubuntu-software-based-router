@@ -4228,6 +4228,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     /// 「DNS 防泄漏」永久守卫：生成修复脚本，并注册登录时自动跑的计划任务。
     /// 为什么需要：DHCP 续约会把内网网卡的 DNS 改回软路由（=走校园网），
     /// 每次登录再修正一次，才能长期保持「解析也走外网」。
+    /// 编码坑：routediv.json 是 .NET 写的 UTF-8 无 BOM，PowerShell 5.1 的 Get-Content
+    /// 默认按 ANSI(GBK) 解析 → 中文网卡名（「以太网」）变乱码 → 找不到网卡而静默失败。
+    /// 所以读 json 必须显式 -Encoding UTF8，写出来的 ps1 也带 BOM。
     /// </summary>
     private static void EnsureDnsLeakGuardTask()
     {
@@ -4238,12 +4241,12 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             var body =
                 "$p = '" + RouteDivFile + "'\n" +
                 "if (-not (Test-Path $p)) { exit 0 }\n" +
-                "try { $s = Get-Content $p -Raw | ConvertFrom-Json } catch { exit 0 }\n" +
+                "try { $s = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json } catch { exit 0 }\n" +
                 "if (-not $s.OutNic -or -not $s.InNic) { exit 0 }\n" +
                 "$dns = @(Get-DnsClientServerAddress -InterfaceAlias $s.OutNic -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)\n" +
                 "if ($dns.Count -eq 0) { exit 0 }\n" +
                 "Set-DnsClientServerAddress -InterfaceAlias $s.InNic -ServerAddresses $dns[0] -ErrorAction SilentlyContinue\n";
-            System.IO.File.WriteAllText(ps1, body, new UTF8Encoding(false));
+            System.IO.File.WriteAllText(ps1, body, new UTF8Encoding(true));   // 带 BOM：PS 5.1 才按 UTF-8 解析
 
             var tr = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + ps1 + "\"";
             RunTool("schtasks", "/Create /TN \"NetPanel-DnsLeakGuard\" /TR \"" + tr + "\" /SC ONLOGON /RL HIGHEST /F");
