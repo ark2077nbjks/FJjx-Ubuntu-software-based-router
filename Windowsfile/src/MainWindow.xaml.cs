@@ -4387,15 +4387,28 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     /// </summary>
     private static bool ExternalOk()
     {
-        try
+        // 分流刚做完时，路由收敛和 DNS 缓存刷新都需要时间。
+        // 只测一次容易把「还没缓过来」误判成失败 → 白白触发回滚（glm 审查指出）。
+        // 这里重试 3 次，每次间隔 800ms，最多多花 2.4 秒。
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            var dnsOk = false;
-            try { dnsOk = System.Net.Dns.GetHostAddresses("www.baidu.com").Length > 0; }
-            catch { dnsOk = false; }
-            var tcpOk = TcpReachable("223.5.5.5", 53) || TcpReachable("1.1.1.1", 53);
-            return dnsOk && tcpOk;
+            try
+            {
+                // 先测 TCP：路由通了就说明出口没问题
+                var tcpOk = TcpReachable("223.5.5.5", 53) || TcpReachable("1.1.1.1", 53);
+                if (tcpOk)
+                {
+                    // TCP 通了再验 DNS（DNS 泄漏才是必须拦的）
+                    var dnsOk = false;
+                    try { dnsOk = System.Net.Dns.GetHostAddresses("www.baidu.com").Length > 0; }
+                    catch { dnsOk = false; }
+                    if (dnsOk) return true;
+                }
+            }
+            catch { }
+            if (attempt < 2) System.Threading.Thread.Sleep(800);
         }
-        catch { return false; }
+        return false;
     }
 
     /// <summary>
@@ -5031,6 +5044,22 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         var outNic = _routeNics.FirstOrDefault(x => x.Name == outName);
         var inNic = _routeNics.FirstOrDefault(x => x.Name == inName);
         if (outNic == null || inNic == null) { Toast("网卡信息已过期，先点刷新", false); return; }
+
+        // ⚠️ 分流前检查：上一轮如果没恢复干净（状态文件还在），
+        // 这次采集到的「原始状态」会是「半分流态」，一旦覆盖掉 json，
+        // 以后点恢复也只能恢复到半分流态，原始基线永久丢失。
+        if (System.IO.File.Exists(RouteDivFile))
+        {
+            var r = MessageBox.Show(
+                "检测到上次分流的记录还没清除 —— 说明上一轮可能没恢复干净。\n\n"
+                + "如果现在直接分流，这次的「原始状态」会记成半分流态，\n"
+                + "以后点恢复也回不到干净状态。\n\n"
+                + "建议：先点「恢复自动」，确认网络正常后再分流。\n\n"
+                + "确定要忽略提醒、直接分流吗？",
+                "多网卡路由 · 上一轮未恢复干净", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (r != MessageBoxResult.OK) { Toast("已取消：请先点「恢复自动」", false); return; }
+            AppPaths.Log("[路由] 用户选择忽略「上一轮未恢复」提醒，直接分流（基线将被覆盖）");
+        }
 
         // 外网必须真能上网（有默认网关）；没有网关的卡是连内网的
         if (string.IsNullOrWhiteSpace(outNic.Gw))
