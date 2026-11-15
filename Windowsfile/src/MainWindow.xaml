@@ -1883,7 +1883,7 @@
                                                 <Border Style="{StaticResource CardAccent}" /><TextBlock VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Text="多网卡路由" />
                                                 <TextBlock x:Name="TxtMultiRouteInfo" Margin="12,0,0,0" VerticalAlignment="Center"
                                                            FontSize="11.5" Foreground="{StaticResource TextT3}"
-                                                           Text="外网走热点、内网走网线，一键切换" />
+                                                           Text="外网走热点、内网走网线，含 DNS 防泄漏" />
                                                 <Button Style="{StaticResource BtnSecondary}" Height="30" Margin="12,0,0,0" Padding="12,0"
                                                         Click="OnRefreshRoutes" Cursor="Hand">
                                                     <WrapPanel>
