@@ -4197,6 +4197,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         public bool InOrigIpV6 { get; set; } = true;   // IPv6 绑定原状态
         public string InOrigiNetbios { get; set; } = "";   // NetBIOS 原值原始文本
         public bool InDnsIsDhcp { get; set; }              // 内网 DNS 原本是 DHCP 下发还是静态（决定怎么还原）
+        public bool OutAutomaticMetric { get; set; } = true; // 外网卡原来是不是「自动跃点」（决定还原方式）
     }
 
     private static string RouteDivFile =>
@@ -4331,6 +4332,55 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     }
 
     /// <summary>
+    /// 测「这块网卡能不能真的出公网」。
+    ///
+    /// 为什么不能只用 Socket.Bind：Bind 只约束**源地址**，不约束**出接口**。
+    /// 双默认路由环境下，路由表仍按 metric 选路，包可能从另一块网卡发出去
+    /// （源地址和出接口对不上），结果要么被丢（假阴性）要么凑巧通了（假阳性）。
+    ///
+    /// 可靠做法（glm 终审给的）：先加一条到目标的临时主机路由，强制走这块网卡，
+    /// 测完立刻删掉。这样才真正约束了出接口。
+    /// </summary>
+    private static bool CanReachInternetVia(RouteNicRow nic)
+    {
+        if (nic == null || string.IsNullOrWhiteSpace(nic.Ip)) return false;
+        var added = false;
+        var nh = "";   // 提到 try 外：finally 里删路由要用
+        try
+        {
+            // 网卡 IP 必须还能解析（DHCP 变更后可能已失效）
+            if (!System.Net.IPAddress.TryParse(nic.Ip, out _)) return false;
+
+            // 下一跳：有网关用网关，没网关用网卡自身（On-link）
+            nh = string.IsNullOrWhiteSpace(nic.Gw) ? nic.Ip : nic.Gw;
+            var ifa = nic.IfIndex > 0 ? $" if {nic.IfIndex}" : "";
+            added = RunToolOk("route", $"add 223.5.5.5 mask 255.255.255.255 {nh}{ifa} metric 1");
+            if (!added) return false;   // 加不上路由就别测了，免得测出假结果
+
+            return TcpReachable("223.5.5.5", 53);
+        }
+        catch { return false; }
+        finally
+        {
+            // 无论成败都要删掉临时路由，绝不能在系统里留痕。
+            // 删不掉会污染网络（所有到 223.5.5.5 的流量被钉死在这块网卡），所以要做验证 + 兜底。
+            if (added)
+            {
+                RunTool("route", $"delete 223.5.5.5 mask 255.255.255.255 {nh}");
+                var left = RunTool("route", "print -4");
+                if (left.IndexOf("223.5.5.5", StringComparison.Ordinal) >= 0)
+                {
+                    // 兜底：用 netsh 再删一次（不同接口走不同实现）
+                    RunTool("netsh", "interface ipv4 delete route 223.5.5.5/32");
+                    left = RunTool("route", "print -4");
+                    if (left.IndexOf("223.5.5.5", StringComparison.Ordinal) >= 0)
+                        AppPaths.Log("[路由] 严重：临时测试路由 223.5.5.5 未能删除，请手动 route delete 223.5.5.5");
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// 验证门⑥：外网是否真的还能上网。
     /// 前五道门全在保「内网别断、别泄漏」，没有一道验证「外网没被改坏」——
     /// 这是 glm 终审点出的缺口。这里查两样：DNS 真能解析 + 直连外网 IP 能通。
@@ -4393,9 +4443,45 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             return fails;
         }
 
-        // ① 外网跃点数
-        if (!RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}"))
-            fails.Add($"还原 {st.OutNic} 跃点数");
+        // ① 外网跃点数：原来是「自动」就恢复自动，原来手动才写数值
+        //    （官方文档：设了 InterfaceMetric 会把 AutomaticMetric 自动禁用，
+        //      所以恢复"自动"必须用 Set-NetIPInterface -AutomaticMetric Enabled）
+        if (st.OutAutomaticMetric)
+        {
+            if (!RunToolOk("powershell.exe",
+                "-NoProfile -Command \"Set-NetIPInterface -InterfaceAlias '" + st.OutNic +
+                "' -AddressFamily IPv4 -AutomaticMetric Enabled -ErrorAction Stop\""))
+                fails.Add($"恢复 {st.OutNic} 自动跃点");
+        }
+        else
+        {
+            if (!RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}"))
+                fails.Add($"还原 {st.OutNic} 跃点数");
+            // 手动值也要回读验证：命令返回 0 不代表真写进去了
+            var curTxt = RunTool("powershell.exe",
+                "-NoProfile -Command \"(Get-NetIPInterface -InterfaceAlias '" + st.OutNic +
+                "' -AddressFamily IPv4 -ErrorAction SilentlyContinue).InterfaceMetric\"");
+            if (!int.TryParse(curTxt.Trim(), out var curMetric))
+                fails.Add($"跃点读取失败：{st.OutNic}");
+            else if (curMetric != st.OrigMetric)
+                fails.Add($"跃点数值不对：{st.OutNic} 应为 {st.OrigMetric}，实际 {curMetric}");
+        }
+        // 回读验证：不能只看命令返回 0
+        var chkTxt = RunTool("powershell.exe",
+            "-NoProfile -Command \"(Get-NetIPInterface -InterfaceAlias '" + st.OutNic +
+            "' -AddressFamily IPv4 -ErrorAction SilentlyContinue).AutomaticMetric\"");
+        var chk = chkTxt.Trim();
+        if (chk.Length == 0)
+        {
+            // 查不到就不能算成功——之前会把空串当成「自动」，掩盖真实失败
+            fails.Add($"跃点验证失败：读不到 {st.OutNic} 的 AutomaticMetric");
+        }
+        else
+        {
+            var actualAuto = chk.IndexOf("Disabled", StringComparison.OrdinalIgnoreCase) < 0;
+            if (actualAuto != st.OutAutomaticMetric)
+                fails.Add($"跃点验证失败：{st.OutNic} 应为自动={st.OutAutomaticMetric}，实际={actualAuto}");
+        }
 
         var inIfNow = ResolveIfIndex(st.InGuid, st.InIf);
 
@@ -4422,6 +4508,21 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 if (!RunToolOk("route", $"add 0.0.0.0 mask 0.0.0.0 {st.InOrigDefaultGw}{ifa2} metric 1 -p"))
                     fails.Add($"重建内网默认路由 {st.InOrigDefaultGw}");
             }
+        }
+        else
+        {
+            // 老状态文件没有网段信息：保守清理 192.168.50/60 段「带网关」的分流路由，
+            // 再兜底把加固还原（不然 IPv6/NetBIOS 永远关着）
+            foreach (var p in new[] { "192.168.50.0", "192.168.60.0" })
+                RunToolOk("route", $"delete {p} mask 255.255.255.0 {inNicGwFallback(p)}");
+            // 同上：无原值时不做宽清理，避免误改无关网卡的 IPv6/NetBIOS
+            // 但 DNS 要还原：否则会卡在分流时指的外网 DNS（glm 终审指出）
+            if (!string.IsNullOrWhiteSpace(st.InNic))
+            {
+                RunTool("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" source=dhcp");
+                AppPaths.Log("[路由] 老状态文件无网段信息：内网 DNS 已交回 DHCP");
+            }
+            AppPaths.Log("[路由] 老状态文件无网段信息：跳过 IPv6/NetBIOS 还原（避免误改无关网卡）");
         }
 
         // ③ 内网 DNS
@@ -4458,6 +4559,8 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             if (fails.Count > 0)
                 AppPaths.Log("[路由] 回滚中有失败项：" + string.Join("；", fails));
             schtasksDeleteDnsGuard();
+            // 回滚成功也清状态文件：残留会让下次「恢复自动」对旧状态再还原一次（幂等但脏）
+            if (fails.Count == 0) DeleteRouteDivState();
             AppPaths.Log("[路由] 已自动回滚");
         }
         catch (Exception ex) { AppPaths.Log("[路由] 自动回滚失败: " + ex.Message); }
@@ -4493,32 +4596,89 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     private static void SoftResetNetwork()
     {
         // ① 所有网卡跃点数 → 自动
-        foreach (var n in _routeNicsCache)
+        //    注意：netsh 的 metric=automatic 不保证把 AutomaticMetric 标志位真正置回 Enabled
+        //    （Get-NetIPInterface 读到的那个），所以统一用 PowerShell 接口，和恢复路径保持一致
+        var nics = NicsForFallback();
+        foreach (var n in nics)
         {
-            if (!string.IsNullOrWhiteSpace(n.Name))
-                RunToolOk("netsh", $"interface ipv4 set interface \"{n.Name}\" metric=automatic");
+            if (string.IsNullOrWhiteSpace(n.Name)) continue;
+            RunTool("powershell.exe",
+                "-NoProfile -Command \"Set-NetIPInterface -InterfaceAlias '" + n.Name +
+                "' -AddressFamily IPv4 -AutomaticMetric Enabled -ErrorAction SilentlyContinue\"");
         }
         // ② 删分流用的持久路由
-        foreach (var net in new[] { "192.168.50.0", "192.168.60.0" })
-            RunToolOk("route", $"delete {net} mask 255.255.255.0");
+        //    ⚠️ 必须只删「带网关那条」再补 On-link：
+        //    不带网关的 `route delete x.x.x.0 mask 255.255.255.0` 会连 Windows 的
+        //    On-link 直连路由一起删掉 → 内网失联（这个坑实测踩过一次）
+        foreach (var n in nics)
+        {
+            if (string.IsNullOrWhiteSpace(n.Prefix)) continue;
+            var net = n.Prefix.Split('/')[0];
+            if (!string.IsNullOrWhiteSpace(n.Gw))
+                RunToolOk("route", $"delete {net} mask 255.255.255.0 {n.Gw}");
+            // 删完确保直连路由还在，否则内网会断
+            EnsureOnLinkRoute(net, n.Ip, n.IfIndex);
+        }
         // ③ DNS → DHCP
-        foreach (var n in _routeNicsCache)
+        foreach (var n in nics)
         {
             if (!string.IsNullOrWhiteSpace(n.Name))
                 RunTool("netsh", $"interface ipv4 set dnsservers name=\"{n.Name}\" source=dhcp");
         }
-        // ④ IPv6 / NetBIOS 还原
-        foreach (var n in _routeNicsCache)
-        {
-            if (!string.IsNullOrWhiteSpace(n.Name))
-                RestoreInnerNic(n.Name, n.IfIndex);
-        }
+        // ④ IPv6/NetBIOS 不在这里盲改
+        //    原因（qwen 审查指出）：状态文件已经丢了，不知道原来是什么值，
+        //    遍历所有网卡去「启用 IPv6 / NetBIOS=0」会连无关网卡一起改，
+        //    属于宽清理。要还原它请用独立的「一键恢复网络.bat」，那是用户明确意图。
+        AppPaths.Log("[路由] 软重置：跳过 IPv6/NetBIOS（无原值，避免误改无关网卡；需要时用 一键恢复网络.bat）");
         schtasksDeleteDnsGuard();
         AppPaths.Log("[路由] 已做基础重置（SoftResetNetwork）");
     }
 
     /// <summary>最近一次刷新到的网卡列表（供静态兜底方法使用）。</summary>
     private static List<RouteNicRow> _routeNicsCache = new();
+
+    /// <summary>
+    /// 实时枚举在线网卡（不依赖 GUI 刷新）。
+    /// 为什么需要：`_routeNicsCache` 只在点「刷新」后才有值；
+    /// 如果用户启动面板直接点恢复，cache 是空的，所有兜底循环会空转。
+    /// </summary>
+    private static List<RouteNicRow> GetAllNics()
+    {
+        var list = new List<RouteNicRow>();
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                var props = ni.GetIPProperties();
+                var v4 = props.UnicastAddresses.FirstOrDefault(
+                    a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                if (v4 == null) continue;
+                var gw = props.GatewayAddresses.FirstOrDefault(
+                    a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                var ifIdx = -1;
+                try { ifIdx = props.GetIPv4Properties()?.Index ?? -1; } catch { }
+                list.Add(new RouteNicRow
+                {
+                    Name = ni.Name,
+                    Ip = v4.Address.ToString(),
+                    Gw = gw?.Address.ToString() ?? "",
+                    IfIndex = ifIdx,
+                    Guid = ni.Id ?? "",
+                    Prefix = CalcPrefix(v4.Address, v4.IPv4Mask),
+                });
+            }
+        }
+        catch (Exception ex) { AppPaths.Log("[路由] 枚举网卡失败: " + ex.Message); }
+        return list;
+    }
+
+    /// <summary>取网卡列表：优先用缓存（含 Metric 等信息），缓存空则实时枚举。</summary>
+    private static List<RouteNicRow> NicsForFallback()
+    {
+        return _routeNicsCache != null && _routeNicsCache.Count > 0 ? _routeNicsCache : GetAllNics();
+    }
 
     /// <summary>老状态文件没有网关时的兜底：按末位 .1 猜（只用于删除我们自己加的那种路由）。</summary>
     private static string inNicGwFallback(string net)
@@ -4878,6 +5038,16 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         if (!inNic.Prefix.Contains('/'))
         { Toast($"{inNic.Name} 读不到子网掩码", false); return; }
 
+        // 选反检测：内网卡也有网关（软路由），所以「有网关」不足以证明它是外网卡。
+        // 真正判据是「能不能出公网」——绑定源 IP 实测一次。
+        if (!CanReachInternetVia(outNic))
+        {
+            var alt = _routeNics.FirstOrDefault(x => x.Name != outNic.Name && CanReachInternetVia(x));
+            var hint = alt != null ? $"（{alt.Name} 能出公网，试试把它选成外网）" : "";
+            Toast($"{outNic.Name} 出不了公网——它连的是内网，不是外网{hint}", false);
+            return;
+        }
+
         // 内网网卡可能没有网关（分流后的正常状态）：这时用 On-link（下一跳=本机 IP）
         var inHasGw = !string.IsNullOrWhiteSpace(inNic.Gw);
         var gwIp = inHasGw ? inNic.Gw : inNic.Ip;
@@ -4952,6 +5122,20 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             stNew.InDnsIsDhcp =
                 dnsInfo.IndexOf("DHCP", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 dnsInfo.IndexOf("通过 DHCP", StringComparison.Ordinal) >= 0;
+
+            // 外网卡是不是「自动跃点」——netsh 看不到这个标志，必须用 PowerShell；
+            // 不记它的话，恢复只能写死数值，AutomaticMetric 会永远停在 Disabled（用户报的"回不到默认"）
+            var autoTxt = RunTool("powershell.exe",
+                "-NoProfile -Command \"(Get-NetIPInterface -InterfaceAlias '" + outNic.Name +
+                "' -AddressFamily IPv4 -ErrorAction SilentlyContinue).AutomaticMetric\"");
+            // 判断方式改「黑名单」：只有明确含 Disabled 才算手动，其余（Enabled/空/乱码）一律当自动。
+            // 原因：PowerShell 输出经 GBK 解码时可能带 BOM/乱码前缀，Equals("Enabled") 会恒失败
+            // → 存成 false → 恢复走 netsh 分支 → AutomaticMetric 永远回不到 Enabled（实测踩过）。
+            var autoRaw = autoTxt ?? "";
+            var autoVal = autoRaw.Trim().Trim('\uFEFF', '\0', ' ', '\r', '\n');
+            stNew.OutAutomaticMetric = autoVal.IndexOf("Disabled", StringComparison.OrdinalIgnoreCase) < 0;
+            AppPaths.Log($"[路由] 采集 AutomaticMetric：原始=[{autoRaw.Replace("\r", "").Replace("\n", "")}] " +
+                         $"清洗后=[{autoVal}] → 判为自动={stNew.OutAutomaticMetric}");
 
             // NetBIOS 原值
             var nbTxt = RunTool("powershell.exe",
@@ -5061,6 +5245,18 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                     != MessageBoxResult.OK) return;
 
                 var okDump = RunToolOk("netsh", "-f \"" + dumpFile + "\"");
+                if (!okDump)
+                {
+                    // 快照回放失败不能就这么算了：降级做基础重置，别把错状态留在系统里
+                    SoftResetNetwork();
+                    schtasksDeleteDnsGuard();
+                    // 重置是否真生效，这里无法可靠断言 —— 如实说「已执行」，让用户自己看内外网，
+                    // 不要像以前那样无条件宣布成功（虚报比不报更糟）
+                    AppPaths.Log("[路由] L2 快照回放失败，已执行 L3 基础重置（结果未验证）");
+                    Toast("快照回放失败，已执行基础重置；请检查内网/外网是否正常，仍异常请用 一键恢复网络.bat", false);
+                    await RefreshRoutesAsync();
+                    return;
+                }
                 schtasksDeleteDnsGuard();
                 AppPaths.Log($"[路由] 快照回放恢复：{(okDump ? "成功" : "失败")}");
                 Toast(okDump ? "已用分流前快照恢复" : "快照回放失败，请用 一键恢复网络.bat", okDump);
@@ -5088,61 +5284,18 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
-        var fails = new List<string>();
-        if (st != null && !string.IsNullOrWhiteSpace(st.OutNic))
-        {
-            if (!RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}"))
-                fails.Add($"还原 {st.OutNic} 跃点数");
-        }
+        // ⚠️ 这里必须复用 RestoreFromState，不能自己再写一份。
+        // 之前这里是一份独立实现，只执行 `netsh ... metric=原值`，不管 AutomaticMetric，
+        // 结果「恢复自动」后 WLAN 的 AutomaticMetric 永远停在 Disabled（用户实测抓到的 bug）。
 
-        // 还原内网网卡 DNS：原来是 DHCP 的恢复 DHCP，原来有静态值的写回第一项
-        if (st != null && !string.IsNullOrWhiteSpace(st.InNic))
-        {
-            if (st.InDnsIsDhcp || string.IsNullOrWhiteSpace(st.OrigInDns))
-            {
-                if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" source=dhcp"))
-                    fails.Add($"还原 {st.InNic} DNS 为 DHCP");
-            }
-            else
-            {
-                var firstDns = st.OrigInDns.Split(',')[0];
-                if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" static {firstDns} primary"))
-                    fails.Add($"还原 {st.InNic} DNS 为 {firstDns}");
-            }
-        }
-        else
-        {
-            foreach (var n in _routeNics)
-                RunToolOk("netsh", $"interface ipv4 set interface \"{n.Name}\" metric=automatic");
-        }
+        // 先删守卫任务：否则它可能在恢复中途把 DNS 又改回去（竞争窗口）
+        schtasksDeleteDnsGuard();
+        var fails = RestoreFromState(st);
 
-        // 只删「我们加的、带网关的」那条持久路由；
-        // 早期版本删整段，会把 Windows 的 On-link 直连路由一起删掉 → 内网失联（已实测踩过）
-        if (st != null && !string.IsNullOrWhiteSpace(st.InNet))
-        {
-            var inIfNow = ResolveIfIndex(st.InGuid, st.InIf);   // 索引可能已漂移，按 GUID 重解析
-            if (!string.IsNullOrWhiteSpace(st.InGw))
-                RunToolOk("route", $"delete {st.InNet} mask 255.255.255.0 {st.InGw}");
-            // 兜底：如果网段连 Windows 自动路由都没了，补一条 On-link 回来
-            if (!EnsureOnLinkRoute(st.InNet, st.InIp, inIfNow))
-                fails.Add($"补内网直连路由 {st.InNet}（请重启一次以太网卡）");
-            RestoreInnerNicByState(st.InNic, inIfNow, st.InOrigIpV6, st.OrigNetbios);   // 按原值还原，不硬编码
-        }
-        else
-        {
-            // 老状态文件没有网段信息（或被删了）：保守起见只删这两条的「带网关版本」
-            foreach (var p in new[] { "192.168.50.0", "192.168.60.0" })
-                RunToolOk("route", $"delete {p} mask 255.255.255.0 {inNicGwFallback(p)}");
-
-            // 兜底还原：状态文件丢了也要把加固还原回去，否则 IPv6/NetBIOS 永远关着
-            foreach (var n in _routeNics)
-            {
-                if (!string.IsNullOrWhiteSpace(n.Name))
-                    RestoreInnerNic(n.Name, n.IfIndex);
-            }
-        }
-
-        DeleteRouteDivState();
+        // 只有全部成功才删状态文件；失败保留，下次点「恢复」还能按原样精确重试，
+        // 否则只剩破坏性更强的 SoftResetNetwork 可用
+        if (fails.Count == 0) DeleteRouteDivState();
+        else AppPaths.Log("[路由] 恢复有失败项，保留 routediv.json 供重试：" + string.Join("；", fails));
         AppPaths.Log($"[路由] 恢复：失败 {fails.Count} 项");
         Toast(fails.Count == 0 ? "已恢复" : "部分失败：" + string.Join("、", fails), fails.Count == 0);
         await RefreshRoutesAsync();
