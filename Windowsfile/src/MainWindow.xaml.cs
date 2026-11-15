@@ -4177,12 +4177,14 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         public string OutNic = "";
         public int OrigMetric;
         public string CreatedAt = "";
+        public string InNic = "";        // 内网网卡名（DNS 防泄漏要还原它）
+        public string OrigInDns = "";    // 内网网卡原 DNS（逗号分隔；空 = 原来是 DHCP）
     }
 
     private static string RouteDivFile =>
         System.IO.Path.Combine(AppPaths.DataDir, "routediv.json");
 
-    private static void SaveRouteDivState(string outNic, int origMetric)
+    private static void SaveRouteDivState(string outNic, int origMetric, string inNic = "", string origInDns = "")
     {
         try
         {
@@ -4192,11 +4194,62 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 OutNic = outNic,
                 OrigMetric = origMetric,
                 CreatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                InNic = inNic,
+                OrigInDns = origInDns,
             };
             System.IO.File.WriteAllText(RouteDivFile, JsonSerializer.Serialize(st));
-            AppPaths.Log($"[路由] 记录原状态：{outNic} metric={origMetric}");
+            AppPaths.Log($"[路由] 记录原状态：{outNic} metric={origMetric} 内网={inNic} 原DNS={origInDns}");
         }
         catch (Exception ex) { AppPaths.Log("[路由] 记录原状态失败: " + ex.Message); }
+    }
+
+    /// <summary>读某块网卡当前的 IPv4 DNS 列表（静态和 DHCP 都能读）。读不到返回空表。</summary>
+    private static List<string> ReadNicDns(string nicName)
+    {
+        var list = new List<string>();
+        try
+        {
+            var netsh = System.IO.Path.Combine(Environment.SystemDirectory, "netsh.exe");
+            var txt = RunTool(netsh, "interface ipv4 show dnsservers name=\"" + nicName + "\"");
+            foreach (var raw in txt.Split('\n'))
+            {
+                // netsh 输出是「通过 DHCP 配置的 DNS 服务器:        192.168.60.1」这种带中文前缀的行，
+                // 不能要求整行只有 IP，否则一行都匹配不到（这是初版写错的地方）
+                var m = System.Text.RegularExpressions.Regex.Match(
+                    raw, @"(\d{1,3}(?:\.\d{1,3}){3})");
+                if (m.Success && !list.Contains(m.Groups[1].Value)) list.Add(m.Groups[1].Value);
+            }
+        }
+        catch (Exception ex) { AppPaths.Log("[路由] 读 DNS 失败: " + ex.Message); }
+        return list;
+    }
+
+    /// <summary>
+    /// 「DNS 防泄漏」永久守卫：生成修复脚本，并注册登录时自动跑的计划任务。
+    /// 为什么需要：DHCP 续约会把内网网卡的 DNS 改回软路由（=走校园网），
+    /// 每次登录再修正一次，才能长期保持「解析也走外网」。
+    /// </summary>
+    private static void EnsureDnsLeakGuardTask()
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(AppPaths.DataDir);
+            var ps1 = System.IO.Path.Combine(AppPaths.DataDir, "fix-dns-leak.ps1");
+            var body =
+                "$p = '" + RouteDivFile + "'\n" +
+                "if (-not (Test-Path $p)) { exit 0 }\n" +
+                "try { $s = Get-Content $p -Raw | ConvertFrom-Json } catch { exit 0 }\n" +
+                "if (-not $s.OutNic -or -not $s.InNic) { exit 0 }\n" +
+                "$dns = @(Get-DnsClientServerAddress -InterfaceAlias $s.OutNic -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ServerAddresses)\n" +
+                "if ($dns.Count -eq 0) { exit 0 }\n" +
+                "Set-DnsClientServerAddress -InterfaceAlias $s.InNic -ServerAddresses $dns[0] -ErrorAction SilentlyContinue\n";
+            System.IO.File.WriteAllText(ps1, body, new UTF8Encoding(false));
+
+            var tr = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + ps1 + "\"";
+            RunTool("schtasks", "/Create /TN \"NetPanel-DnsLeakGuard\" /TR \"" + tr + "\" /SC ONLOGON /RL HIGHEST /F");
+            AppPaths.Log("[路由] DNS 守卫任务已注册（登录时自动修正）：" + ps1);
+        }
+        catch (Exception ex) { AppPaths.Log("[路由] DNS 守卫任务注册失败: " + ex.Message); }
     }
 
     private static RouteDivState? LoadRouteDivState()
@@ -4308,7 +4361,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             TxtMultiRouteInfo.Text = _routeNics.Count == 0
                 ? "读不到网卡（可能需要管理员权限）"
                 : canSplit
-                    ? $"共 {_routeNics.Count} 块网卡；跃点数越小越优先"
+                    ? $"共 {_routeNics.Count} 块网卡；跃点数越小越优先（分流含 DNS 防泄漏）"
                     : $"只有 {_routeNics.Count} 块网卡——接入第二个网络（热点或网线）后才能分流";
         }
         catch (Exception ex)
@@ -4409,14 +4462,17 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         var netAddr = netPrefix.Split('/')[0];
 
         var ret = MessageBox.Show(
-            $"将执行三步：\n\n① {outNic.Name} 跃点数 {outNic.Metric} → 10（外网优先）\n" +
+            $"将执行四步：\n\n① {outNic.Name} 跃点数 {outNic.Metric} → 10（外网优先）\n" +
             $"② 删除 {inNic.Name} 的默认路由（网关 {gwIp}）\n" +
-            $"③ 加持久路由 {netPrefix} → {gwIp}\n\n" +
-            "原跃点数会被记录，出问题点「恢复自动」可精确还原。\n继续？",
+            $"③ 加持久路由 {netPrefix} → {gwIp}\n" +
+            $"④ DNS 防泄漏：{inNic.Name} 的 DNS 改指向 {outNic.Name}\n" +
+            "   （域名解析也走外网，校园网看不到你访问了哪些域名）\n\n" +
+            "原跃点数和 DNS 会被记录，出问题点「恢复自动」可精确还原。\n继续？",
             "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (ret != MessageBoxResult.OK) return;
 
-        SaveRouteDivState(outNic.Name, outNic.Metric);
+        var inDnsOrig = string.Join(",", ReadNicDns(inNic.Name));
+        SaveRouteDivState(outNic.Name, outNic.Metric, inNic.Name, inDnsOrig);
 
         var fails = new List<string>();
         if (!RunToolOk("netsh", $"interface ipv4 set interface \"{outNic.Name}\" metric=10"))
@@ -4426,6 +4482,20 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         RunToolOk("route", $"delete {netAddr} mask 255.255.255.0");   // 已存在也算正常
         if (!RunToolOk("route", $"add {netAddr} mask 255.255.255.0 {gwIp} metric 1 -p"))
             fails.Add($"加持久路由 {netPrefix}");
+
+        // ④ DNS 防泄漏：把内网网卡的 DNS 指到外网网卡当前用的 DNS。
+        //    解析目标不在内网段 → 走外网默认路由 → 校园网看不到解析记录。
+        var outDns = ReadNicDns(outNic.Name);
+        if (outDns.Count > 0)
+        {
+            if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{inNic.Name}\" static {outDns[0]} primary"))
+                fails.Add($"设 {inNic.Name} DNS → {outDns[0]}");
+        }
+        else
+        {
+            fails.Add($"读不到 {outNic.Name} 的 DNS（防泄漏未生效）");
+        }
+        EnsureDnsLeakGuardTask();   // 永久生效：登录时自动修正
 
         AppPaths.Log($"[路由] 分流：{outNic.Name}({outNic.Metric}→10) / 内网 {inNic.Name} / {netPrefix} via {gwIp} / 失败 {fails.Count} 项");
         Toast(fails.Count == 0 ? "分流已应用" : "失败：" + string.Join("、", fails), fails.Count == 0);
@@ -4447,6 +4517,22 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         {
             if (!RunToolOk("netsh", $"interface ipv4 set interface \"{st.OutNic}\" metric={st.OrigMetric}"))
                 fails.Add($"还原 {st.OutNic} 跃点数");
+        }
+
+        // 还原内网网卡 DNS：原来是 DHCP 的恢复 DHCP，原来有静态值的写回第一项
+        if (st != null && !string.IsNullOrWhiteSpace(st.InNic))
+        {
+            if (string.IsNullOrWhiteSpace(st.OrigInDns))
+            {
+                if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" source=dhcp"))
+                    fails.Add($"还原 {st.InNic} DNS 为 DHCP");
+            }
+            else
+            {
+                var firstDns = st.OrigInDns.Split(',')[0];
+                if (!RunToolOk("netsh", $"interface ipv4 set dnsservers name=\"{st.InNic}\" static {firstDns} primary"))
+                    fails.Add($"还原 {st.InNic} DNS 为 {firstDns}");
+            }
         }
         else
         {
