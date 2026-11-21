@@ -83,8 +83,17 @@ public sealed class SshDeploy
     private SshClient Connect(DeployOptions o)
     {
         var c = new SshClient(Conn(o));
-        c.Connect();
-        return c;
+        try
+        {
+            c.Connect();
+            return c;
+        }
+        catch
+        {
+            // 连接失败必须释放：重连重试每 4 秒一次、最长 180 秒，不释放会累积泄漏实例
+            try { c.Dispose(); } catch { }
+            throw;
+        }
     }
 
     // ---------------------------------------------------------------- 主流程
@@ -181,7 +190,7 @@ public sealed class SshDeploy
             _step?.Invoke(7, 7, "收尾");
             try
             {
-                await ExecAsync(cli, $"rm -rf {o.RemoteDir}");
+                await ExecAsync(cli, $"rm -rf {Q(o.RemoteDir)}");
                 _log("√ 已清理远端临时文件");
             }
             catch { /* 清理失败不影响结果 */ }
@@ -246,7 +255,7 @@ public sealed class SshDeploy
         $"rm -rf {o.RemoteDir}/pkg && mkdir -p {o.RemoteDir}/pkg && " +
         $"(cd {o.RemoteDir}/pkg && python3 -m zipfile -e ../pkg.zip . 2>/dev/null || " +
         $"(cd {o.RemoteDir}/pkg && unzip -q ../pkg.zip)) && " +
-        $"find {o.RemoteDir}/pkg -maxdepth 2 -name install.sh";
+        $"find {Q(o.RemoteDir)}/pkg -maxdepth 2 -name install.sh";
 
     /// <summary>把安装参数写成远端脚本：sudo 命令行里看不到密码。</summary>
     private void WriteRunScript(SshClient cli, DeployOptions o)
@@ -320,6 +329,8 @@ public sealed class SshDeploy
         var sb = new StringBuilder();
         try
         {
+            // ⚠️ 尾接 echo __GRC=$? 会让整条命令的 ExitStatus 恒为 echo 的 0，
+            // 真实退出码必须以 __GRC=N 的形式回传，由下面解析（否则失败会被当成成功）
             using var c = cli.CreateCommand($"sudo -S -p '' {cmd} < {pwPath} 2>&1; echo __GRC=$?");
             c.CommandTimeout = TimeSpan.FromSeconds(timeoutSec);
             _log("  命令已下发（密码走 stdin）");
@@ -340,13 +351,20 @@ public sealed class SshDeploy
                         || t.Contains("Authentication required") || t.Contains("sudo: a password is required"))
                         throw new SudoBadPassword();
                 }
+                // ⚠️ 不能直接 return c.ExitStatus：命令尾接了 echo __GRC=$?，
+                // ExitStatus 永远是 echo 的 0，install.sh 真失败会被当成成功。
+                // 必须从输出里解析 __GRC=N 拿真实退出码。
+                var allOut = sb.ToString();
+                var grc = System.Text.RegularExpressions.Regex.Match(allOut, "__GRC=(-?[0-9]+)");
+                if (grc.Success && int.TryParse(grc.Groups[1].Value, out var rc)) return rc;
                 return c.ExitStatus ?? -1;
             }, ct);
-
             var done = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(timeoutSec), ct));
             if (done != task)
             {
                 try { c.CancelAsync(); } catch { }
+                // 等后台 task 收尾：否则 using 释放 c 时它还在读输出 → ObjectDisposedException
+                try { await Task.WhenAny(task, Task.Delay(3000)); } catch { }
                 _log($"  ! 超过 {timeoutSec} 秒没跑完");
                 return (-2, sb.ToString());
             }
