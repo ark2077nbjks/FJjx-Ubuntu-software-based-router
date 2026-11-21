@@ -1,3 +1,31 @@
+## 1.51.11 · 2026-11-15
+
+### 安全修复
+
+- **面板命令通道的本地提权 / RCE**（`grayrouter-ctl.sh:138`）：`snapshot-restore` 的快照名未做字符校验（同组的 `snapshot-restore-soft` 有校验，这条漏了）。请求文件是 666 权限、任何本地用户可写，名字里带 `/` 会被当成任意路径传给 `grayrouter-snapshot.sh`，那里以 root 跑 `tar -xzf -C /` —— 等于本地用户可在 `/tmp` 放恶意 tar 包触发 root 任意文件写入。修：补同款正则校验（`^[A-Za-z0-9_.+-]+$`），非法名直接拒绝并记日志
+
+### 修复
+
+- **`ip_forward` 被覆盖导致 NAT 失效**（`grayrouter-opt.sh:37` ↔ `install.sh:363`）：两个脚本都用 `>` 写同一个 `/etc/sysctl.d/99-grayrouter.conf`，install 写 `ip_forward=1`、opt 写 `bbr/fq`，后跑的赢。opt 在 install 之后跑，重启加载 sysctl 时 `ip_forward=0`，NAT 直接失效、内网设备上不了网。修：两边都改成**合并写 + 原子替换**（先读现有内容、缺哪条补哪条，写 `.tmp` 再 `mv`）
+- **部署失败检测不到**（`SshDeploy.cs`）：SSH 命令尾接 `echo __GRC=$?` 会让 `ExitStatus` 恒为 echo 的 0，`install.sh` 真失败也被当成成功。修：从输出里正则解析 `__GRC=N` 拿真实退出码
+- **文件上传无超时，连接僵死会永久卡住**（`SshDeploy.cs`）：`sftp.UploadFile` 没有整体超时，`ct` 只在进度回调里检查，卡住时回调不触发 → 部署界面永远转圈。修：超时路径 `CancelAsync` 后 `await` 后台任务收尾（顺带消除 Dispose 竞态）
+- **重连时 SshClient 泄漏**（`SshDeploy.cs`）：`Connect()` 里连接抛异常时实例没释放，重连每 4 秒重试、最长 180 秒会累积几十个泄漏实例。修：try/catch 内先 Dispose 再抛
+- **RemoteDir 未转义拼 shell**（`SshDeploy.cs`）：`rm -rf` / `find` 直接拼 `o.RemoteDir`，路径含特殊字符会破坏命令（SSID/密码已走 `Q()` 转义，这个漏了）。修：同样过 `Q()`
+- **状态采集的静态字段写竞争**（`StatusGather.cs`）：`LastWatchMode` / `LastMode` 是公开静态可变字段，面板有 15s / 30s 多个 `DispatcherTimer` 可能并发调 `CollectAsync`。修：改成属性 + 锁
+
+### 改进
+
+- **4 个脚本补上 `set -uo pipefail`**：`grayrouter-traffic.sh`、`grayrouter-usage.sh`、`netpanel-info.sh`、`switch-5g.sh`（原来只有 shebang，命令失败会静默继续）。现在 48/48 个脚本都有错误保护
+
+### 已知遗留（未在本版修复）
+
+- `grayrouter-restore-scripts.sh:112` 的 `tar -P` 直接解到 `/`，没有成员白名单校验（`grayrouter-configbackup.sh` 有）
+- `grayrouter-configbackup.sh:316` 的 restore 无锁，两次并发会撞同一秒级的 `pre-restore-$TS` 名字
+- `install.sh:337` 的 `config.env` 里 SSID 未加引号，热点名含空格时会被截断
+- SSH.NET 依赖 2025.1.0 有 2 个已知 CVE（`CVE-2026-48798` / `CVE-2026-85756`，修复版 2026.0.0）。我们只用 `SshClient` + `SftpClient.UploadFile`，不触发 `ScpClient` 那个漏洞点，暂不升级
+
+---
+
 ## 1.51.10 · 2026-11-15
 
 ### 修复（多网卡分流 · 第二轮 AI 审查 + 自查）

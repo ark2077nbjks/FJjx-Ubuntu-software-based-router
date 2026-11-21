@@ -90,10 +90,24 @@ public static class StatusGather
     /// <summary>uptime 英文（2 days, 21 hours）→ 中文</summary>
     /// <summary>看门狗状态：observe=只看不动，act=会自动重启 AP</summary>
     /// <summary>远端看门狗当前模式：observe / act（面板开关用）</summary>
-    public static string LastWatchMode = "observe";
+    // 这两个结果字段会被多个 DispatcherTimer（15s / 30s）并发跑的 CollectAsync 读写，
+    // 用属性 + 锁包起来避免写竞争（glm 审查指出）
+    private static readonly object _modeLock = new();
+    private static string _lastWatchMode = "observe";
+    private static string _lastMode = "";
+
+    public static string LastWatchMode
+    {
+        get { lock (_modeLock) return _lastWatchMode; }
+        set { lock (_modeLock) _lastWatchMode = string.IsNullOrWhiteSpace(value) ? "observe" : value; }
+    }
 
     /// <summary>远端当前模式：router / hotspot（空 = 还没读到）</summary>
-    public static string LastMode = "";
+    public static string LastMode
+    {
+        get { lock (_modeLock) return _lastMode; }
+        set { lock (_modeLock) _lastMode = value ?? ""; }
+    }
 
     private static string WatchText(Dictionary<string, string> d)
     {

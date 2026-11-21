@@ -34,7 +34,13 @@ apply() {
   ls -1dt /etc/grayrouter/opt-backup-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
   # ① BBR
-  printf '%s\n' "net.core.default_qdisc=fq" "net.ipv4.tcp_congestion_control=bbr" > "$SYSCTL_FILE"
+  # ⚠️ 不能直接 > 覆盖：install.sh 也写同一个 /etc/sysctl.d/99-grayrouter.conf（写 ip_forward=1），
+  # 两个脚本互相覆盖的结果是「后跑的赢」——opt 在 install 之后跑，开机 sysctl 把 ip_forward 置 0，
+  # NAT 直接失效、内网设备上不了网（qwen 审查发现）。这里改成合并写 + 原子替换。
+  {
+    printf '%s\n' "net.core.default_qdisc=fq" "net.ipv4.tcp_congestion_control=bbr"
+    grep -q '^[[:space:]]*net\.ipv4\.ip_forward' "$SYSCTL_FILE" 2>/dev/null || echo "net.ipv4.ip_forward=1"
+  } > "$SYSCTL_FILE.tmp" && mv -f "$SYSCTL_FILE.tmp" "$SYSCTL_FILE"
   sysctl --system >/dev/null 2>&1
   [ "$(sysctl -n net.ipv4.tcp_congestion_control)" = bbr ] || { say "✗ BBR 未生效"; log "BBR 未生效"; exit 2; }
   say "✓ BBR：$(sysctl -n net.ipv4.tcp_congestion_control) / $(sysctl -n net.core.default_qdisc)"

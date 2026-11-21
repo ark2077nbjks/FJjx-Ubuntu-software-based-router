@@ -360,7 +360,13 @@ ok "脚本安装到 $GR_OPT/bin（$(ls "$GR_OPT"/bin/*.sh 2>/dev/null | wc -l) �
 SYSCTL_DIR=${SYSCTL_DIR:-/etc/sysctl.d}
 SYSCTL_F=$SYSCTL_DIR/99-grayrouter.conf
 backup_file "$SYSCTL_F"
-echo "net.ipv4.ip_forward=1" >"$SYSCTL_F"
+# ⚠️ 合并写不覆盖：grayrouter-opt.sh 也写这个文件（写 bbr/fq），
+# 谁后跑谁的 > 会把对方的行冲掉 —— ip_forward 被冲掉就是 NAT 断
+{
+  echo "net.ipv4.ip_forward=1"
+  grep -q '^[[:space:]]*net\.core\.default_qdisc' "$SYSCTL_F" 2>/dev/null || echo "net.core.default_qdisc=fq"
+  grep -q '^[[:space:]]*net\.ipv4\.tcp_congestion_control' "$SYSCTL_F" 2>/dev/null || echo "net.ipv4.tcp_congestion_control=bbr"
+} > "$SYSCTL_F.tmp" && mv -f "$SYSCTL_F.tmp" "$SYSCTL_F"
 track_created "$SYSCTL_F"
 sysctl -q -p "$SYSCTL_F"
 ok "已开启 ip_forward"

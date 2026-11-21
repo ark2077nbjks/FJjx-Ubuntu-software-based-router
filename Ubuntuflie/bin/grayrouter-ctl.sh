@@ -65,6 +65,12 @@ case "${arg:-}" in ''|*[!0-9]*) arg="" ;; esac
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
+## 把执行结果写成 JSON 给面板读（同时写 result.json 和 res/<id>.json）
+## 副作用：会写 /run/grayrouter/ 下的结果文件（原子写，先 tmp 再 rename）
+## @param $1 状态：running / done / error / unknown
+## @param $2 退出码
+## @param $3 给面板看的消息
+## @return 0
 write_res() {   # $1=state  $2=exit  $3=msg
   STATE="$1" CODE="$2" RID="$rid" CMD="$cmd" MSG="$3"
   export STATE CODE RID CMD MSG RES RDIR
@@ -129,7 +135,12 @@ case "$cmd" in
   snapshot-restore-soft) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore-soft ${rest:-latest}"; DEVCAP=1
                  printf '%s' "${rest:-latest}" | grep -Eq '^[A-Za-z0-9_.+-]+$' || {
                    write_res "error" 72 "快照名不合法：$rest"; continue; } ;;
-  snapshot-restore) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore ${rest:-latest}"; DEVCAP=1 ;;
+  snapshot-restore) SCRIPT=/usr/local/bin/grayrouter-snapshot.sh; ARGS="restore ${rest:-latest}"; DEVCAP=1
+                 # ⚠️ 必须校验快照名：请求文件是 666 权限，任何本地用户都能写。
+                 # 名字里带 / 会被当成任意文件路径传给 snapshot.sh，那里以 root 跑 tar -C /，
+                 # 等于本地提权 + 任意文件写入（qwen 审查发现，和 snapshot-restore-soft 对齐）
+                 printf '%s' "${rest:-latest}" | grep -Eq '^[A-Za-z0-9_.+-]+$' || {
+                   write_res "error" 72 "快照名不合法：$rest"; log "拒绝 snapshot-restore: $rest"; continue; } ;;
   usbnet-now)    SCRIPT=/usr/local/bin/grayrouter-usbnet-now.sh; ARGS=""; DEVCAP=1 ;;
   wanfail-get)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="get"; DEVCAP=1 ;;
   wanfail-set)   SCRIPT=/usr/local/bin/grayrouter-wanfail.sh; ARGS="set ${rest:-}"; DEVCAP=1 ;;
