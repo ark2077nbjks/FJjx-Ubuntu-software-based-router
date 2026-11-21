@@ -25,13 +25,15 @@ fail() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 warn() { printf '  [WARN] %s\n' "$1"; WARN=$((WARN+1)); }
 sec()  { printf '\n===== %s =====\n' "$1"; }
 
+SELF=':(exclude)tools/pre-push-check.sh'   # 别把自己检出来（本文件含检测关键词）
+
 echo "============================================================"
 echo "  推送前自检"
 echo "============================================================"
 
 # ---------- 1. 硬编码凭据 ----------
 sec "1/6 硬编码密码 · 密钥"
-HITS=$(git grep -inE "(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*=[[:space:]]*\"[^\"]{6,}\"" -- '*.sh' '*.md' '*.cs' '*.json' '*.yml' 2>/dev/null \
+HITS=$(git grep -inE "(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*=[[:space:]]*\"[^\"]{6,}\"" -- '*.sh' '*.md' '*.cs' '*.json' '*.yml' "$SELF" 2>/dev/null \
     | grep -viE "Append\(|placeholder|example|your_|xxx" | head -5)
 if [ -n "$HITS" ]; then
     fail "发现疑似硬编码凭据（字面量）："
@@ -42,7 +44,7 @@ fi
 
 # ---------- 2. 无关项目 ----------
 sec "2/6 无关项目提及"
-HITS=$(git grep -inE "(mybot|napcat|qq[._-]?bot|灰风|onebot|go-cqhttp)" -- . 2>/dev/null | grep -v "^Binary" | head -8)
+HITS=$(git grep -inE "(mybot|napcat|qq[._-]?bot|灰风|onebot|go-cqhttp)" -- . "$SELF" 2>/dev/null | grep -v "^Binary" | head -8)
 if [ -n "$HITS" ]; then
     fail "发现无关项目提及（QQ bot 属独立项目）："
     echo "$HITS" | sed 's/^/         /'
@@ -52,7 +54,7 @@ fi
 
 # ---------- 3. 本地路径 ----------
 sec "3/6 真实本地路径"
-HITS=$(git grep -inE "(C:\\\\Users\\\\[A-Za-z0-9_.-]+|/d/Users/[A-Za-z0-9_.-]+)" -- . 2>/dev/null | grep -v "^Binary" | head -8)
+HITS=$(git grep -inE "(C:\\\\Users\\\\[A-Za-z0-9_.-]+|/d/Users/[A-Za-z0-9_.-]+)" -- . "$SELF" 2>/dev/null | grep -v "^Binary" | head -8)
 if [ -n "$HITS" ]; then
     warn "发现本机绝对路径："
     echo "$HITS" | sed 's/^/         /'
