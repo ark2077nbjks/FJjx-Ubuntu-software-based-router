@@ -1,3 +1,31 @@
+## 1.51.12 · 2026-11-23
+
+### 修复：点「一键分流」界面冻结 8-15 秒
+
+根因：`OnApplySplitRoute` 标了 `async void`，但内部 20+ 次外部命令（netsh / PowerShell / route）都是同步的 `Process.Start + WaitForExit`，全跑在 UI 线程上。
+
+改动 8 处：
+
+| # | 改动 | 解决 |
+|---|---|---|
+| 1 | `UiFeedback.Toast` 加 `Dispatcher.CheckAccess()` 检查，后台线程调时 `BeginInvoke` 切回 UI | 后台线程建控件会抛 `InvalidOperationException` |
+| 2 | 分流执行体提取成 `ExecuteSplitSteps()`（154 行），主流程 `await Task.Run(...)` | 界面不再冻结 |
+| 3 | `OnResetRoutes` 的 `RestoreFromState(st)` 同样包 `Task.Run` | 恢复也不冻结 |
+| 4 | `RefreshRoutesAsync` 的 `ReadNicMetrics()` 包 `Task.Run` | 刷新时不再卡 100-300ms |
+| 5 | **防重入**：`Interlocked.CompareExchange` + `try/finally` 包住整个方法体 | 连点两次会并发跑两个 Task.Run 互相踩 |
+| 6 | **`RollbackSplit` 包 `Task.Run`** | 验证门失败时的回滚也要 8 秒+，同步调一样冻结 |
+| 7 | **`RunTool` / `RunToolOk` 改成并行读 stdout/stderr + 超时 Kill** | 原来先读完 stdout 再读 stderr，stderr 写满 4KB 管道缓冲会让子进程卡死 → `ReadToEnd` 永久阻塞 |
+| 8 | 分流和恢复**共用一把 `_netBusy` 锁** | 原来各用一把，先点分流再点恢复会交叉并行 |
+
+第 5-8 项是 AI 审查（qwen3.8-27b）抓出来的——第 6/7/8 项都是「只修了成功路径、漏了失败路径」这类问题。
+
+### 已知结构问题（未改）
+
+- `MainWindow.xaml.cs` 7536 行，UI 与业务逻辑混在一起，没有 MVVM 分层
+- 要根治「逻辑跑 UI 线程」这类问题，需要把业务逻辑从 code-behind 抽出去
+
+---
+
 ## 1.51.11 · 2026-11-15
 
 ### 安全修复

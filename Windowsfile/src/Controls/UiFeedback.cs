@@ -14,6 +14,13 @@ namespace NetPanel.Controls
         /// <summary>右下角浮出提示（窗口内悬浮层，非 Popup，截图可见），约 3 秒自动消失。</summary>
         public static void Toast(Window? owner, string text, bool ok = true, int seconds = 3)
         {
+            // 后台线程调用时切回 UI 线程：
+            // 分流/恢复执行体跑在 Task.Run 里，直接在非 UI 线程建控件会抛 InvalidOperationException
+            if (owner != null && !owner.Dispatcher.CheckAccess())
+            {
+                owner.Dispatcher.BeginInvoke(new Action(() => Toast(owner, text, ok, seconds)));
+                return;
+            }
             if (owner?.Content is not Panel root || string.IsNullOrWhiteSpace(text)) return;
 
             var dot = new Border

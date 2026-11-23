@@ -4132,9 +4132,17 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             };
             using var p = Process.Start(psi);
             if (p == null) return "";
-            var s = p.StandardOutput.ReadToEnd();
-            _ = p.StandardError.ReadToEnd();
-            p.WaitForExit(8000);
+            // 并行读 stdout/stderr：先读一个再读另一个的话，另一个写满管道缓冲
+            // （4KB）会让子进程卡在写操作上不退出 → ReadToEnd 永久阻塞（qwen 审查指出）
+            var outTask = p.StandardOutput.ReadToEndAsync();
+            var errTask = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(15000))
+            {
+                try { p.Kill(true); } catch { }
+                AppPaths.Log($"[路由] {file} 超时 15 秒已强制结束");
+            }
+            var s = outTask.IsCompleted ? outTask.Result : "";
+            if (errTask.IsCompleted) _ = errTask.Result;
             return s;
         }
         catch (Exception ex)
@@ -4159,9 +4167,18 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             };
             using var p = Process.Start(psi);
             if (p == null) return false;
-            _ = p.StandardOutput.ReadToEnd();
-            _ = p.StandardError.ReadToEnd();
-            if (!p.WaitForExit(8000)) { try { p.Kill(); } catch { } return false; }
+            // 并行读 stdout/stderr：先读一个再读另一个，另一个写满管道缓冲（4KB）
+            // 会让子进程卡在写操作上不退出 → 永久阻塞
+            var outTask2 = p.StandardOutput.ReadToEndAsync();
+            var errTask2 = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(15000))
+            {
+                try { p.Kill(true); } catch { }
+                AppPaths.Log($"[路由] {file} 超时 15 秒已强制结束");
+                return false;
+            }
+            _ = outTask2.IsCompleted ? outTask2.Result : "";
+            _ = errTask2.IsCompleted ? errTask2.Result : "";
             return p.ExitCode == 0;
         }
         catch (Exception ex)
@@ -4650,6 +4667,11 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     /// <summary>最近一次刷新到的网卡列表（供静态兜底方法使用）。</summary>
     private static List<RouteNicRow> _routeNicsCache = new();
 
+    // 防重入标志：0 = 空闲，1 = 正在跑（Interlocked 操作，别直接读写）
+    // ⚠️ 分流和恢复必须共用同一把锁：两个 Task.Run 并发改 netsh/route 会互相踩。
+    // 分开两把锁的话「先点分流再点恢复」会两路并行（qwen 审查指出）
+    private static int _netBusy = 0;
+
     /// <summary>
     /// 实时枚举在线网卡（不依赖 GUI 刷新）。
     /// 为什么需要：`_routeNicsCache` 只在点「刷新」后才有值；
@@ -4902,7 +4924,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     {
         try
         {
-            var metrics = ReadNicMetrics();
+            // ReadNicMetrics 内部要起 netsh 进程读 metric（约 100-300ms），
+            // 放后台线程，别让「刷新」这一下也卡界面
+            var metrics = await Task.Run(() => ReadNicMetrics());
             var list = new List<RouteNicRow>();
             foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
             {
@@ -5034,66 +5058,129 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     private async void OnApplySplitRoute(object sender, RoutedEventArgs e)
     {
-        var outName = CmbOutNic.SelectedItem as string;
-        var inName = CmbInNic.SelectedItem as string;
-        if (string.IsNullOrWhiteSpace(outName) || string.IsNullOrWhiteSpace(inName))
-        { Toast("先选外网网卡和内网网卡", false); return; }
-        if (outName == inName)
-        { Toast("外网和内网不能是同一块网卡", false); return; }
-
-        var outNic = _routeNics.FirstOrDefault(x => x.Name == outName);
-        var inNic = _routeNics.FirstOrDefault(x => x.Name == inName);
-        if (outNic == null || inNic == null) { Toast("网卡信息已过期，先点刷新", false); return; }
-
-        // ⚠️ 分流前检查：上一轮如果没恢复干净（状态文件还在），
-        // 这次采集到的「原始状态」会是「半分流态」，一旦覆盖掉 json，
-        // 以后点恢复也只能恢复到半分流态，原始基线永久丢失。
-        if (System.IO.File.Exists(RouteDivFile))
+        // 防重入：按钮连点时只跑一次。两个 Task.Run 并发改路由会互相踩，
+        // 第二次采集到的「原始状态」还可能是第一次改了一半的中间态。
+        if (System.Threading.Interlocked.CompareExchange(ref _netBusy, 1, 0) != 0)
         {
-            var r = MessageBox.Show(
-                "检测到上次分流的记录还没清除 —— 说明上一轮可能没恢复干净。\n\n"
-                + "如果现在直接分流，这次的「原始状态」会记成半分流态，\n"
-                + "以后点恢复也回不到干净状态。\n\n"
-                + "建议：先点「恢复自动」，确认网络正常后再分流。\n\n"
-                + "确定要忽略提醒、直接分流吗？",
-                "多网卡路由 · 上一轮未恢复干净", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-            if (r != MessageBoxResult.OK) { Toast("已取消：请先点「恢复自动」", false); return; }
-            AppPaths.Log("[路由] 用户选择忽略「上一轮未恢复」提醒，直接分流（基线将被覆盖）");
-        }
-
-        // 外网必须真能上网（有默认网关）；没有网关的卡是连内网的
-        if (string.IsNullOrWhiteSpace(outNic.Gw))
-        { Toast($"{outNic.Name} 没有默认网关——它是内网卡，请把有网关的（热点/WiFi）选成外网", false); return; }
-        if (!inNic.Prefix.Contains('/'))
-        { Toast($"{inNic.Name} 读不到子网掩码", false); return; }
-
-        // 选反检测：内网卡也有网关（软路由），所以「有网关」不足以证明它是外网卡。
-        // 真正判据是「能不能出公网」——绑定源 IP 实测一次。
-        if (!CanReachInternetVia(outNic))
-        {
-            var alt = _routeNics.FirstOrDefault(x => x.Name != outNic.Name && CanReachInternetVia(x));
-            var hint = alt != null ? $"（{alt.Name} 能出公网，试试把它选成外网）" : "";
-            Toast($"{outNic.Name} 出不了公网——它连的是内网，不是外网{hint}", false);
+            Toast("正在处理网络配置，请等这次跑完", false);
             return;
         }
+        try
+        {
 
-        // 内网网卡可能没有网关（分流后的正常状态）：这时用 On-link（下一跳=本机 IP）
-        var inHasGw = !string.IsNullOrWhiteSpace(inNic.Gw);
-        var gwIp = inHasGw ? inNic.Gw : inNic.Ip;
-        var gwLabel = inHasGw ? gwIp : $"{inNic.Ip}（On-link）";
-        var netPrefix = inNic.Prefix;         // 真实网段，如 192.168.60.0/24
-        var netAddr = netPrefix.Split('/')[0];
+            var outName = CmbOutNic.SelectedItem as string;
+            var inName = CmbInNic.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(outName) || string.IsNullOrWhiteSpace(inName))
+            { Toast("先选外网网卡和内网网卡", false); return; }
+            if (outName == inName)
+            { Toast("外网和内网不能是同一块网卡", false); return; }
 
-        var ret = MessageBox.Show(
-            $"将执行四步：\n\n① {outNic.Name} 跃点数 {outNic.Metric} → 10（外网优先）\n" +
-            $"② 删除 {inNic.Name} 上的默认路由（按接口删，不碰外网）\n" +
-            $"③ 加持久路由 {netPrefix} → {gwIp}\n" +
-            $"④ DNS 防泄漏：{inNic.Name} 的 DNS 改指向 {outNic.Name}\n" +
-            "   （域名解析也走外网，校园网看不到你访问了哪些域名）\n\n" +
-            "原跃点数和 DNS 会被记录，出问题点「恢复自动」可精确还原。\n继续？",
-            "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-        if (ret != MessageBoxResult.OK) return;
+            var outNic = _routeNics.FirstOrDefault(x => x.Name == outName);
+            var inNic = _routeNics.FirstOrDefault(x => x.Name == inName);
+            if (outNic == null || inNic == null) { Toast("网卡信息已过期，先点刷新", false); return; }
 
+            // ⚠️ 分流前检查：上一轮如果没恢复干净（状态文件还在），
+            // 这次采集到的「原始状态」会是「半分流态」，一旦覆盖掉 json，
+            // 以后点恢复也只能恢复到半分流态，原始基线永久丢失。
+            if (System.IO.File.Exists(RouteDivFile))
+            {
+                var r = MessageBox.Show(
+                    "检测到上次分流的记录还没清除 —— 说明上一轮可能没恢复干净。\n\n"
+                    + "如果现在直接分流，这次的「原始状态」会记成半分流态，\n"
+                    + "以后点恢复也回不到干净状态。\n\n"
+                    + "建议：先点「恢复自动」，确认网络正常后再分流。\n\n"
+                    + "确定要忽略提醒、直接分流吗？",
+                    "多网卡路由 · 上一轮未恢复干净", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                if (r != MessageBoxResult.OK) { Toast("已取消：请先点「恢复自动」", false); return; }
+                AppPaths.Log("[路由] 用户选择忽略「上一轮未恢复」提醒，直接分流（基线将被覆盖）");
+            }
+
+            // 外网必须真能上网（有默认网关）；没有网关的卡是连内网的
+            if (string.IsNullOrWhiteSpace(outNic.Gw))
+            { Toast($"{outNic.Name} 没有默认网关——它是内网卡，请把有网关的（热点/WiFi）选成外网", false); return; }
+            if (!inNic.Prefix.Contains('/'))
+            { Toast($"{inNic.Name} 读不到子网掩码", false); return; }
+
+            // 选反检测：内网卡也有网关（软路由），所以「有网关」不足以证明它是外网卡。
+            // 真正判据是「能不能出公网」——绑定源 IP 实测一次。
+            if (!CanReachInternetVia(outNic))
+            {
+                var alt = _routeNics.FirstOrDefault(x => x.Name != outNic.Name && CanReachInternetVia(x));
+                var hint = alt != null ? $"（{alt.Name} 能出公网，试试把它选成外网）" : "";
+                Toast($"{outNic.Name} 出不了公网——它连的是内网，不是外网{hint}", false);
+                return;
+            }
+
+            // 内网网卡可能没有网关（分流后的正常状态）：这时用 On-link（下一跳=本机 IP）
+            var inHasGw = !string.IsNullOrWhiteSpace(inNic.Gw);
+            var gwIp = inHasGw ? inNic.Gw : inNic.Ip;
+            var gwLabel = inHasGw ? gwIp : $"{inNic.Ip}（On-link）";
+            var netPrefix = inNic.Prefix;         // 真实网段，如 192.168.60.0/24
+            var netAddr = netPrefix.Split('/')[0];
+
+            var ret = MessageBox.Show(
+                $"将执行四步：\n\n① {outNic.Name} 跃点数 {outNic.Metric} → 10（外网优先）\n" +
+                $"② 删除 {inNic.Name} 上的默认路由（按接口删，不碰外网）\n" +
+                $"③ 加持久路由 {netPrefix} → {gwIp}\n" +
+                $"④ DNS 防泄漏：{inNic.Name} 的 DNS 改指向 {outNic.Name}\n" +
+                "   （域名解析也走外网，校园网看不到你访问了哪些域名）\n\n" +
+                "原跃点数和 DNS 会被记录，出问题点「恢复自动」可精确还原。\n继续？",
+                "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (ret != MessageBoxResult.OK) return;
+
+            // ⚠️ 执行体放后台线程：里面有 20+ 次外部命令（netsh/PowerShell/route），
+            // 同步跑在 UI 线程会让界面冻结 8-15 秒（用户实测反馈）。
+            Toast("正在分流，请稍候…", true);
+            var fails = new List<string>();
+            try
+            {
+                fails = await Task.Run(() => ExecuteSplitSteps(outNic, inNic, gwIp, netPrefix, netAddr));
+            }
+            catch (Exception ex)
+            {
+                // async void 里的未处理异常会直接崩进程，必须兜住。
+                // 走到这里说明执行体本身抛了（不是验证门失败），网络可能处于半改状态。
+                AppPaths.Log("[路由] 分流执行异常: " + ex);
+                Toast("分流出错：" + ex.Message + "；请点「恢复自动」检查网络状态", false);
+                try { await RefreshRoutesAsync(); } catch { }
+                return;
+            }
+
+            // ===== 任一验证门失败 → 自动回滚（成熟实践：没有测过的回滚就不许变更）=====
+            if (fails.Count > 0)
+            {
+                // ⚠️ 回滚同样要放后台：RollbackSplit 内部跑 RestoreFromState（十几次外部命令，
+                // 单次最长 8 秒），同步调在 UI 线程会让「验证门失败」这条路径界面冻结更久
+                // （qwen 审查指出：只异步了成功路径，失败路径漏了）
+                Toast("验证门失败，正在自动回滚…", false);
+                await Task.Run(() => RollbackSplit(string.Join("；", fails)));
+                AppPaths.Log($"[路由] 分流失败并已自动回滚：{string.Join("；", fails)}");
+                Toast("分流失败，已自动回滚：" + fails[0], false);
+                await RefreshRoutesAsync();
+                return;
+            }
+
+            AppPaths.Log($"[路由] 分流：{outNic.Name}({outNic.Metric}→10) / 内网 {inNic.Name} / {netPrefix} via {gwIp} / 失败 {fails.Count} 项");
+            Toast(fails.Count == 0 ? "分流已应用（NetBIOS 加固重启网卡后完全生效）" : "失败：" + string.Join("、", fails), fails.Count == 0);
+            await RefreshRoutesAsync();
+    
+        }
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref _netBusy, 0);
+        }
+    }
+
+
+    /// <summary>
+    /// 分流执行体：存快照 → 采集基线 → 五步改动 → 六道验证门。
+    /// 跑在后台线程（由 OnApplySplitRoute 用 Task.Run 调用），
+    /// 所以里面不能直接碰 UI —— Toast 已改成线程安全（内部 Dispatcher.BeginInvoke 切回 UI 线程）。
+    /// @return 失败项清单（空 = 全部通过）
+    /// </summary>
+    private List<string> ExecuteSplitSteps(RouteNicRow outNic, RouteNicRow inNic,
+                                           string gwIp, string netPrefix, string netAddr)
+    {
         // 分流前先存一份微软原生全量快照：万一 routediv.json 丢了，还能靠它回放（netsh -f）
         try
         {
@@ -5242,92 +5329,111 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         if (!ExternalOk())
             fails.Add("验证门⑥：外网不通或 DNS 解析失败");
 
-        // ===== 任一验证门失败 → 自动回滚（成熟实践：没有测过的回滚就不许变更）=====
-        if (fails.Count > 0)
-        {
-            RollbackSplit(string.Join("；", fails));
-            AppPaths.Log($"[路由] 分流失败并已自动回滚：{string.Join("；", fails)}");
-            Toast("分流失败，已自动回滚：" + fails[0], false);
-            await RefreshRoutesAsync();
-            return;
-        }
-
-        AppPaths.Log($"[路由] 分流：{outNic.Name}({outNic.Metric}→10) / 内网 {inNic.Name} / {netPrefix} via {gwIp} / 失败 {fails.Count} 项");
-        Toast(fails.Count == 0 ? "分流已应用（NetBIOS 加固重启网卡后完全生效）" : "失败：" + string.Join("、", fails), fails.Count == 0);
-        await RefreshRoutesAsync();
+        return fails;
     }
 
     private async void OnResetRoutes(object sender, RoutedEventArgs e)
     {
-        var st = LoadRouteDivState();
-
-        // 二级保险：routediv.json 丢了，但有分流前的 netsh 全量快照 → 直接回放
-        if (st == null)
+        // 防重入：按钮连点时只跑一次。两个 Task.Run 并发改路由会互相踩，
+        // 第二次采集到的「原始状态」还可能是第一次改了一半的中间态。
+        if (System.Threading.Interlocked.CompareExchange(ref _netBusy, 1, 0) != 0)
         {
-            var dumpFile = System.IO.Path.Combine(AppPaths.DataDir, "net-before-split.txt");
-            if (System.IO.File.Exists(dumpFile))
-            {
-                if (MessageBox.Show(
-                        "找不到分流状态记录（routediv.json），但发现了分流前的全网快照。\n\n" +
-                        "将用 netsh 回放整份网络配置（IP/DNS/跃点数/路由全部按快照来）。\n继续？",
-                        "多网卡路由 · 快照恢复", MessageBoxButton.OKCancel, MessageBoxImage.Question)
-                    != MessageBoxResult.OK) return;
+            Toast("正在处理网络配置，请等这次跑完", false);
+            return;
+        }
+        try
+        {
 
-                var okDump = RunToolOk("netsh", "-f \"" + dumpFile + "\"");
-                if (!okDump)
+            var st = LoadRouteDivState();
+
+            // 二级保险：routediv.json 丢了，但有分流前的 netsh 全量快照 → 直接回放
+            if (st == null)
+            {
+                var dumpFile = System.IO.Path.Combine(AppPaths.DataDir, "net-before-split.txt");
+                if (System.IO.File.Exists(dumpFile))
                 {
-                    // 快照回放失败不能就这么算了：降级做基础重置，别把错状态留在系统里
-                    SoftResetNetwork();
+                    if (MessageBox.Show(
+                            "找不到分流状态记录（routediv.json），但发现了分流前的全网快照。\n\n" +
+                            "将用 netsh 回放整份网络配置（IP/DNS/跃点数/路由全部按快照来）。\n继续？",
+                            "多网卡路由 · 快照恢复", MessageBoxButton.OKCancel, MessageBoxImage.Question)
+                        != MessageBoxResult.OK) return;
+
+                    var okDump = RunToolOk("netsh", "-f \"" + dumpFile + "\"");
+                    if (!okDump)
+                    {
+                        // 快照回放失败不能就这么算了：降级做基础重置，别把错状态留在系统里
+                        SoftResetNetwork();
+                        schtasksDeleteDnsGuard();
+                        // 重置是否真生效，这里无法可靠断言 —— 如实说「已执行」，让用户自己看内外网，
+                        // 不要像以前那样无条件宣布成功（虚报比不报更糟）
+                        AppPaths.Log("[路由] L2 快照回放失败，已执行 L3 基础重置（结果未验证）");
+                        Toast("快照回放失败，已执行基础重置；请检查内网/外网是否正常，仍异常请用 一键恢复网络.bat", false);
+                        await RefreshRoutesAsync();
+                        return;
+                    }
                     schtasksDeleteDnsGuard();
-                    // 重置是否真生效，这里无法可靠断言 —— 如实说「已执行」，让用户自己看内外网，
-                    // 不要像以前那样无条件宣布成功（虚报比不报更糟）
-                    AppPaths.Log("[路由] L2 快照回放失败，已执行 L3 基础重置（结果未验证）");
-                    Toast("快照回放失败，已执行基础重置；请检查内网/外网是否正常，仍异常请用 一键恢复网络.bat", false);
+                    AppPaths.Log($"[路由] 快照回放恢复：{(okDump ? "成功" : "失败")}");
+                    Toast(okDump ? "已用分流前快照恢复" : "快照回放失败，请用 一键恢复网络.bat", okDump);
                     await RefreshRoutesAsync();
                     return;
                 }
-                schtasksDeleteDnsGuard();
-                AppPaths.Log($"[路由] 快照回放恢复：{(okDump ? "成功" : "失败")}");
-                Toast(okDump ? "已用分流前快照恢复" : "快照回放失败，请用 一键恢复网络.bat", okDump);
+
+                // 三级保险：什么都没有 → 提示用独立工具（它不依赖任何记录）
+                if (MessageBox.Show(
+                        "找不到任何恢复依据（状态文件和快照都没了）。\n\n" +
+                        "建议运行「一键恢复网络.bat」（在 app 目录，会把网络全量推回默认）。\n" +
+                        "现在先尝试一次基础重置（不重启网卡）？",
+                        "多网卡路由 · 兜底恢复", MessageBoxButton.OKCancel, MessageBoxImage.Warning)
+                    != MessageBoxResult.OK) return;
+
+                SoftResetNetwork();
+                Toast("已做基础重置；如仍异常请运行 一键恢复网络.bat", true);
                 await RefreshRoutesAsync();
                 return;
             }
+            var tip = st == null
+                ? "（没有原状态记录，将改为系统自动跃点数）"
+                : $"（{st.OutNic} 跃点数还原为 {st.OrigMetric}）";
+            if (MessageBox.Show("恢复网卡跃点数，并删除分流用的持久路由？\n\n" + tip,
+                "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                return;
 
-            // 三级保险：什么都没有 → 提示用独立工具（它不依赖任何记录）
-            if (MessageBox.Show(
-                    "找不到任何恢复依据（状态文件和快照都没了）。\n\n" +
-                    "建议运行「一键恢复网络.bat」（在 app 目录，会把网络全量推回默认）。\n" +
-                    "现在先尝试一次基础重置（不重启网卡）？",
-                    "多网卡路由 · 兜底恢复", MessageBoxButton.OKCancel, MessageBoxImage.Warning)
-                != MessageBoxResult.OK) return;
+            // ⚠️ 这里必须复用 RestoreFromState，不能自己再写一份。
+            // 之前这里是一份独立实现，只执行 `netsh ... metric=原值`，不管 AutomaticMetric，
+            // 结果「恢复自动」后 WLAN 的 AutomaticMetric 永远停在 Disabled（用户实测抓到的 bug）。
 
-            SoftResetNetwork();
-            Toast("已做基础重置；如仍异常请运行 一键恢复网络.bat", true);
+            // 先删守卫任务：否则它可能在恢复中途把 DNS 又改回去（竞争窗口）
+            schtasksDeleteDnsGuard();
+
+            // 还原体放后台线程：里面有十几次外部命令，同步跑会让界面冻结
+            Toast("正在恢复，请稍候…", true);
+            var fails = new List<string>();
+            try
+            {
+                fails = await Task.Run(() => RestoreFromState(st));
+            }
+            catch (Exception ex)
+            {
+                // 同上：async void 里必须兜住，否则崩进程
+                AppPaths.Log("[路由] 恢复执行异常: " + ex);
+                Toast("恢复出错：" + ex.Message + "；可重试，或用 app 目录下的一键恢复网络.bat", false);
+                try { await RefreshRoutesAsync(); } catch { }
+                return;
+            }
+
+            // 只有全部成功才删状态文件；失败保留，下次点「恢复」还能按原样精确重试，
+            // 否则只剩破坏性更强的 SoftResetNetwork 可用
+            if (fails.Count == 0) DeleteRouteDivState();
+            else AppPaths.Log("[路由] 恢复有失败项，保留 routediv.json 供重试：" + string.Join("；", fails));
+            AppPaths.Log($"[路由] 恢复：失败 {fails.Count} 项");
+            Toast(fails.Count == 0 ? "已恢复" : "部分失败：" + string.Join("、", fails), fails.Count == 0);
             await RefreshRoutesAsync();
-            return;
+    
         }
-        var tip = st == null
-            ? "（没有原状态记录，将改为系统自动跃点数）"
-            : $"（{st.OutNic} 跃点数还原为 {st.OrigMetric}）";
-        if (MessageBox.Show("恢复网卡跃点数，并删除分流用的持久路由？\n\n" + tip,
-            "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
-            return;
-
-        // ⚠️ 这里必须复用 RestoreFromState，不能自己再写一份。
-        // 之前这里是一份独立实现，只执行 `netsh ... metric=原值`，不管 AutomaticMetric，
-        // 结果「恢复自动」后 WLAN 的 AutomaticMetric 永远停在 Disabled（用户实测抓到的 bug）。
-
-        // 先删守卫任务：否则它可能在恢复中途把 DNS 又改回去（竞争窗口）
-        schtasksDeleteDnsGuard();
-        var fails = RestoreFromState(st);
-
-        // 只有全部成功才删状态文件；失败保留，下次点「恢复」还能按原样精确重试，
-        // 否则只剩破坏性更强的 SoftResetNetwork 可用
-        if (fails.Count == 0) DeleteRouteDivState();
-        else AppPaths.Log("[路由] 恢复有失败项，保留 routediv.json 供重试：" + string.Join("；", fails));
-        AppPaths.Log($"[路由] 恢复：失败 {fails.Count} 项");
-        Toast(fails.Count == 0 ? "已恢复" : "部分失败：" + string.Join("、", fails), fails.Count == 0);
-        await RefreshRoutesAsync();
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref _netBusy, 0);
+        }
     }
 
     /// <summary>状态页顶部总览：4 个关键指标卡片（参考 pfSense Dashboard widget 的做法）。</summary>
