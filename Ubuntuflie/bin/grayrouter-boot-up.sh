@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# ============================================================
+#  grayrouter-boot-up.sh —— 开机自动恢复软路由（由 systemd 在开机时调用）
+#  用法：grayrouter-boot-up.sh（无参数，由 grayrrouter-boot.service 触发）
+#  依赖：NetworkManager / iproute2 / router-up.sh
+#  退出码：恒返回 0（失败只写日志，不阻塞开机）
+#  注：只在 /etc/grayrouter/boot-mode=router 时动作；已有默认路由则跳过；会动网络
+# ============================================================
 # 开机自动恢复软路由：只有 /etc/grayrouter/boot-mode = router 时才动作
 set -u
 MARK=/etc/grayrouter/boot-mode

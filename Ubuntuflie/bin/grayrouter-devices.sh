@@ -17,6 +17,9 @@ LOG=/var/log/grayrouter-devices.log
 # （现在有 Gray-Router=wlp2s0 和 LAN-USB=enx…；以后再加 USB 网口也会自动认出）
 WAN_IF=$(/usr/local/bin/grayrouter-roles.sh get 2>/dev/null | sed -n 's/^WAN_IF=//p')
 LAN_IFS=${GR_LAN_IF:-}
+## 找出当前所有 LAN 网口（AP 口 + 有线 LAN 口）
+## 副作用：无（只读）
+## @return 标准输出网口列表，空格分隔
 lan_ifaces() {
   local name dev type m out=""
   while IFS=: read -r name dev type; do
@@ -73,6 +76,9 @@ for mac, e in d.get("devices", {}).items():
 PY
 }
 
+## 确保 nft 表和链存在（幂等，已存在不动）
+## 副作用：会建表（空表不影响转发）
+## @return 0=就绪
 ensure_table() {
   if ! nft list table inet $TBL >/dev/null 2>&1; then
     nft add table inet $TBL 2>>"$LOG"
@@ -100,6 +106,9 @@ EOF
     nft add rule inet $TBL gr_in ether saddr @blocked drop 2>>"$LOG"
 }
 
+## 把 devices.json 里的黑名单同步成 nft 规则（真正的屏蔽动作）
+## 副作用：**会改 nft 防火墙规则**，被屏蔽设备立刻断网
+## @return 0=成功
 sync_set() {
   local cur want
   cur=$(nft list set inet $TBL blocked 2>/dev/null | tr ',{}' '\n\n\n' \
@@ -115,12 +124,19 @@ sync_set() {
   log "同步黑名单：$(printf '%s' "$want" | wc -w) 台"
 }
 
+## 应用当前配置：重建 nft 表 + 同步黑名单
+## 副作用：**会改防火墙规则**，瞬时断连
+## @return 0=成功
 do_apply() {
   ensure_table
   sync_set
   log "apply 完成，黑名单 $(blocked_list | wc -w) 台"
 }
 
+## 屏蔽一个设备（写 json + 加 nft 规则）
+## 副作用：**被屏蔽设备立刻断网**
+## @param $1 MAC 地址（小写，冒号分隔）
+## @return 0=成功
 do_block() {
   local mac; mac=$(norm_mac "${1:-}")
   [[ "$mac" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]] || { echo "MAC 格式不对：$1"; exit 65; }
@@ -131,6 +147,10 @@ do_block() {
   echo "已拉黑 $mac"
 }
 
+## 解除屏蔽
+## 副作用：设备恢复可上网
+## @param $1 MAC 地址
+## @return 0=成功
 do_unblock() {
   local mac; mac=$(norm_mac "${1:-}")
   [[ "$mac" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]] || { echo "MAC 格式不对：$1"; exit 65; }

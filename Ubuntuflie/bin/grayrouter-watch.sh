@@ -6,6 +6,11 @@
 #    自愈：重启热点 → 重启 ssh → 跑 rescue → 重启 NetworkManager → 回滚快照
 #    模式：MODE=observe 只看；MODE=act 真动手（默认 act）
 # ============================================================
+## 看门狗一轮完整检查 + 自愈（由 grayrrouter-watch.timer 每分钟调用）
+## 检查项：LAN IP / AP 模式 / SSH 22 / 默认路由 / 外网 204 / 假在线
+## 副作用：**可能重启热点、重启 ssh、跑 rescue、重启 NetworkManager、回滚快照**
+##        这些都会造成短暂断网，是它存在的意义（自愈），但也意味着不要手动频繁触发
+## 模式：MODE=observe 只看不动手；MODE=act（默认）真自愈
 set -u
 STATE=/run/grayrouter
 LOG=/var/log/grayrouter-watch.log

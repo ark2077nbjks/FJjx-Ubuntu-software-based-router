@@ -52,9 +52,15 @@ class Api:
             cmd += ["--data-binary", "@" + self.tmp]
         out = subprocess.run(cmd, capture_output=True, timeout=timeout).stdout
         try:
-            return json.loads(out)
+            data = json.loads(out)
         except Exception:
             sys.exit(f"API {method} {path} 返回异常: {out[:300]}")
+        # ⚠️ 判据不能只看 "message"：git/commits/{sha} 的正常返回里，
+        # 顶层就有 message 字段（那是 commit message，不是错误）。
+        # GitHub 的错误响应一定带 documentation_url，用它来区分。
+        if isinstance(data, dict) and "documentation_url" in data:
+            sys.exit(f"API {method} {path} 失败：{data.get('message')}（{data.get('documentation_url')}）")
+        return data
 
 
 def local_blobs(repo):

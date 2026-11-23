@@ -1,4 +1,5 @@
 using System.IO;
+using NetPanel.Models;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Text;
@@ -292,14 +293,7 @@ public partial class MainWindow : Window
 
     // ---------------- 流量 ----------------
 
-    public sealed class TrafficRow
-    {
-        public string Adapter { get; set; } = "";
-        public string Down { get; set; } = "";
-        public string Up { get; set; } = "";
-        public string Total { get; set; } = "";
-        public string Share { get; set; } = "";
-    }
+
 
     private void InitTrafficTab()
     {
@@ -346,20 +340,7 @@ public partial class MainWindow : Window
         catch (Exception ex) { AppPaths.Log("[自动刷新] " + ex.Message); }
     }
 
-    public sealed class DevTrafficRow
-    {
-        public string Name { get; set; } = "";
-        public string Mac { get; set; } = "";
-        public string Ip { get; set; } = "";
-        public string State { get; set; } = "";
-        public string Share { get; set; } = "";
-        public string TodayUp { get; set; } = "";
-        public string TodayDown { get; set; } = "";
-        public string SpanUp { get; set; } = "";
-        public string SpanDown { get; set; } = "";
-        public string Last { get; set; } = "";
-        public long _todayBytes { get; set; }
-    }
+
 
     private static readonly Dictionary<string, string> _devNames = new(StringComparer.OrdinalIgnoreCase);
     private static bool _devNamesLoaded;
@@ -493,8 +474,8 @@ public partial class MainWindow : Window
     private Process? _sysStream;
     private int _rtCores = 4;
     private double _rtMemTotal, _rtLoad = double.NaN;
-    private sealed class SvcRow { public string Unit { get; set; } = ""; public string State { get; set; } = ""; public string Auto { get; set; } = ""; }
-    private sealed class ProcRow { public string Name { get; set; } = ""; public string Cpu { get; set; } = ""; public string Mem { get; set; } = ""; }
+
+
 
     private async void OnSysRefresh(object sender, RoutedEventArgs e) => await RefreshSysAsync();
 
@@ -3098,14 +3079,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
 
     // ---------------- 日志页 ----------------
 
-    private sealed class LogRow
-    {
-        public string Time { get; set; } = "";
-        public string Level { get; set; } = "INFO";
-        public string Msg { get; set; } = "";
-        public Brush BadgeBg { get; set; } = Brushes.Transparent;
-        public Brush BadgeFg { get; set; } = Brushes.Gray;
-    }
+
 
     private static Brush HexBrush(string hex) => (Brush)new BrushConverter().ConvertFrom(hex)!;
     private static readonly Brush _logInfoBg = HexBrush("#FFE6F1FF");
@@ -4189,33 +4163,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
     }
 
     /// <summary>分流前的原状态，用于「恢复自动」精确还原。</summary>
-    private sealed class RouteDivState
-    {
-        // ⚠️ 必须用「属性」不能用「公共字段」：
-        // System.Text.Json 默认只序列化属性（IncludeFields 默认 false），
-        // 用字段会写成 "{}" —— 之前 routediv.json 一直是空对象，精确还原从来没生效过。
-        public string OutNic { get; set; } = "";
-        public int OrigMetric { get; set; }
-        public string CreatedAt { get; set; } = "";
-        public string InNic { get; set; } = "";        // 内网网卡名（DNS 防泄漏要还原它）
-        public string OrigInDns { get; set; } = "";    // 内网网卡原 DNS（逗号分隔；空 = 原来是 DHCP）
-        public string InNet { get; set; } = "";        // 内网网段地址，如 192.168.60.0
-        public string InGw { get; set; } = "";         // 内网网关，如 192.168.60.1
-        public int InIf { get; set; } = -1;            // 内网网卡接口索引（route add 必须指定）
-        public string InIp { get; set; } = "";         // 内网网卡本机 IP（重建 On-link 用）
-        public bool IpV6Off { get; set; }              // 是否被我们关过 IPv6
-        public int OrigNetbios { get; set; } = -1;     // 原 NetBIOS 设置（0/1/2；-1 = 没动过）
-        public string InGuid { get; set; } = "";       // 内网网卡 GUID（索引会漂移，GUID 不会）
-        public string OutGuid { get; set; } = "";      // 外网网卡 GUID
-        public bool InHadDefaultGw { get; set; }       // 内网原本有没有默认路由（回滚要按原样重建）
-        public string InOrigDefaultGw { get; set; } = "";  // 内网原默认网关
-        public bool InHadNetRoute { get; set; }        // 内网原本有没有网段路由
-        public string InOrigNetNextHop { get; set; } = ""; // 原网段路由下一跳（On-link 时为网卡自身 IP）
-        public bool InOrigIpV6 { get; set; } = true;   // IPv6 绑定原状态
-        public string InOrigiNetbios { get; set; } = "";   // NetBIOS 原值原始文本
-        public bool InDnsIsDhcp { get; set; }              // 内网 DNS 原本是 DHCP 下发还是静态（决定怎么还原）
-        public bool OutAutomaticMetric { get; set; } = true; // 外网卡原来是不是「自动跃点」（决定还原方式）
-    }
+
 
     private static string RouteDivFile =>
         System.IO.Path.Combine(AppPaths.DataDir, "routediv.json");
@@ -4906,19 +4854,25 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         catch { return ""; }
     }
 
-    private sealed class RouteNicRow
-    {
-        public string Name = "";
-        public string Ip = "";
-        public string Gw = "";
-        public int Metric;
-        public string State = "";
-        public string Prefix = "";   // 真实网段，形如 192.168.60.0/24（由 IP + 掩码算出）
-        public int IfIndex = -1;     // 接口索引：route add ... if <n> 必须用它（会漂移，不能持久化）
-        public string Guid = "";     // 网卡 GUID：重启/换卡都不变，状态文件用它做键
-    }
+
 
     private List<RouteNicRow> _routeNics = new();
+
+    /// <summary>
+    /// 分流/恢复执行期间把路由区按钮置灰。
+    /// 光靠 Interlocked 互斥的话，用户得点第二次才被告知「正在处理中」；
+    /// 置灰能一眼看到状态（成熟 WPF 做法）。
+    /// 必须在 UI 线程调用（调用点都在 async 方法里，await 前后都在 UI 上下文）。
+    /// </summary>
+    private void SetRouteButtonsBusy(bool busy)
+    {
+        try
+        {
+            BtnApplySplit.IsEnabled = !busy && _routeNics.Count >= 2;
+            BtnResetRoute.IsEnabled = !busy && _routeNics.Count >= 1;
+        }
+        catch { }
+    }
 
     private async Task RefreshRoutesAsync()
     {
@@ -5065,6 +5019,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             Toast("正在处理网络配置，请等这次跑完", false);
             return;
         }
+        SetRouteButtonsBusy(true);
         try
         {
 
@@ -5168,6 +5123,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         finally
         {
             System.Threading.Interlocked.Exchange(ref _netBusy, 0);
+            SetRouteButtonsBusy(false);
         }
     }
 
@@ -5341,6 +5297,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
             Toast("正在处理网络配置，请等这次跑完", false);
             return;
         }
+        SetRouteButtonsBusy(true);
         try
         {
 
@@ -5391,9 +5348,9 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
                 await RefreshRoutesAsync();
                 return;
             }
-            var tip = st == null
-                ? "（没有原状态记录，将改为系统自动跃点数）"
-                : $"（{st.OutNic} 跃点数还原为 {st.OrigMetric}）";
+            // st 不为 null 是上面 if (st == null) 分支的必然结果 —— 那个分支所有路径都 return 了，
+            // 这里的 null 三元永远走不到（qwen 审查指出的死代码）
+            var tip = $"（{st!.OutNic} 跃点数还原为 {st.OrigMetric}）";
             if (MessageBox.Show("恢复网卡跃点数，并删除分流用的持久路由？\n\n" + tip,
                 "多网卡路由 · 确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
                 return;
@@ -5433,6 +5390,7 @@ private void OnExportDevices(object sender, RoutedEventArgs e)
         finally
         {
             System.Threading.Interlocked.Exchange(ref _netBusy, 0);
+            SetRouteButtonsBusy(false);
         }
     }
 

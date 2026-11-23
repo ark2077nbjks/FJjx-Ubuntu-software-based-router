@@ -99,6 +99,10 @@ discover() {
   echo "${out# }"
 }
 
+## 按优先级排出候选 WAN 列表（结果写到全局 ALL，空格分隔）
+## 顺序：WANS 配置 > 自动发现；PRIO 里点名的提到最前；PREFER 指定的强制置顶
+## 副作用：无（纯计算）
+## 注：新插的网口会自动加入末尾，不用手动登记
 resolve_wans() {  # → ALL（空格分隔，按优先级）
   if [ -n "${WANS// /}" ]; then ALL="$WANS"; else ALL=$(discover); fi
   # 面板里调过顺序：只把 PRIO 里的网口提到前面，其余保持发现顺序（新网口仍会自动加入）
@@ -117,6 +121,10 @@ resolve_wans() {  # → ALL（空格分隔，按优先级）
     ALL="$PREFER $(echo "$ALL" | tr ' ' '\n' | grep -vx "$PREFER" | tr '\n' ' ')"
 }
 
+## 探测一个网口通不通：用本口 ping 网关和公网，拿延迟
+## 副作用：只发包不改配置（默认每 15 秒一轮，尽量少打）
+## @param $1 网口名，如 eno1
+## @return 标准输出 "1 <延迟ms>" 表示通、"0 -" 表示不通
 probe() {  # $1=网口 → "ok lat"
   local ifc="$1" gw lip code t0 t1 ms
   [ -z "$ifc" ] && { echo "0 -"; return; }
@@ -158,6 +166,11 @@ resqm() {  # 出口变了：把 cake 挪到新出口（只在已启用时；配�
   log "已把智能队列挪到新出口"
 }
 
+## 把当前出口切到指定网口：改默认路由、挪 SQM、写状态文件
+## 副作用：**会改默认路由**，跑在本机上的服务出口会跟着变，切换瞬间可能掉几个包
+## @param $1 目标网口
+## @param $2 切换原因（写进日志，排障用）
+## @return 0=已切换
 set_active() {  # $1=网口 $2=原因
   local ifc="$1" gw; gw=$(gw_of "$ifc")
   [ -z "$gw" ] && { log "切换失败：$ifc 没有网关"; return 1; }
@@ -167,6 +180,9 @@ set_active() {  # $1=网口 $2=原因
   resqm
 }
 
+## 删掉我们自己加的 50 号默认路由，把路由交回 NetworkManager 管
+## 副作用：**会改路由表**；用于「不再接管 WAN」时的退场
+## @return 0=已交回
 restore_system() {  # 删掉我们自己加的 50 号默认路由，交回 NetworkManager
   local gw
   for i in $(echo "${ALL:-}" | tr ' ' '\n'); do
@@ -220,6 +236,12 @@ ensure_usb_net() {
   done
 }
 
+## 一轮健康检查（由 grayrrouter-wanfail.timer 每 15 秒调用）
+## 逻辑：探活所有候选口 → 当前出口连续 FAIL_N 次失败就切备
+##      → 更高优先级的线连续 OK_N 次成功再切回（防抖）
+## 副作用：**可能切换出口（断几秒）**；探测本身只发包
+## 防抖参数：FAIL_N / OK_N（来自 /etc/grayrouter/wanfail.env）
+## @return 标准输出 "active=<口> wans=<候选列表>"，供面板显示
 tick() {
   [ "$ENABLE" = "1" ] || { echo disabled; return; }
   ensure_usb_net

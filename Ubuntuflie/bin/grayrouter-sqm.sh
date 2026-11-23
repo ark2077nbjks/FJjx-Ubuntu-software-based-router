@@ -62,6 +62,9 @@ do_status(){
   fi
 }
 
+## 实测当前带宽，给出建议的整形值
+## 副作用：会从外部下载/上传约 10 秒，消耗流量（几十 MB）
+## @return 0=测完，标准输出建议带宽
 do_measure(){
   command -v curl >/dev/null || die "没有 curl"
   local url="https://mirrors.aliyun.com/ubuntu/ls-lR.gz"
@@ -85,6 +88,11 @@ do_measure(){
   say "启用示例：sudo $0 apply $(awk -v r="$rec" 'BEGIN{printf "%d", r/1000}') $(awk -v r="$rec" 'BEGIN{printf "%d", r/1000}')"
 }
 
+## 启用整形：上行挂 cake 在 WAN 口，下行借 ifb 虚拟网卡拐进来再整形
+## 副作用：**会改队列规则**，立即生效；配置错会影响全网速度
+## @param $1 下行带宽（Kbit/s），缺省用配置文件
+## @param $2 上行带宽（Kbit/s）
+## @return 0=成功
 do_apply(){
   need_root "$@"
   local wan; wan=$(wan_if)
@@ -132,6 +140,9 @@ do_clear(){
   rm -f "$QRUN/sqm.state" 2>/dev/null || true
 }
 
+## 从保存的配置恢复整形（开机/崩溃后重建，tc 规则不落盘）
+## 副作用：会改队列规则
+## @return 0=成功
 do_restore(){
   load_conf
   [ "${ENABLED:-0}" = "1" ] || { say "未启用，跳过"; exit 0; }
@@ -146,6 +157,9 @@ do_restore(){
   do_apply $((DOWN/1000)) $((UP/1000))
 }
 
+## 出口换了网口：把旧口上的整形规则全拆掉（配置保持不变）
+## 副作用：会删 tc 规则；只动队列不动带宽配置
+## @return 0=成功
 do_flush(){  # 出口换了口：把旧口上的整形全拆掉，配置保持不变
   need_root "$@"
   local d
@@ -169,6 +183,9 @@ do_json(){
     "${ENABLED:-0}" "${DOWN:-0}" "${UP:-0}" "${wan:-}" "$up_on" "$down_on"
 }
 
+## 读实时统计（字节数/丢包/积压），供面板 SQM 页显示
+## 副作用：**无**（只读 tc 计数器，不发包不改规则）
+## @return 0，标准输出 JSON
 do_stats(){
   # 只读：返回每个方向的累计字节 / 丢包 / 队列积压，面板自己算速率
   load_conf

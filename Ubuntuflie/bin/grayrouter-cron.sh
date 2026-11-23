@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# ============================================================
+#  grayrouter-cron.sh —— 定时备份开关（对标 OpenWrt cron / iKuai 定时任务）
+#  用法：grayrouter-cron.sh get | set HH:MM | off
+#  依赖：cron（系统自带）
+#  退出码：0=成功 2=参数错
+#  注：写 /etc/cron.d/grayrouter-panel；set 后立即生效；不影响网络
+# ============================================================
 # 定时备份（对标 iKuai「定时任务」/ OpenWrt cron）：每天固定时间打包配置
 # 用法：get | set HH:MM | off
 set -u
